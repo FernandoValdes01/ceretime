@@ -57,6 +57,8 @@ import { compatibilitySpaceSource } from "../infrastructure/spaces/repository";
 import {
   appointmentAttendanceOutcomeUnion,
   appointmentStatusUnion,
+  calendarSyncErrorCodeUnion,
+  calendarSyncStatusUnion,
   justificationDecisionUnion,
   justificationReviewUnion,
   modalityUnion,
@@ -492,6 +494,8 @@ const appointmentCalendarSummaryValidator = v.object({
   modality: modalityUnion,
   calendarAdded: v.boolean(),
   calendarNeedsUpdate: v.boolean(),
+  calendarSyncStatus: v.optional(calendarSyncStatusUnion),
+  calendarSyncErrorCode: v.optional(calendarSyncErrorCodeUnion),
 });
 
 /**

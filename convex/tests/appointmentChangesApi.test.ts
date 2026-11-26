@@ -910,6 +910,7 @@ test("TI2-122 API: reagendar actualiza el .ics y deja obsoleto el evento anterio
       modality: "online",
       calendarAdded: false,
       calendarNeedsUpdate: true,
+      calendarSyncStatus: "pending",
     },
   ]);
 

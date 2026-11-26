@@ -381,15 +381,20 @@ export default defineSchema({
     calendarEventAddedAt: v.optional(v.number()),
     calendarEventStartsAt: v.optional(v.number()),
     calendarEventEndsAt: v.optional(v.number()),
-    // Estado de la sincronización automática (TI2-145): las filas anteriores
+    // Estado de la sincronización automática (TI2-145, TI2-162): las filas anteriores
     // no lo tienen y se leen sin error; `calendarSyncStateOf` las devuelve como
     // ausentes, no como pendientes inventadas. `calendarSyncErrorCode` reutiliza
     // los motivos genéricos del respaldo `.ics` y nunca copia respuestas del
-    // proveedor.
+    // proveedor. `calendarSyncScheduledAt` marca cuándo se programó el último
+    // despacho para no programar otro mientras uno sigue en curso; `calendarEventOwnerId` guarda
+    // de qué calendario es el evento (el `subject` de Better Auth que lo
+    // creó), así actualizar y eliminar usan siempre ese calendario.
     calendarSyncStatus: v.optional(calendarSyncStatusUnion),
     calendarSyncAttempts: v.optional(v.number()),
     calendarSyncLastAttemptAt: v.optional(v.number()),
     calendarSyncErrorCode: v.optional(calendarSyncErrorCodeUnion),
+    calendarSyncScheduledAt: v.optional(v.number()),
+    calendarEventOwnerId: v.optional(v.string()),
     justificationExplanation: v.optional(v.string()),
     justificationSubmittedAt: v.optional(v.number()),
     justificationReview: v.optional(justificationReviewUnion),
@@ -434,8 +439,17 @@ export default defineSchema({
     // horario (TI2-165), sin leer las canceladas.
     .index("by_status_and_startsAt", ["status", "startsAt"])
     // Sincronización automática con Calendar (TI2-162): reintento de
-    // pendientes y de fallos recuperables sin barrer la tabla.
-    .index("by_calendarSyncStatus", ["calendarSyncStatus"]),
+    // pendientes no despachadas y de fallos recuperables, por el intento más
+    // antiguo y sin barrer la tabla. `not_connected` pide volver a vincular y
+    // no se reintenta solo.
+    .index("by_calendarSyncStatus_and_scheduledAt", [
+      "calendarSyncStatus",
+      "calendarSyncScheduledAt",
+    ])
+    .index("by_calendarSyncStatus_and_lastAttemptAt", [
+      "calendarSyncStatus",
+      "calendarSyncLastAttemptAt",
+    ]),
 
   // Tabla 'appointmentProfessionals': profesionales que participan en una
   // atención (TI2-138), ATENCION_PROFESIONALES del MER.

@@ -186,245 +186,165 @@ function readEventId(payload: unknown, fallback: string): string {
 }
 
 /**
- * Puerto de creación y actualización de eventos. El `id` determinista del
- * evento hace que un reintento o un doble clic reciba `409` y se trate como
- * éxito, sin duplicar. La actualización usa el mismo `id` ya guardado.
+ * Descifra un token OAuth guardado por Better Auth.
+ *
+ * Ausente no es lo mismo que ilegible: un campo vacío significa que no hay
+ * nada que revocar o renovar; un cifrado que no abre significa que no se
+ * puede confirmar el estado y el llamante no debe afirmar nada.
  */
-export function googleCalendarGateway(ctx: ActionCtx) {
-  return {
-    createEvent: async (input: {
-      readonly googleEventId: string;
-      readonly title: string;
-      readonly startAt: number;
-      readonly endAt: number;
-      readonly timeZone: string;
-    }): Promise<GoogleCalendarCreateResult> => {
-      const access = await readGoogleAccess(ctx);
-      if (access.status !== "ok") return access;
-      if (!access.scopes.includes(CALENDAR_EVENTS_SCOPE)) return { status: "not_connected" };
+async function decodeTokenValue(
+  value: unknown,
+  context: DecryptContext,
+): Promise<string | null | "unreadable"> {
+  if (typeof value !== "string" || value.length === 0) return null;
+  try {
+    const plain = await decryptOAuthToken(value, context);
+    return typeof plain === "string" && plain.length > 0 ? plain : null;
+  } catch {
+    return "unreadable";
+  }
+}
 
-      try {
-        const response = await fetch(
-          "https://www.googleapis.com/calendar/v3/calendars/primary/events",
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${access.accessToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              id: input.googleEventId,
-              summary: input.title,
-              start: {
-                dateTime: new Date(input.startAt).toISOString(),
-                timeZone: input.timeZone,
-              },
-              end: {
-                dateTime: new Date(input.endAt).toISOString(),
-                timeZone: input.timeZone,
-              },
-            }),
-          },
-        );
-        if (response.status === 409) {
-          return { status: "already_exists", eventId: input.googleEventId };
-        }
-        if (response.status === 401) return { status: "not_connected" };
-        if (!response.ok) return { status: "unavailable" };
-        const payload: unknown = await response.json();
-        return { status: "created", eventId: readEventId(payload, input.googleEventId) };
-      } catch {
-        return { status: "unavailable" };
-      }
-    },
-    updateEvent: async (input: {
-      readonly googleEventId: string;
-      readonly title: string;
-      readonly startAt: number;
-      readonly endAt: number;
-      readonly timeZone: string;
-    }): Promise<GoogleCalendarUpdateResult> => {
-      const access = await readGoogleAccess(ctx);
-      if (access.status !== "ok") return access;
-      if (!access.scopes.includes(CALENDAR_EVENTS_SCOPE)) return { status: "not_connected" };
-
-      try {
-        const response = await fetch(
-          `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(input.googleEventId)}`,
-          {
-            method: "PATCH",
-            headers: {
-              Authorization: `Bearer ${access.accessToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              summary: input.title,
-              start: {
-                dateTime: new Date(input.startAt).toISOString(),
-                timeZone: input.timeZone,
-              },
-              end: {
-                dateTime: new Date(input.endAt).toISOString(),
-                timeZone: input.timeZone,
-              },
-            }),
-          },
-        );
-        if (response.status === 401) return { status: "not_connected" };
-        if (!response.ok) return { status: "unavailable" };
-        const payload: unknown = await response.json();
-        return { status: "updated", eventId: readEventId(payload, input.googleEventId) };
-      } catch {
-        return { status: "unavailable" };
-      }
-    },
-    deleteEvent: async (input: {
-      readonly googleEventId: string;
-    }): Promise<GoogleCalendarDeleteResult> => {
-      const access = await readGoogleAccess(ctx);
-      if (access.status !== "ok") return access;
-      if (!access.scopes.includes(CALENDAR_EVENTS_SCOPE)) return { status: "not_connected" };
-
-      try {
-        const response = await fetch(
-          `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(input.googleEventId)}`,
-          {
-            method: "DELETE",
-            headers: {
-              Authorization: `Bearer ${access.accessToken}`,
-            },
-          },
-        );
-        if (response.status === 401) return { status: "not_connected" };
-        if (response.status === 404 || response.status === 410) {
-          return { status: "not_found", eventId: input.googleEventId };
-        }
-        if (!response.ok) return { status: "unavailable" };
-        return { status: "deleted", eventId: input.googleEventId };
-      } catch {
-        return { status: "unavailable" };
-      }
-    },
-  };
+/** Forma de un evento para crear o actualizar, sin credenciales. */
+export interface CalendarEventWrite {
+  readonly googleEventId: string;
+  readonly title: string;
+  readonly startAt: number;
+  readonly endAt: number;
+  readonly timeZone: string;
 }
 
 /**
- * Puerta con un token ya resuelto, para la sincronización en segundo plano
- * (TI2-162).
+ * Llamadas HTTP a Google Calendar con un `accessToken` ya resuelto.
  *
- * No lee identidad ni Better Auth: recibe el `accessToken` vigente que el
- * llamante renovó con el refresh token del usuario. Traduce igual que la
- * puerta de sesión, sin respuestas ni credenciales.
+ * Punto único de traducción del proveedor: las puertas de sesión y de segundo
+ * plano las comparten, así un cambio en el descifrado o en una respuesta se
+ * hace una sola vez. El `id` determinista del evento hace que un reintento o
+ * un doble clic reciba `409` y se trate como éxito, sin duplicar.
  */
-export function googleCalendarGatewayWithToken(accessToken: string) {
-  async function callCreate(input: {
-    readonly googleEventId: string;
-    readonly title: string;
-    readonly startAt: number;
-    readonly endAt: number;
-    readonly timeZone: string;
-  }): Promise<GoogleCalendarCreateResult> {
-    try {
-      const response = await fetch(
-        "https://www.googleapis.com/calendar/v3/calendars/primary/events",
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            id: input.googleEventId,
-            summary: input.title,
-            start: {
-              dateTime: new Date(input.startAt).toISOString(),
-              timeZone: input.timeZone,
-            },
-            end: {
-              dateTime: new Date(input.endAt).toISOString(),
-              timeZone: input.timeZone,
-            },
-          }),
+export async function postCalendarEvent(
+  accessToken: string,
+  input: CalendarEventWrite,
+): Promise<GoogleCalendarCreateResult> {
+  try {
+    const response = await fetch(
+      "https://www.googleapis.com/calendar/v3/calendars/primary/events",
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
         },
-      );
-      if (response.status === 409) {
-        return { status: "already_exists", eventId: input.googleEventId };
-      }
-      if (response.status === 401) return { status: "not_connected" };
-      if (!response.ok) return { status: "unavailable" };
-      const payload: unknown = await response.json();
-      return { status: "created", eventId: readEventId(payload, input.googleEventId) };
-    } catch {
-      return { status: "unavailable" };
-    }
-  }
-
-  async function callUpdate(input: {
-    readonly googleEventId: string;
-    readonly title: string;
-    readonly startAt: number;
-    readonly endAt: number;
-    readonly timeZone: string;
-  }): Promise<GoogleCalendarUpdateResult> {
-    try {
-      const response = await fetch(
-        `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(input.googleEventId)}`,
-        {
-          method: "PATCH",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
+        body: JSON.stringify({
+          id: input.googleEventId,
+          summary: input.title,
+          start: {
+            dateTime: new Date(input.startAt).toISOString(),
+            timeZone: input.timeZone,
           },
-          body: JSON.stringify({
-            summary: input.title,
-            start: {
-              dateTime: new Date(input.startAt).toISOString(),
-              timeZone: input.timeZone,
-            },
-            end: {
-              dateTime: new Date(input.endAt).toISOString(),
-              timeZone: input.timeZone,
-            },
-          }),
-        },
-      );
-      if (response.status === 401) return { status: "not_connected" };
-      if (!response.ok) return { status: "unavailable" };
-      const payload: unknown = await response.json();
-      return { status: "updated", eventId: readEventId(payload, input.googleEventId) };
-    } catch {
-      return { status: "unavailable" };
-    }
-  }
-
-  async function callDelete(input: {
-    readonly googleEventId: string;
-  }): Promise<GoogleCalendarDeleteResult> {
-    try {
-      const response = await fetch(
-        `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(input.googleEventId)}`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
+          end: {
+            dateTime: new Date(input.endAt).toISOString(),
+            timeZone: input.timeZone,
           },
-        },
-      );
-      if (response.status === 401) return { status: "not_connected" };
-      if (response.status === 404 || response.status === 410) {
-        return { status: "not_found", eventId: input.googleEventId };
-      }
-      if (!response.ok) return { status: "unavailable" };
-      return { status: "deleted", eventId: input.googleEventId };
-    } catch {
-      return { status: "unavailable" };
+        }),
+      },
+    );
+    if (response.status === 409) {
+      return { status: "already_exists", eventId: input.googleEventId };
     }
+    if (response.status === 401) return { status: "not_connected" };
+    if (!response.ok) return { status: "unavailable" };
+    const payload: unknown = await response.json();
+    return { status: "created", eventId: readEventId(payload, input.googleEventId) };
+  } catch {
+    return { status: "unavailable" };
   }
+}
 
+/** Actualiza el evento existente con el mismo `id` ya guardado. */
+export async function patchCalendarEvent(
+  accessToken: string,
+  input: CalendarEventWrite,
+): Promise<GoogleCalendarUpdateResult> {
+  try {
+    const response = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(input.googleEventId)}`,
+      {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          summary: input.title,
+          start: {
+            dateTime: new Date(input.startAt).toISOString(),
+            timeZone: input.timeZone,
+          },
+          end: {
+            dateTime: new Date(input.endAt).toISOString(),
+            timeZone: input.timeZone,
+          },
+        }),
+      },
+    );
+    if (response.status === 401) return { status: "not_connected" };
+    if (!response.ok) return { status: "unavailable" };
+    const payload: unknown = await response.json();
+    return { status: "updated", eventId: readEventId(payload, input.googleEventId) };
+  } catch {
+    return { status: "unavailable" };
+  }
+}
+
+/** Elimina el evento de una atención cancelada; ausente cuenta como éxito. */
+export async function deleteCalendarEvent(
+  accessToken: string,
+  input: {
+    readonly googleEventId: string;
+  },
+): Promise<GoogleCalendarDeleteResult> {
+  try {
+    const response = await fetch(
+      `https://www.googleapis.com/calendar/v3/calendars/primary/events/${encodeURIComponent(input.googleEventId)}`,
+      {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      },
+    );
+    if (response.status === 401) return { status: "not_connected" };
+    if (response.status === 404 || response.status === 410) {
+      return { status: "not_found", eventId: input.googleEventId };
+    }
+    if (!response.ok) return { status: "unavailable" };
+    return { status: "deleted", eventId: input.googleEventId };
+  } catch {
+    return { status: "unavailable" };
+  }
+}
+
+/**
+ * Puerta de creación y actualización de eventos con la sesión (TI2-122).
+ *
+ * Solo resuelve el token de la sesión y delega en las llamadas compartidas.
+ * La eliminación vive solo en la sincronización en segundo plano (TI2-162).
+ */
+export function googleCalendarGateway(ctx: ActionCtx) {
   return {
-    createEvent: callCreate,
-    updateEvent: callUpdate,
-    deleteEvent: callDelete,
+    createEvent: async (input: CalendarEventWrite): Promise<GoogleCalendarCreateResult> => {
+      const access = await readGoogleAccess(ctx);
+      if (access.status !== "ok") return access;
+      if (!access.scopes.includes(CALENDAR_EVENTS_SCOPE)) return { status: "not_connected" };
+      return await postCalendarEvent(access.accessToken, input);
+    },
+    updateEvent: async (input: CalendarEventWrite): Promise<GoogleCalendarUpdateResult> => {
+      const access = await readGoogleAccess(ctx);
+      if (access.status !== "ok") return access;
+      if (!access.scopes.includes(CALENDAR_EVENTS_SCOPE)) return { status: "not_connected" };
+      return await patchCalendarEvent(access.accessToken, input);
+    },
   };
 }
 
@@ -470,17 +390,8 @@ export async function readGoogleTokensForSubject(
     } catch {
       return { status: "unavailable" };
     }
-    const decode = async (value: unknown): Promise<string | null | "unreadable"> => {
-      if (typeof value !== "string" || value.length === 0) return null;
-      try {
-        const plain = await decryptOAuthToken(value, context);
-        return typeof plain === "string" && plain.length > 0 ? plain : null;
-      } catch {
-        return "unreadable";
-      }
-    };
-    const accessToken = await decode(account.accessToken);
-    const refreshToken = await decode(account.refreshToken);
+    const accessToken = await decodeTokenValue(account.accessToken, context);
+    const refreshToken = await decodeTokenValue(account.refreshToken, context);
     if (accessToken === "unreadable" || refreshToken === "unreadable") {
       return { status: "unavailable" };
     }
@@ -508,15 +419,20 @@ export async function resolveBackgroundCalendarAccess(
   ctx: ActionCtx,
   subject: string,
   client: CalendarOAuthClientConfig | null,
+  everLinked: boolean,
 ): Promise<
   | { readonly status: "ok"; readonly accessToken: string }
   | { readonly status: "not_connected" }
+  | { readonly status: "never_linked" }
   | { readonly status: "unavailable" }
 > {
   const stored = await readGoogleTokensForSubject(ctx, subject);
-  if (stored.status !== "found") {
-    return stored.status === "missing" ? { status: "not_connected" } : { status: "unavailable" };
+  if (stored.status === "missing") {
+    // Sin cuenta y sin vínculo previo no hay nada que pedir: la persona nunca
+    // vinculó. Con vínculo previo que ya no está, pide volver a vincular.
+    return everLinked ? { status: "not_connected" } : { status: "never_linked" };
   }
+  if (stored.status !== "found") return { status: "unavailable" };
   if (!stored.scopes.includes(CALENDAR_EVENTS_SCOPE)) return { status: "not_connected" };
   if (stored.refreshToken !== null) {
     const refreshed = await fetchAccessTokenWithRefresh(stored.refreshToken, client);
@@ -587,18 +503,10 @@ export function googleCalendarOAuthAccess(ctx: ActionCtx) {
         // Ausente no es lo mismo que ilegible: un campo vacío significa que no
         // hay nada que revocar; un cifrado que no abre significa que no se
         // puede confirmar la revocación.
-        if (typeof value !== "string" || value.length === 0) {
-          return { status: "ok", value: null };
-        }
-        try {
-          const plain = await decryptOAuthToken(value, context);
-          return {
-            status: "ok",
-            value: typeof plain === "string" && plain.length > 0 ? plain : null,
-          };
-        } catch {
-          return { status: "unreadable" };
-        }
+        const decoded = await decodeTokenValue(value, context);
+        return decoded === "unreadable"
+          ? { status: "unreadable" as const }
+          : { status: "ok" as const, value: decoded };
       };
       const accessToken = await decode(account.accessToken);
       const refreshToken = await decode(account.refreshToken);

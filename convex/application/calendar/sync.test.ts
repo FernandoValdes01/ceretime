@@ -1,17 +1,28 @@
 import { describe, expect, test } from "vitest";
 import {
   syncAppointmentToGoogleCalendar,
-  type CalendarSyncGoogleGateway,
-  type CalendarSyncRecorder,
+  type CalendarSyncAccess,
+  type CalendarSyncAppointmentContext,
+  type CalendarSyncGateway,
+  type CalendarSyncStore,
+  type GoogleCalendarSyncCreateOutcome,
 } from "./sync";
-import type { CalendarAppointmentContext } from "./calendar";
 
 const START_AT = Date.UTC(2026, 2, 10, 16, 0, 0);
 const END_AT = Date.UTC(2026, 2, 10, 17, 0, 0);
 const CREATED_AT = Date.UTC(2026, 2, 1, 12, 0, 0);
 const NOW = Date.UTC(2026, 2, 10, 15, 0, 0);
 
-function context(overrides: Partial<CalendarAppointmentContext> = {}): CalendarAppointmentContext {
+const STUDENT = "subject-student";
+const PRO = "subject-pro";
+
+function participant(subject: string, everLinked = true) {
+  return { subject, everLinked };
+}
+
+function context(
+  overrides: Partial<CalendarSyncAppointmentContext> = {},
+): CalendarSyncAppointmentContext {
   return {
     appointmentId: "appointment-1",
     status: "scheduled",
@@ -20,248 +31,401 @@ function context(overrides: Partial<CalendarAppointmentContext> = {}): CalendarA
     createdAt: CREATED_AT,
     reference: null,
     referenceIsCurrent: false,
+    ownerId: null,
+    participants: [participant(STUDENT), participant(PRO)],
     ...overrides,
   };
 }
 
-function fakeRecorder() {
-  const events: {
-    readonly appointmentId: string;
-    readonly eventId: string;
-    readonly addedAt: number;
-    readonly startsAt: number;
-    readonly endsAt: number;
-  }[] = [];
-  const synced: number[] = [];
-  const errors: { readonly attemptedAt: number; readonly errorCode: string }[] = [];
-  const recorder: CalendarSyncRecorder = {
-    recordEvent: async (input) => {
-      events.push(input);
-    },
-    recordSynced: async (input) => {
-      synced.push(input.attemptedAt);
-    },
-    recordError: async (input) => {
-      errors.push(input);
+/** Fila vigente simulada: el almacén verifica como la mutación real. */
+function fakeStore(row: { startsAt: number; endsAt: number; status: string }) {
+  const recorded: unknown[] = [];
+  let reschedules = 0;
+  const store: CalendarSyncStore = {
+    record: async (input) => {
+      if (
+        row.startsAt !== input.expected.startsAt ||
+        row.endsAt !== input.expected.endsAt ||
+        row.status !== input.expected.status
+      ) {
+        return "stale";
+      }
+      recorded.push(input.outcome);
+      return "recorded";
     },
   };
-  return { recorder, events, synced, errors };
+  return {
+    store,
+    recorded,
+    reschedule: async () => {
+      reschedules += 1;
+    },
+    reschedules: () => reschedules,
+  };
 }
 
-function fakeGateway(
-  overrides: Partial<CalendarSyncGoogleGateway> = {},
-): CalendarSyncGoogleGateway & {
-  readonly createCalls: number;
-  readonly updateCalls: number;
-  readonly deleteCalls: number;
-} {
-  let createCalls = 0;
-  let updateCalls = 0;
-  let deleteCalls = 0;
-  return {
-    get createCalls() {
-      return createCalls;
-    },
-    get updateCalls() {
-      return updateCalls;
-    },
-    get deleteCalls() {
-      return deleteCalls;
-    },
+function fakeApi(
+  outcomes: {
+    readonly create?: GoogleCalendarSyncCreateOutcome;
+    readonly failWith?: "not_connected" | "unavailable";
+    readonly deleted?: boolean;
+  } = {},
+) {
+  const calls: { readonly op: string; readonly token: string; readonly id: string }[] = [];
+  const api = (token: string): CalendarSyncGateway => ({
     createEvent: async (input) => {
-      createCalls += 1;
+      calls.push({ op: "create", token, id: input.googleEventId });
+      if (outcomes.failWith !== undefined) return { status: outcomes.failWith };
+      if (outcomes.create !== undefined) return outcomes.create;
       return { status: "created", eventId: input.googleEventId };
     },
     updateEvent: async (input) => {
-      updateCalls += 1;
+      calls.push({ op: "update", token, id: input.googleEventId });
+      if (outcomes.failWith !== undefined) return { status: outcomes.failWith };
       return { status: "updated", eventId: input.googleEventId };
     },
     deleteEvent: async (input) => {
-      deleteCalls += 1;
+      calls.push({ op: "delete", token, id: input.googleEventId });
+      if (outcomes.failWith !== undefined) return { status: outcomes.failWith };
+      if (outcomes.deleted === false) return { status: "not_found", eventId: input.googleEventId };
       return { status: "deleted", eventId: input.googleEventId };
     },
-    ...overrides,
+  });
+  return { api, calls };
+}
+
+function accessFor(entries: Record<string, CalendarSyncAccess>) {
+  const seen: string[] = [];
+  return {
+    seen,
+    resolve: async (subject: string): Promise<CalendarSyncAccess> => {
+      seen.push(subject);
+      return entries[subject] ?? { status: "never_linked" as const };
+    },
   };
 }
 
+function okToken(token: string): CalendarSyncAccess {
+  return { status: "ok", accessToken: token };
+}
+
 function depsFor(
-  loaded: CalendarAppointmentContext | null,
-  google: CalendarSyncGoogleGateway,
-  recorder: CalendarSyncRecorder,
-  attemptedAt: number = NOW,
+  loaded: CalendarSyncAppointmentContext | null,
+  options: {
+    readonly access?: Record<string, CalendarSyncAccess>;
+    readonly apiOutcomes?: Parameters<typeof fakeApi>[0];
+    readonly row?: { startsAt: number; endsAt: number; status: string };
+    readonly now?: number;
+  } = {},
 ) {
+  const row = options.row ?? { startsAt: START_AT, endsAt: END_AT, status: loaded?.status ?? "" };
+  const store = fakeStore(row);
+  const api = fakeApi(options.apiOutcomes);
+  const access = accessFor(options.access ?? { [STUDENT]: okToken("token-student") });
   return {
-    loadAppointment: async () => loaded,
-    google,
-    sync: recorder,
-    now: () => attemptedAt,
-    timeZone: "America/Santiago",
+    deps: {
+      loadAppointment: async () => loaded,
+      resolveAccess: access.resolve,
+      calendarApi: api.api,
+      store: store.store,
+      reschedule: store.reschedule,
+      now: () => options.now ?? NOW,
+      timeZone: "America/Santiago",
+    },
+    calls: api.calls,
+    seen: access.seen,
+    recorded: store.recorded,
+    reschedules: store.reschedules,
   };
 }
 
 describe("sincronización automática con Calendar (TI2-162)", () => {
-  test("crea el evento al reservar y lo marca sincronizado", async () => {
-    const { recorder, events, synced, errors } = fakeRecorder();
-    const google = fakeGateway();
-    const result = await syncAppointmentToGoogleCalendar(depsFor(context(), google, recorder));
+  test("crea el evento al reservar y guarda al dueño", async () => {
+    const { deps, calls, recorded } = depsFor(context());
+    const result = await syncAppointmentToGoogleCalendar(deps);
     expect(result).toEqual({
       status: "ok",
       data: { status: "synced", eventId: expect.any(String) },
     });
-    expect(google.createCalls).toBe(1);
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({
-      appointmentId: "appointment-1",
-      startsAt: START_AT,
-      endsAt: END_AT,
-    });
-    expect(synced).toEqual([NOW]);
-    expect(errors).toHaveLength(0);
+    expect(calls.filter((call) => call.op === "create")).toHaveLength(1);
+    expect(recorded).toEqual([{ kind: "success", eventId: expect.any(String), ownerId: STUDENT }]);
   });
 
-  test("actualiza el mismo evento al reagendar sin duplicar", async () => {
-    const { recorder, events, synced } = fakeRecorder();
-    const google = fakeGateway();
+  test("actualiza el mismo evento en el calendario del dueño", async () => {
+    const newStart = START_AT + 24 * 60 * 60_000;
+    const loaded = context({
+      status: "rescheduled",
+      startAt: newStart,
+      endAt: newStart + 60 * 60_000,
+      reference: { eventId: "event-1", addedAt: CREATED_AT },
+      referenceIsCurrent: false,
+      ownerId: PRO,
+      participants: [participant(STUDENT, false), participant(PRO)],
+    });
+    const { deps, calls, seen, recorded } = depsFor(loaded, {
+      access: { [PRO]: okToken("token-pro") },
+      row: { startsAt: newStart, endsAt: newStart + 60 * 60_000, status: "rescheduled" },
+    });
+    const result = await syncAppointmentToGoogleCalendar(deps);
+    expect(result).toEqual({ status: "ok", data: { status: "synced", eventId: "event-1" } });
+    expect(seen).toEqual([PRO]);
+    expect(calls).toEqual([{ op: "update", token: "token-pro", id: "event-1" }]);
+    expect(recorded).toEqual([{ kind: "success", eventId: "event-1", ownerId: PRO }]);
+  });
+
+  test("no llama a Google si la referencia ya está vigente", async () => {
+    const loaded = context({
+      reference: { eventId: "event-1", addedAt: CREATED_AT },
+      referenceIsCurrent: true,
+      ownerId: STUDENT,
+    });
+    const { deps, calls } = depsFor(loaded, {
+      row: { startsAt: START_AT, endsAt: END_AT, status: "scheduled" },
+    });
+    const result = await syncAppointmentToGoogleCalendar(deps);
+    expect(result).toEqual({ status: "ok", data: { status: "synced", eventId: "event-1" } });
+    expect(calls).toHaveLength(0);
+  });
+
+  test("elimina el evento al cancelar en el calendario del dueño", async () => {
+    const loaded = context({
+      status: "cancelled_by_student",
+      reference: { eventId: "event-1", addedAt: CREATED_AT },
+      referenceIsCurrent: true,
+      ownerId: STUDENT,
+    });
+    const { deps, calls, seen } = depsFor(loaded, {
+      row: { startsAt: START_AT, endsAt: END_AT, status: "cancelled_by_student" },
+    });
+    const result = await syncAppointmentToGoogleCalendar(deps);
+    expect(result).toEqual({ status: "ok", data: { status: "synced", eventId: "event-1" } });
+    expect(seen).toEqual([STUDENT]);
+    expect(calls).toEqual([{ op: "delete", token: "token-student", id: "event-1" }]);
+  });
+
+  test("cancelar sin referencia no toca Google y queda sincronizado", async () => {
+    const loaded = context({ status: "cancelled_by_cereti", reference: null });
+    const { deps, calls } = depsFor(loaded, {
+      row: { startsAt: START_AT, endsAt: END_AT, status: "cancelled_by_cereti" },
+    });
+    const result = await syncAppointmentToGoogleCalendar(deps);
+    expect(result).toEqual({ status: "ok", data: { status: "synced" } });
+    expect(calls).toHaveLength(0);
+  });
+
+  test("una atención realizada no toca Google y queda sincronizada", async () => {
+    const loaded = context({ status: "completed" });
+    const { deps, calls } = depsFor(loaded, {
+      row: { startsAt: START_AT, endsAt: END_AT, status: "completed" },
+    });
+    const result = await syncAppointmentToGoogleCalendar(deps);
+    expect(result).toEqual({ status: "ok", data: { status: "synced" } });
+    expect(calls).toHaveLength(0);
+  });
+
+  test("`not_connected` pide volver a vincular y `unavailable` permite reintentar", async () => {
+    for (const code of ["not_connected", "unavailable"] as const) {
+      const { deps, recorded } = depsFor(context(), {
+        access: { [STUDENT]: { status: code }, [PRO]: { status: code } },
+      });
+      const result = await syncAppointmentToGoogleCalendar(deps);
+      expect(result).toEqual({ status: "ok", data: { status: "error", errorCode: code } });
+      expect(recorded).toEqual([{ kind: "failure", errorCode: code }]);
+    }
+  });
+
+  test("cuando nadie vinculó queda `pending` sin pedir nada", async () => {
+    const { deps, recorded, reschedules } = depsFor(context(), { access: {} });
+    const result = await syncAppointmentToGoogleCalendar(deps);
+    expect(result).toEqual({ status: "ok", data: { status: "pending" } });
+    expect(recorded).toHaveLength(0);
+    expect(reschedules()).toBe(0);
+  });
+
+  test("`unavailable` prima sobre `not_connected`", async () => {
+    const { deps, recorded } = depsFor(context(), {
+      access: {
+        [STUDENT]: { status: "unavailable" },
+        [PRO]: { status: "not_connected" },
+      },
+    });
+    const result = await syncAppointmentToGoogleCalendar(deps);
+    expect(result).toEqual({
+      status: "ok",
+      data: { status: "error", errorCode: "unavailable" },
+    });
+    expect(recorded).toEqual([{ kind: "failure", errorCode: "unavailable" }]);
+  });
+
+  test("con dueño conocido, perder el vínculo pide volver a vincular", async () => {
     const loaded = context({
       status: "rescheduled",
       startAt: START_AT + 24 * 60 * 60_000,
       endAt: END_AT + 24 * 60 * 60_000,
       reference: { eventId: "event-1", addedAt: CREATED_AT },
       referenceIsCurrent: false,
+      ownerId: STUDENT,
     });
-    const result = await syncAppointmentToGoogleCalendar(depsFor(loaded, google, recorder));
-    expect(result.status === "ok" && result.data.status).toBe("synced");
-    expect(google.updateCalls).toBe(1);
-    expect(google.createCalls).toBe(0);
-    expect(events).toEqual([
-      {
-        appointmentId: "appointment-1",
-        eventId: "event-1",
-        addedAt: CREATED_AT,
-        startsAt: loaded.startAt,
-        endsAt: loaded.endAt,
+    const { deps } = depsFor(loaded, {
+      access: {},
+      row: {
+        startsAt: START_AT + 24 * 60 * 60_000,
+        endsAt: END_AT + 24 * 60 * 60_000,
+        status: "rescheduled",
       },
-    ]);
-    expect(synced).toEqual([NOW]);
-  });
-
-  test("no llama a Google si la referencia ya está vigente", async () => {
-    const { recorder, synced } = fakeRecorder();
-    const google = fakeGateway();
-    const loaded = context({
-      reference: { eventId: "event-1", addedAt: CREATED_AT },
-      referenceIsCurrent: true,
     });
-    const result = await syncAppointmentToGoogleCalendar(depsFor(loaded, google, recorder));
-    expect(result).toEqual({ status: "ok", data: { status: "synced", eventId: "event-1" } });
-    expect(google.createCalls).toBe(0);
-    expect(google.updateCalls).toBe(0);
-    expect(synced).toEqual([NOW]);
-  });
-
-  test("elimina el evento al cancelar y lo marca sincronizado", async () => {
-    const { recorder, synced, errors } = fakeRecorder();
-    const google = fakeGateway();
-    const loaded = context({
-      status: "cancelled_by_student",
-      reference: { eventId: "event-1", addedAt: CREATED_AT },
-      referenceIsCurrent: true,
+    const result = await syncAppointmentToGoogleCalendar(deps);
+    expect(result).toEqual({
+      status: "ok",
+      data: { status: "error", errorCode: "not_connected" },
     });
-    const result = await syncAppointmentToGoogleCalendar(depsFor(loaded, google, recorder));
-    expect(result).toEqual({ status: "ok", data: { status: "synced", eventId: "event-1" } });
-    expect(google.deleteCalls).toBe(1);
-    expect(synced).toEqual([NOW]);
-    expect(errors).toHaveLength(0);
-  });
-
-  test("cancelar sin referencia no toca Google y queda sincronizado", async () => {
-    const { recorder, synced } = fakeRecorder();
-    const google = fakeGateway();
-    const loaded = context({ status: "cancelled_by_cereti", reference: null });
-    const result = await syncAppointmentToGoogleCalendar(depsFor(loaded, google, recorder));
-    expect(result).toEqual({ status: "ok", data: { status: "synced" } });
-    expect(google.deleteCalls).toBe(0);
-    expect(synced).toEqual([NOW]);
-  });
-
-  test("una atención realizada no toca Google y queda sincronizada", async () => {
-    const { recorder, synced } = fakeRecorder();
-    const google = fakeGateway();
-    const loaded = context({ status: "completed" });
-    const result = await syncAppointmentToGoogleCalendar(depsFor(loaded, google, recorder));
-    expect(result).toEqual({ status: "ok", data: { status: "synced" } });
-    expect(google.createCalls).toBe(0);
-    expect(synced).toEqual([NOW]);
-  });
-
-  test("`not_connected` pide volver a vincular y `unavailable` permite reintentar", async () => {
-    for (const code of ["not_connected", "unavailable"] as const) {
-      const { recorder, errors, synced } = fakeRecorder();
-      const google = fakeGateway({
-        createEvent: async () => ({ status: code }),
-      });
-      const result = await syncAppointmentToGoogleCalendar(depsFor(context(), google, recorder));
-      expect(result).toEqual({ status: "ok", data: { status: "error", errorCode: code } });
-      expect(errors).toEqual([{ attemptedAt: NOW, errorCode: code }]);
-      expect(synced).toHaveLength(0);
-    }
   });
 
   test("`already_exists` actualiza al horario vigente antes de registrar", async () => {
-    const { recorder, events } = fakeRecorder();
-    const updateCalls: { googleEventId: string; startAt: number; endAt: number }[] = [];
-    const google = fakeGateway({
-      createEvent: async (input) => ({ status: "already_exists", eventId: input.googleEventId }),
-      updateEvent: async (input) => {
-        updateCalls.push(input);
-        return { status: "updated", eventId: input.googleEventId };
-      },
-    });
     const newStart = START_AT + 24 * 60 * 60_000;
-    const result = await syncAppointmentToGoogleCalendar(
-      depsFor(context({ startAt: newStart, endAt: newStart + 60 * 60_000 }), google, recorder),
-    );
-    expect(result.status === "ok" && result.data.status).toBe("synced");
-    expect(updateCalls).toHaveLength(1);
-    expect(updateCalls[0]).toMatchObject({ startAt: newStart });
-    expect(events).toHaveLength(1);
-    expect(events[0]).toMatchObject({ startsAt: newStart });
+    const loaded = context({ startAt: newStart, endAt: newStart + 60 * 60_000 });
+    const { deps, calls, recorded } = depsFor(loaded, {
+      apiOutcomes: {
+        create: { status: "already_exists", eventId: "event-1" },
+      },
+      row: { startsAt: newStart, endsAt: newStart + 60 * 60_000, status: "scheduled" },
+    });
+    const result = await syncAppointmentToGoogleCalendar(deps);
+    expect(result).toEqual({ status: "ok", data: { status: "synced", eventId: "event-1" } });
+    expect(calls.map((call) => call.op)).toEqual(["create", "update"]);
+    expect(recorded).toEqual([{ kind: "success", eventId: "event-1", ownerId: STUDENT }]);
   });
 
-  test("cambios consecutivos sincronizan la última fecha, nunca una anterior", async () => {
-    const { recorder, events } = fakeRecorder();
-    const seen: number[] = [];
-    const google = fakeGateway({
+  test("eliminar prueba todos los calendarios con acceso (legado sin dueño)", async () => {
+    const loaded = context({
+      status: "cancelled_by_cereti",
+      reference: { eventId: "event-9", addedAt: CREATED_AT },
+      referenceIsCurrent: true,
+      ownerId: null,
+    });
+    const { deps, calls, seen } = depsFor(loaded, {
+      access: { [STUDENT]: { status: "unavailable" }, [PRO]: okToken("token-pro") },
+      row: { startsAt: START_AT, endsAt: END_AT, status: "cancelled_by_cereti" },
+    });
+    const result = await syncAppointmentToGoogleCalendar(deps);
+    expect(result).toEqual({ status: "ok", data: { status: "synced", eventId: "event-9" } });
+    expect(seen).toEqual([STUDENT, PRO]);
+    expect(calls).toEqual([{ op: "delete", token: "token-pro", id: "event-9" }]);
+  });
+
+  test("dos despachos: el viejo no pisa al nuevo y el siguiente repara Google", async () => {
+    const newStart = START_AT + 60 * 60_000;
+    const newEnd = newStart + 60 * 60_000;
+    // Fila que ya avanzó: otro despacho terminó primero con el horario nuevo.
+    const row: {
+      startsAt: number;
+      endsAt: number;
+      status: string;
+      refEventId?: string;
+      refStartsAt?: number;
+      refEndsAt?: number;
+    } = { startsAt: newStart, endsAt: newEnd, status: "rescheduled" };
+    const loadFresh = async (): Promise<CalendarSyncAppointmentContext> => ({
+      appointmentId: "appointment-1",
+      status: row.status as CalendarSyncAppointmentContext["status"],
+      startAt: row.startsAt,
+      endAt: row.endsAt,
+      createdAt: CREATED_AT,
+      reference:
+        row.refEventId === undefined ? null : { eventId: row.refEventId, addedAt: CREATED_AT },
+      referenceIsCurrent:
+        row.refEventId !== undefined &&
+        row.refStartsAt === row.startsAt &&
+        row.refEndsAt === row.endsAt,
+      ownerId: null,
+      participants: [participant(STUDENT), participant(PRO)],
+    });
+    const recorded: unknown[] = [];
+    let reschedules = 0;
+    const store: CalendarSyncStore = {
+      record: async (input) => {
+        if (
+          row.startsAt !== input.expected.startsAt ||
+          row.endsAt !== input.expected.endsAt ||
+          row.status !== input.expected.status
+        ) {
+          // Como la mutación real: limpia y deja pendiente para reparar.
+          row.refStartsAt = undefined;
+          row.refEndsAt = undefined;
+          return "stale";
+        }
+        recorded.push(input.outcome);
+        if (input.outcome.kind === "success") {
+          row.refEventId = input.outcome.eventId;
+          row.refStartsAt = input.expected.startsAt;
+          row.refEndsAt = input.expected.endsAt;
+        }
+        return "recorded";
+      },
+    };
+    const access = accessFor({ [STUDENT]: okToken("token-student") });
+    // Google real: el `id` determinista hace que el segundo crear responda
+    // `already_exists` y el turno actualice al horario vigente.
+    const seenIds = new Set<string>();
+    const googleCalls: string[] = [];
+    const statefulApi = (_token: string): CalendarSyncGateway => ({
       createEvent: async (input) => {
-        seen.push(input.startAt);
+        googleCalls.push(`create@${input.startAt}`);
+        if (seenIds.has(input.googleEventId)) {
+          return { status: "already_exists", eventId: input.googleEventId };
+        }
+        seenIds.add(input.googleEventId);
         return { status: "created", eventId: input.googleEventId };
       },
+      updateEvent: async (input) => {
+        googleCalls.push(`update@${input.startAt}`);
+        return { status: "updated", eventId: input.googleEventId };
+      },
+      deleteEvent: async (input) => {
+        googleCalls.push(`delete@${input.googleEventId}`);
+        return { status: "deleted", eventId: input.googleEventId };
+      },
     });
-    const first = context();
-    const second = context({
-      status: "rescheduled",
-      startAt: START_AT + 48 * 60 * 60_000,
-      endAt: END_AT + 48 * 60 * 60_000,
+    const runWith = (loaded: CalendarSyncAppointmentContext) =>
+      syncAppointmentToGoogleCalendar({
+        loadAppointment: async () => loaded,
+        resolveAccess: access.resolve,
+        calendarApi: statefulApi,
+        store,
+        reschedule: async () => {
+          reschedules += 1;
+        },
+        now: () => NOW,
+        timeZone: "America/Santiago",
+      });
+
+    // Despacho viejo con el horario anterior: no escribe y pide seguimiento.
+    const staleResult = await runWith(context());
+    expect(staleResult).toEqual({ status: "ok", data: { status: "pending" } });
+    expect(recorded).toHaveLength(0);
+    expect(reschedules).toBe(1);
+
+    // Seguimiento con lo vigente: Google termina con el horario nuevo.
+    const freshResult = await runWith(await loadFresh());
+    expect(freshResult).toEqual({
+      status: "ok",
+      data: { status: "synced", eventId: expect.any(String) },
     });
-    await syncAppointmentToGoogleCalendar(depsFor(first, google, recorder));
-    await syncAppointmentToGoogleCalendar(depsFor(second, google, recorder));
-    expect(seen).toEqual([first.startAt, second.startAt]);
-    expect(events.at(-1)).toMatchObject({ startsAt: second.startAt });
+    expect(googleCalls).toEqual([`create@${START_AT}`, `create@${newStart}`, `update@${newStart}`]);
+    expect(recorded).toEqual([{ kind: "success", eventId: expect.any(String), ownerId: STUDENT }]);
   });
 
   test("rechaza con códigos del contrato común, nunca con texto", async () => {
-    const { recorder } = fakeRecorder();
-    const missing = await syncAppointmentToGoogleCalendar(depsFor(null, fakeGateway(), recorder));
+    const { deps } = depsFor(null);
+    const missing = await syncAppointmentToGoogleCalendar(deps);
     expect(missing).toEqual({
       status: "error",
       error: { code: "unauthorized", message: "No autorizado" },
     });
     const invalid = await syncAppointmentToGoogleCalendar({
+      ...deps,
       loadAppointment: async () => context(),
-      google: fakeGateway(),
-      sync: recorder,
       now: () => Number.NaN,
-      timeZone: "America/Santiago",
     });
     expect(invalid).toEqual({
       status: "error",

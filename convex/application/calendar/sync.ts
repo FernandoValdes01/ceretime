@@ -1,5 +1,8 @@
-import { buildCalendarEvent, toCalendarFile } from "../../domain/calendar/calendar_event";
-import { isCalendarActionableStatus } from "../../domain/appointments/appointment";
+import { buildCalendarEvent } from "../../domain/calendar/calendar_event";
+import {
+  isCalendarActionableStatus,
+  type AppointmentStatus,
+} from "../../domain/appointments/appointment";
 import {
   conflictError,
   errResult,
@@ -7,13 +10,12 @@ import {
   unauthorizedError,
   type ApiResult,
 } from "../../domain/errors/api_error";
-import type { CalendarAppointmentContext } from "./calendar";
 
-/** Resultado del proveedor al eliminar el evento de una atención cancelada. */
-export type GoogleCalendarDeleteOutcome =
-  | { readonly status: "deleted"; readonly eventId: string }
-  | { readonly status: "not_found"; readonly eventId: string }
+/** Acceso resuelto para un participante: token vigente o motivo genérico. */
+export type CalendarSyncAccess =
+  | { readonly status: "ok"; readonly accessToken: string }
   | { readonly status: "not_connected" }
+  | { readonly status: "never_linked" }
   | { readonly status: "unavailable" };
 
 /** Resultado de crear el evento en la sincronización automática. */
@@ -29,8 +31,15 @@ export type GoogleCalendarSyncUpdateOutcome =
   | { readonly status: "not_connected" }
   | { readonly status: "unavailable" };
 
+/** Resultado de eliminar el evento de una atención cancelada. */
+export type GoogleCalendarSyncDeleteOutcome =
+  | { readonly status: "deleted"; readonly eventId: string }
+  | { readonly status: "not_found"; readonly eventId: string }
+  | { readonly status: "not_connected" }
+  | { readonly status: "unavailable" };
+
 /** Puerto del proveedor para la sincronización automática. */
-export interface CalendarSyncGoogleGateway {
+export interface CalendarSyncGateway {
   createEvent(input: {
     readonly googleEventId: string;
     readonly title: string;
@@ -45,29 +54,69 @@ export interface CalendarSyncGoogleGateway {
     readonly endAt: number;
     readonly timeZone: string;
   }): Promise<GoogleCalendarSyncUpdateOutcome>;
-  deleteEvent(input: { readonly googleEventId: string }): Promise<GoogleCalendarDeleteOutcome>;
+  deleteEvent(input: { readonly googleEventId: string }): Promise<GoogleCalendarSyncDeleteOutcome>;
 }
 
-/** Escritura de la referencia del evento y del estado de sincronización. */
-export interface CalendarSyncRecorder {
-  recordEvent(input: {
+/** Horario y estado con los que el despacho debe coincidir para escribir. */
+export interface CalendarSyncExpectation {
+  readonly startsAt: number;
+  readonly endsAt: number;
+  readonly status: AppointmentStatus;
+}
+
+/**
+ * Escritura del resultado con verificación de vigencia (TI2-162).
+ *
+ * La implementación compara en la misma transacción el horario y el estado
+ * esperados con la fila vigente: si otro despacho terminó antes con un cambio
+ * más nuevo, responde `stale` sin escribir y la última acción siempre gana. Si
+ * el guardado falla, la implementación lanza: la fila queda `pending` y el
+ * reintento la sincroniza.
+ */
+export interface CalendarSyncStore {
+  record(input: {
     readonly appointmentId: string;
-    readonly eventId: string;
-    readonly addedAt: number;
-    readonly startsAt: number;
-    readonly endsAt: number;
-  }): Promise<void>;
-  recordSynced(input: { readonly attemptedAt: number }): Promise<void>;
-  recordError(input: {
     readonly attemptedAt: number;
-    readonly errorCode: "not_connected" | "unavailable";
-  }): Promise<void>;
+    readonly expected: CalendarSyncExpectation;
+    readonly outcome:
+      | { readonly kind: "success"; readonly eventId: string; readonly ownerId: string }
+      | { readonly kind: "noop"; readonly eventId?: string }
+      | { readonly kind: "failure"; readonly errorCode: "not_connected" | "unavailable" };
+  }): Promise<"recorded" | "stale">;
+}
+
+/** Atención cargada para sincronizar, con dueño y participantes. */
+export interface CalendarSyncAppointmentContext {
+  readonly appointmentId: string;
+  readonly status: AppointmentStatus;
+  readonly startAt: number;
+  readonly endAt: number;
+  readonly createdAt: number;
+  readonly reference: { readonly eventId: string; readonly addedAt: number } | null;
+  /**
+   * Verdadero solo si la referencia guardada se sincronizó con el horario
+   * vigente. Una referencia ausente o con el horario anterior está obsoleta.
+   */
+  readonly referenceIsCurrent: boolean;
+  /**
+   * `subject` de Better Auth del calendario donde vive el evento, o `null` si
+   * todavía no se sincronizó en ninguno. Actualizar y eliminar usan siempre
+   * ese calendario.
+   */
+  readonly ownerId: string | null;
+  /** Participantes en orden de intento (estudiante primero). */
+  readonly participants: readonly {
+    readonly subject: string;
+    /** Verdadero si alguna vez vinculó Calendar (aunque hoy falte el token). */
+    readonly everLinked: boolean;
+  }[];
 }
 
 /** Resultado público de la sincronización automática, sin detalles del proveedor. */
 export type CalendarSyncResult =
   | { readonly status: "synced"; readonly eventId?: string }
-  | { readonly status: "error"; readonly errorCode: "not_connected" | "unavailable" };
+  | { readonly status: "error"; readonly errorCode: "not_connected" | "unavailable" }
+  | { readonly status: "pending" };
 
 /**
  * Programa la sincronización tras confirmar el cambio (TI2-162).
@@ -83,49 +132,29 @@ export interface CalendarSyncScheduler {
   scheduleSync(appointmentId: string): Promise<void>;
 }
 
-async function recordEventBestEffort(
-  recorder: Pick<CalendarSyncRecorder, "recordEvent">,
-  context: CalendarAppointmentContext,
-  eventId: string,
-  addedAt: number,
-): Promise<void> {
-  try {
-    await recorder.recordEvent({
-      appointmentId: context.appointmentId,
-      eventId,
-      addedAt,
-      startsAt: context.startAt,
-      endsAt: context.endAt,
-    });
-  } catch {
-    // El identificador es determinista: un próximo reintento lo recupera sin
-    // duplicarlo. No se expone el fallo interno.
-  }
+function isCancelledStatus(status: AppointmentStatus): boolean {
+  return status === "cancelled_by_student" || status === "cancelled_by_cereti";
 }
 
 /**
  * Sincronización automática de una atención tras confirmar el cambio (TI2-162).
  *
- * Carga la atención vigente en el momento de ejecutar, no la de cuando se
- * programó: dos reagendamientos seguidos sincronizan la última fecha, nunca
- * una anterior. Reutiliza el mismo evento determinista y el mismo `.ics` de
- * TI2-122, sin otro generador ni notas.
- *
- * - `scheduled` o `rescheduled`: crea o actualiza el mismo evento.
- * - `cancelled_by_student` o `cancelled_by_cereti`: elimina el evento si hay
- *   referencia; sin referencia no hay nada que borrar.
- * - Otro estado terminal: no toca Google; se marca sincronizado para no
- *   reintentar un evento que ya no es vigente.
- *
- * Un fallo del proveedor nunca revierte la reserva: se registra `error` con el
- * código genérico (`not_connected` pide volver a vincular, `unavailable`
- * permite reintentar) y la atención sigue vigente. Los errores usan el
- * contrato común; los clientes distinguen por `code`, nunca por el texto.
+ * La política de qué calendario sincronizar vive acá y se prueba con dobles:
+ * con referencia se usa siempre el calendario del dueño (`ownerId`); sin
+ * referencia se prueban los participantes en orden hasta el primer éxito y ese
+ * calendario queda como dueño. Eliminar prueba todos los calendarios con
+ * acceso (borrar lo inexistente es éxito idempotente). Cuando nadie vinculó,
+ * queda `pending` sin pedir nada; con vínculo perdido responde `not_connected`
+ * para pedir volver a vincular y con fallo temporal `unavailable` para
+ * reintentar. Un fallo nunca revierte la reserva. Los errores usan el contrato
+ * común; los clientes distinguen por `code`, nunca por el texto.
  */
 export async function syncAppointmentToGoogleCalendar(deps: {
-  readonly loadAppointment: () => Promise<CalendarAppointmentContext | null>;
-  readonly google: CalendarSyncGoogleGateway;
-  readonly sync: CalendarSyncRecorder;
+  readonly loadAppointment: () => Promise<CalendarSyncAppointmentContext | null>;
+  readonly resolveAccess: (subject: string) => Promise<CalendarSyncAccess>;
+  readonly calendarApi: (accessToken: string) => CalendarSyncGateway;
+  readonly store: CalendarSyncStore;
+  readonly reschedule: () => Promise<void>;
   readonly now: () => number;
   readonly timeZone: string;
 }): Promise<ApiResult<CalendarSyncResult>> {
@@ -137,27 +166,85 @@ export async function syncAppointmentToGoogleCalendar(deps: {
     return errResult(conflictError());
   }
 
-  const isCancelled =
-    context.status === "cancelled_by_student" || context.status === "cancelled_by_cereti";
+  const expected: CalendarSyncExpectation = {
+    startsAt: context.startAt,
+    endsAt: context.endAt,
+    status: context.status,
+  };
+  const record = (
+    outcome: Parameters<CalendarSyncStore["record"]>[0]["outcome"],
+  ): Promise<"recorded" | "stale"> =>
+    deps.store.record({
+      appointmentId: context.appointmentId,
+      attemptedAt,
+      expected,
+      outcome,
+    });
+
+  async function finish(
+    outcome: Parameters<CalendarSyncStore["record"]>[0]["outcome"],
+  ): Promise<ApiResult<CalendarSyncResult>> {
+    const stored = await record(outcome);
+    if (stored === "stale") {
+      // Otro despacho terminó antes con un cambio más nuevo: no se pisa y se
+      // programa un seguimiento que lee lo vigente.
+      await deps.reschedule();
+      return okResult({ status: "pending" });
+    }
+    if (outcome.kind === "failure") {
+      return okResult({ status: "error", errorCode: outcome.errorCode });
+    }
+    if (outcome.kind === "success") {
+      return okResult({ status: "synced", eventId: outcome.eventId });
+    }
+    return okResult({
+      status: "synced",
+      ...(outcome.eventId === undefined ? {} : { eventId: outcome.eventId }),
+    });
+  }
+
+  const isCancelled = isCancelledStatus(context.status);
   if (isCancelled) {
     if (context.reference === null) {
-      await deps.sync.recordSynced({ attemptedAt });
-      return okResult({ status: "synced" });
+      return await finish({ kind: "noop" });
     }
-    const deleted = await deps.google.deleteEvent({
-      googleEventId: context.reference.eventId,
-    });
-    if (deleted.status === "not_connected" || deleted.status === "unavailable") {
-      await deps.sync.recordError({ attemptedAt, errorCode: deleted.status });
-      return okResult({ status: "error", errorCode: deleted.status });
+    const targets =
+      context.ownerId !== null
+        ? [{ subject: context.ownerId, everLinked: true }]
+        : context.participants;
+    let sawUnavailable = false;
+    let sawNotConnected = false;
+    let sawNeverLinked = false;
+    for (const target of targets) {
+      const access = await deps.resolveAccess(target.subject);
+      if (access.status === "never_linked") {
+        if (context.ownerId !== null) sawNotConnected = true;
+        else sawNeverLinked = true;
+        continue;
+      }
+      if (access.status !== "ok") {
+        if (access.status === "unavailable") sawUnavailable = true;
+        else sawNotConnected = true;
+        continue;
+      }
+      const deleted = await deps.calendarApi(access.accessToken).deleteEvent({
+        googleEventId: context.reference.eventId,
+      });
+      if (deleted.status === "not_connected" || deleted.status === "unavailable") {
+        if (deleted.status === "unavailable") sawUnavailable = true;
+        else sawNotConnected = true;
+        continue;
+      }
+      return await finish({ kind: "noop", eventId: deleted.eventId });
     }
-    await deps.sync.recordSynced({ attemptedAt });
-    return okResult({ status: "synced", eventId: deleted.eventId });
+    if (sawUnavailable) return await finish({ kind: "failure", errorCode: "unavailable" });
+    if (sawNotConnected) return await finish({ kind: "failure", errorCode: "not_connected" });
+    if (sawNeverLinked || targets.length === 0) return okResult({ status: "pending" });
+    return await finish({ kind: "failure", errorCode: "not_connected" });
   }
 
   if (!isCalendarActionableStatus(context.status)) {
-    await deps.sync.recordSynced({ attemptedAt });
-    return okResult({ status: "synced" });
+    return await finish({ kind: "noop" });
   }
 
   const event = buildCalendarEvent({
@@ -167,63 +254,102 @@ export async function syncAppointmentToGoogleCalendar(deps: {
     timeZone: deps.timeZone,
     generatedAt: context.createdAt,
   });
-  // El `.ics` se construye con el mismo generador de TI2-122 para no duplicar
-  // la representación; acá solo valida que la fecha, la duración y la zona
-  // viajan en el evento antes de llamar al proveedor.
-  toCalendarFile(event);
 
-  if (context.reference !== null && !context.referenceIsCurrent) {
-    const updated = await deps.google.updateEvent({
-      googleEventId: context.reference.eventId,
+  const targets =
+    context.ownerId !== null
+      ? [{ subject: context.ownerId, everLinked: true }]
+      : context.participants;
+  let sawUnavailable = false;
+  let sawNotConnected = false;
+  const attemptUpsert = async (
+    googleEventId: string,
+    subject: string,
+  ): Promise<
+    | { readonly done: true; readonly result: ApiResult<CalendarSyncResult> }
+    | { readonly done: false }
+  > => {
+    const access = await deps.resolveAccess(subject);
+    if (access.status === "never_linked") {
+      if (context.ownerId !== null) sawNotConnected = true;
+      return { done: false };
+    }
+    if (access.status !== "ok") {
+      if (access.status === "unavailable") sawUnavailable = true;
+      else sawNotConnected = true;
+      return { done: false };
+    }
+    const api = deps.calendarApi(access.accessToken);
+    if (context.reference === null) {
+      const created = await api.createEvent({
+        googleEventId: event.googleEventId,
+        title: event.title,
+        startAt: event.startAt,
+        endAt: event.endAt,
+        timeZone: event.timeZone,
+      });
+      if (created.status === "not_connected" || created.status === "unavailable") {
+        if (created.status === "unavailable") sawUnavailable = true;
+        else sawNotConnected = true;
+        return { done: false };
+      }
+      if (created.status === "already_exists") {
+        const updated = await api.updateEvent({
+          googleEventId: created.eventId,
+          title: event.title,
+          startAt: event.startAt,
+          endAt: event.endAt,
+          timeZone: event.timeZone,
+        });
+        if (updated.status === "not_connected" || updated.status === "unavailable") {
+          if (updated.status === "unavailable") sawUnavailable = true;
+          else sawNotConnected = true;
+          return { done: false };
+        }
+        return {
+          done: true,
+          result: await finish({
+            kind: "success",
+            eventId: updated.eventId,
+            ownerId: subject,
+          }),
+        };
+      }
+      return {
+        done: true,
+        result: await finish({ kind: "success", eventId: created.eventId, ownerId: subject }),
+      };
+    }
+    const updated = await api.updateEvent({
+      googleEventId: googleEventId,
       title: event.title,
       startAt: event.startAt,
       endAt: event.endAt,
       timeZone: event.timeZone,
     });
     if (updated.status === "not_connected" || updated.status === "unavailable") {
-      await deps.sync.recordError({ attemptedAt, errorCode: updated.status });
-      return okResult({ status: "error", errorCode: updated.status });
+      if (updated.status === "unavailable") sawUnavailable = true;
+      else sawNotConnected = true;
+      return { done: false };
     }
-    await recordEventBestEffort(deps.sync, context, updated.eventId, context.reference.addedAt);
-    await deps.sync.recordSynced({ attemptedAt });
-    return okResult({ status: "synced", eventId: updated.eventId });
-  }
+    return {
+      done: true,
+      result: await finish({ kind: "success", eventId: updated.eventId, ownerId: subject }),
+    };
+  };
 
   if (context.reference !== null && context.referenceIsCurrent) {
-    await deps.sync.recordSynced({ attemptedAt });
-    return okResult({ status: "synced", eventId: context.reference.eventId });
+    return await finish({ kind: "noop", eventId: context.reference.eventId });
   }
 
-  const created = await deps.google.createEvent({
-    googleEventId: event.googleEventId,
-    title: event.title,
-    startAt: event.startAt,
-    endAt: event.endAt,
-    timeZone: event.timeZone,
-  });
-  if (created.status === "not_connected" || created.status === "unavailable") {
-    await deps.sync.recordError({ attemptedAt, errorCode: created.status });
-    return okResult({ status: "error", errorCode: created.status });
+  for (const target of targets) {
+    const attempted = await attemptUpsert(
+      context.reference === null ? event.googleEventId : context.reference.eventId,
+      target.subject,
+    );
+    if (attempted.done) return attempted.result;
   }
-
-  if (created.status === "already_exists") {
-    const updated = await deps.google.updateEvent({
-      googleEventId: created.eventId,
-      title: event.title,
-      startAt: event.startAt,
-      endAt: event.endAt,
-      timeZone: event.timeZone,
-    });
-    if (updated.status === "not_connected" || updated.status === "unavailable") {
-      await deps.sync.recordError({ attemptedAt, errorCode: updated.status });
-      return okResult({ status: "error", errorCode: updated.status });
-    }
-    await recordEventBestEffort(deps.sync, context, updated.eventId, attemptedAt);
-    await deps.sync.recordSynced({ attemptedAt });
-    return okResult({ status: "synced", eventId: updated.eventId });
-  }
-
-  await recordEventBestEffort(deps.sync, context, created.eventId, attemptedAt);
-  await deps.sync.recordSynced({ attemptedAt });
-  return okResult({ status: "synced", eventId: created.eventId });
+  if (sawUnavailable) return await finish({ kind: "failure", errorCode: "unavailable" });
+  if (sawNotConnected) return await finish({ kind: "failure", errorCode: "not_connected" });
+  // Nadie vinculó: queda `pending` sin pedir nada; el reintento lo retoma.
+  return okResult({ status: "pending" });
 }

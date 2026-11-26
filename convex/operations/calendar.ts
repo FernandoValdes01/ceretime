@@ -17,13 +17,19 @@ import { v } from "convex/values";
 import { env, internalAction, internalMutation, internalQuery } from "../_generated/server";
 import { internal } from "../_generated/api";
 import { loadCalendarAppointment } from "../application/calendar/calendar";
-import { syncAppointmentToGoogleCalendar } from "../application/calendar/sync";
+import {
+  syncAppointmentToGoogleCalendar,
+  type CalendarSyncAccess,
+} from "../application/calendar/sync";
 import {
   checkCalendarLinkAccess as checkCalendarLinkAccessUseCase,
   markCalendarDisconnected as markCalendarDisconnectedUseCase,
 } from "../application/calendar/calendar_link";
 import { authorizationReader } from "../infrastructure/accompaniments/repository";
-import { calendarLinkStore } from "../infrastructure/calendar/repository";
+import {
+  calendarLinkStore,
+  readCalendarConnectionMetadata,
+} from "../infrastructure/calendar/repository";
 import {
   appointmentCalendarReader,
   normalizeAppointmentId,
@@ -35,11 +41,25 @@ import {
 } from "../infrastructure/calendar/repository";
 import {
   calendarOAuthClientConfigFromEnv,
-  googleCalendarGatewayWithToken,
+  deleteCalendarEvent,
+  patchCalendarEvent,
+  postCalendarEvent,
   resolveBackgroundCalendarAccess,
 } from "../infrastructure/calendar/google_calendar";
 import { AGENDA_TIME_ZONE } from "../domain/availability/availability";
 import { appointmentStatusUnion } from "../infrastructure/validators";
+
+/** Espera mínima tras programar antes de que el cron tome un `pending`. */
+const SYNC_DISPATCH_GRACE_MS = 60_000;
+
+/** Tope de reintentos de un fallo recuperable antes de dejar de insistir. */
+const MAX_SYNC_ATTEMPTS = 10;
+
+/** Espera base entre reintentos, con duplicación y tope de una hora. */
+function syncRetryBackoffMs(attempts: number): number {
+  const doubled = 5 * 60_000 * 2 ** Math.max(0, attempts - 1);
+  return Math.min(doubled, 60 * 60_000);
+}
 
 const calendarAppointmentContextShape = v.object({
   appointmentId: v.string(),
@@ -81,7 +101,9 @@ export const loadAppointmentCalendarContext = internalQuery({
  * Guarda la referencia del evento después de una creación o actualización
  * exitosa. El horario guardado es el que realmente tiene el evento: al
  * reagendar la atención después, la referencia conserva el horario anterior y
- * queda obsoleta, sin confirmar que la nueva fecha está agregada.
+ * queda obsoleta, sin confirmar que la nueva fecha está agregada. Resuelve el
+ * dueño desde el estudiante de la atención (el flujo explícito solo lo usa
+ * él) para que la sincronización use siempre ese calendario.
  */
 export const recordCalendarEventReference = internalMutation({
   args: {
@@ -97,11 +119,15 @@ export const recordCalendarEventReference = internalMutation({
     if (appointmentId === null) return null;
     if (args.eventId.length === 0 || args.eventId.length > 1024) return null;
     if (![args.addedAt, args.startsAt, args.endsAt].every(Number.isFinite)) return null;
+    const doc = await ctx.db.get(appointmentId);
+    const student = doc === null ? null : await ctx.db.get(doc.studentId);
+    const ownerId = subjectOf(student?.tokenIdentifier ?? null);
     await recordCalendarEvent(ctx, appointmentId, {
       eventId: args.eventId,
       addedAt: args.addedAt,
       startsAt: args.startsAt,
       endsAt: args.endsAt,
+      ...(ownerId === null ? {} : { ownerId }),
     });
     return null;
   },
@@ -173,8 +199,10 @@ export const markCalendarDisconnected = internalMutation({
  *
  * La sincronización automática corre en segundo plano sin sesión: lee la
  * atención vigente y los `subject` de sus participantes desde las filas
- * `users`, sin aceptar identificadores del cliente. Los tokens se resuelven
- * después por `subject` en la acción, nunca se devuelven.
+ * `users`, sin aceptar identificadores del cliente. Incluye el dueño del
+ * evento y si cada participante vinculó alguna vez, para pedir volver a
+ * vincular solo cuando se perdió un permiso. Los tokens se resuelven después por
+ * `subject` en la acción, nunca se devuelven.
  */
 export const loadAppointmentSyncContext = internalQuery({
   args: { appointmentId: v.string() },
@@ -182,8 +210,8 @@ export const loadAppointmentSyncContext = internalQuery({
     v.null(),
     v.object({
       ...calendarAppointmentContextShape.fields,
-      studentSubject: v.string(),
-      professionalSubjects: v.array(v.string()),
+      ownerId: v.union(v.string(), v.null()),
+      participants: v.array(v.object({ subject: v.string(), everLinked: v.boolean() })),
     }),
   ),
   handler: async (ctx, args) => {
@@ -191,26 +219,27 @@ export const loadAppointmentSyncContext = internalQuery({
     if (appointmentId === null) return null;
     const doc = await ctx.db.get(appointmentId);
     if (doc === null) return null;
-    const student = await ctx.db.get(doc.studentId);
-    const studentSubject = subjectOf(student?.tokenIdentifier ?? null);
-    if (studentSubject === null) return null;
+    const participantIds = [doc.studentId, doc.professionalId];
     const professionals = await ctx.db
       .query("appointmentProfessionals")
       .withIndex("by_appointmentId_and_professionalId", (q) => q.eq("appointmentId", appointmentId))
       .take(10);
-    const subjects: string[] = [];
-    const seen = new Set<string>();
-    const pushSubject = (subject: string | null) => {
-      if (subject === null || seen.has(subject)) return;
-      seen.add(subject);
-      subjects.push(subject);
-    };
-    const responsible = await ctx.db.get(doc.professionalId);
-    pushSubject(subjectOf(responsible?.tokenIdentifier ?? null));
     for (const row of professionals) {
-      const user = await ctx.db.get(row.professionalId);
-      pushSubject(subjectOf(user?.tokenIdentifier ?? null));
+      if (!participantIds.some((id) => id === row.professionalId)) {
+        participantIds.push(row.professionalId);
+      }
     }
+    const participants: { readonly subject: string; readonly everLinked: boolean }[] = [];
+    const seen = new Set<string>();
+    for (const userId of participantIds) {
+      const user = await ctx.db.get(userId);
+      const subject = subjectOf(user?.tokenIdentifier ?? null);
+      if (subject === null || seen.has(subject)) continue;
+      seen.add(subject);
+      const metadata = await readCalendarConnectionMetadata(ctx, userId);
+      participants.push({ subject, everLinked: metadata !== null });
+    }
+    if (participants.length === 0) return null;
     const reference =
       doc.calendarEventId === undefined
         ? null
@@ -229,8 +258,8 @@ export const loadAppointmentSyncContext = internalQuery({
         reference !== null &&
         doc.calendarEventStartsAt === doc.startsAt &&
         doc.calendarEventEndsAt === doc.endsAt,
-      studentSubject,
-      professionalSubjects: subjects.filter((subject) => subject !== studentSubject),
+      ownerId: doc.calendarEventOwnerId ?? null,
+      participants,
     };
   },
 });
@@ -250,33 +279,104 @@ export const markAppointmentSyncPending = internalMutation({
   handler: async (ctx, args) => {
     const appointmentId = normalizeAppointmentId(ctx, args.appointmentId);
     if (appointmentId === null) return null;
-    await markSyncPendingRow(ctx, appointmentId);
+    await markSyncPendingRow(ctx, appointmentId, Date.now());
     return null;
   },
 });
 
-/** Registra la referencia del evento tras un éxito en Google. */
-export const recordSyncEventReference = internalMutation({
+const syncExpectationValidator = v.object({
+  startsAt: v.number(),
+  endsAt: v.number(),
+  status: appointmentStatusUnion,
+});
+
+const syncOutcomeValidator = v.union(
+  v.object({
+    kind: v.literal("success"),
+    eventId: v.string(),
+    ownerId: v.string(),
+  }),
+  v.object({ kind: v.literal("noop"), eventId: v.optional(v.string()) }),
+  v.object({
+    kind: v.literal("failure"),
+    errorCode: v.union(v.literal("not_connected"), v.literal("unavailable")),
+  }),
+);
+
+/**
+ * Registra el resultado de un despacho verificando vigencia (TI2-162).
+ *
+ * Compara en la misma transacción el horario y el estado esperados con la
+ * fila vigente: si otro despacho terminó antes con un cambio más nuevo,
+ * responde `stale` sin escribir el resultado viejo. Además limpia el horario
+ * registrado y deja `pending`, así el seguimiento no confía la referencia y
+ * actualiza Google con lo vigente en vez de confirmar una fecha vieja como
+ * sincronizada. La última acción siempre gana.
+ */
+export const recordCalendarSyncOutcome = internalMutation({
   args: {
     appointmentId: v.string(),
-    eventId: v.string(),
-    addedAt: v.number(),
-    startsAt: v.number(),
-    endsAt: v.number(),
+    attemptedAt: v.number(),
+    expected: syncExpectationValidator,
+    outcome: syncOutcomeValidator,
   },
-  returns: v.null(),
+  returns: v.union(v.literal("recorded"), v.literal("stale"), v.literal("invalid")),
   handler: async (ctx, args) => {
     const appointmentId = normalizeAppointmentId(ctx, args.appointmentId);
-    if (appointmentId === null) return null;
-    if (args.eventId.length === 0 || args.eventId.length > 1024) return null;
-    if (![args.addedAt, args.startsAt, args.endsAt].every(Number.isFinite)) return null;
-    await recordCalendarEvent(ctx, appointmentId, {
-      eventId: args.eventId,
-      addedAt: args.addedAt,
-      startsAt: args.startsAt,
-      endsAt: args.endsAt,
+    if (appointmentId === null) return "invalid" as const;
+    const doc = await ctx.db.get(appointmentId);
+    if (doc === null) return "invalid" as const;
+    if (!Number.isFinite(args.attemptedAt) || args.attemptedAt <= 0) {
+      return "invalid" as const;
+    }
+    if (
+      doc.startsAt !== args.expected.startsAt ||
+      doc.endsAt !== args.expected.endsAt ||
+      doc.status !== args.expected.status
+    ) {
+      await ctx.db.patch(appointmentId, {
+        calendarSyncStatus: "pending",
+        calendarSyncErrorCode: undefined,
+        calendarSyncScheduledAt: args.attemptedAt,
+        calendarEventStartsAt: undefined,
+        calendarEventEndsAt: undefined,
+      });
+      return "stale" as const;
+    }
+    if (
+      args.outcome.kind === "success" &&
+      (args.outcome.eventId.length === 0 ||
+        args.outcome.eventId.length > 1024 ||
+        args.outcome.ownerId.length === 0)
+    ) {
+      return "invalid" as const;
+    }
+    const attempts = (doc.calendarSyncAttempts ?? 0) + 1;
+    if (args.outcome.kind === "failure") {
+      await ctx.db.patch(appointmentId, {
+        calendarSyncStatus: "error",
+        calendarSyncAttempts: attempts,
+        calendarSyncLastAttemptAt: args.attemptedAt,
+        calendarSyncErrorCode: args.outcome.errorCode,
+      });
+      return "recorded" as const;
+    }
+    await ctx.db.patch(appointmentId, {
+      calendarSyncStatus: "synced",
+      calendarSyncAttempts: attempts,
+      calendarSyncLastAttemptAt: args.attemptedAt,
+      calendarSyncErrorCode: undefined,
+      ...(args.outcome.kind === "success"
+        ? {
+            calendarEventId: args.outcome.eventId,
+            calendarEventAddedAt: args.attemptedAt,
+            calendarEventStartsAt: args.expected.startsAt,
+            calendarEventEndsAt: args.expected.endsAt,
+            calendarEventOwnerId: args.outcome.ownerId,
+          }
+        : {}),
     });
-    return null;
+    return "recorded" as const;
   },
 });
 
@@ -316,6 +416,7 @@ const syncActionResultValidator = v.union(
     status: v.literal("error"),
     errorCode: v.union(v.literal("not_connected"), v.literal("unavailable")),
   }),
+  v.object({ status: v.literal("pending") }),
   v.object({ status: v.literal("skipped") }),
 );
 
@@ -323,10 +424,13 @@ const syncActionResultValidator = v.union(
  * Sincronización automática en segundo plano (TI2-162).
  *
  * Lee la atención vigente en el momento de ejecutar, así dos cambios seguidos
- * sincronizan la última fecha. Sincroniza al Estudiante dueño y a los
- * profesionales de la atención que tengan vínculo: el `id` determinista evita
- * duplicados en reintentos. Un fallo no deshace la reserva: registra `error`
- * con el código genérico y la atención sigue vigente.
+ * sincronizan la última fecha. Con referencia usa siempre el calendario del
+ * dueño; sin referencia prueba los participantes en orden y el primero con
+ * éxito queda como dueño. Eliminar prueba todos los calendarios con acceso.
+ * Cuando nadie vinculó queda `pending` sin pedir nada; con vínculo perdido
+ * responde `not_connected` y con fallo temporal `unavailable`. Un fallo no
+ * deshace la reserva: registra `error` con el código genérico y la atención
+ * sigue vigente.
  */
 export const syncAppointmentCalendar = internalAction({
   args: { appointmentId: v.string() },
@@ -340,114 +444,125 @@ export const syncAppointmentCalendar = internalAction({
       readonly createdAt: number;
       readonly reference: { readonly eventId: string; readonly addedAt: number } | null;
       readonly referenceIsCurrent: boolean;
-      readonly studentSubject: string;
-      readonly professionalSubjects: readonly string[];
+      readonly ownerId: string | null;
+      readonly participants: readonly { readonly subject: string; readonly everLinked: boolean }[];
     } | null = await ctx.runQuery(internal.operations.calendar.loadAppointmentSyncContext, {
       appointmentId: args.appointmentId,
     });
-    if (loaded === null) return { status: "skipped" as const };
+    if (loaded === null) {
+      // Sin atención o sin sujeto no hay nada que sincronizar: estado terminal
+      // que el reintento no vuelve a programar.
+      await ctx.runMutation(internal.operations.calendar.recordSyncAttempt, {
+        appointmentId: args.appointmentId,
+        status: "error",
+        attemptedAt: Date.now(),
+        errorCode: "not_connected",
+      });
+      return { status: "skipped" as const };
+    }
 
     const client = calendarOAuthClientConfigFromEnv({
       GOOGLE_CLIENT_ID: env.GOOGLE_CLIENT_ID,
       GOOGLE_CLIENT_SECRET: env.GOOGLE_CLIENT_SECRET,
     });
-    const subjects = [loaded.studentSubject, ...loaded.professionalSubjects];
     const attemptedAt = Date.now();
+    const everLinkedBySubject = new Map(
+      loaded.participants.map((participant) => [participant.subject, participant.everLinked]),
+    );
 
-    const loadAppointment = async () => ({
-      appointmentId: loaded.appointmentId,
-      status: loaded.status,
-      startAt: loaded.startAt,
-      endAt: loaded.endAt,
-      createdAt: loaded.createdAt,
-      reference: loaded.reference,
-      referenceIsCurrent: loaded.referenceIsCurrent,
-    });
-
-    let lastError: "not_connected" | "unavailable" | null = null;
-    let syncedEventId: string | undefined;
-    let attempted = false;
-
-    for (const subject of subjects) {
-      const access = await resolveBackgroundCalendarAccess(ctx, subject, client);
-      if (access.status !== "ok") {
-        lastError = access.status;
-        continue;
-      }
-      attempted = true;
-      const gateway = googleCalendarGatewayWithToken(access.accessToken);
-      const outcome = await syncAppointmentToGoogleCalendar({
-        loadAppointment,
-        google: gateway,
-        sync: {
-          recordEvent: async (input) => {
-            await ctx.runMutation(internal.operations.calendar.recordSyncEventReference, input);
-          },
-          recordSynced: async (input) => {
-            await ctx.runMutation(internal.operations.calendar.recordSyncAttempt, {
-              appointmentId: args.appointmentId,
-              status: "synced",
+    const outcome = await syncAppointmentToGoogleCalendar({
+      loadAppointment: async () => ({
+        appointmentId: loaded.appointmentId,
+        status: loaded.status,
+        startAt: loaded.startAt,
+        endAt: loaded.endAt,
+        createdAt: loaded.createdAt,
+        reference: loaded.reference,
+        referenceIsCurrent: loaded.referenceIsCurrent,
+        ownerId: loaded.ownerId,
+        participants: [...loaded.participants],
+      }),
+      resolveAccess: async (subject): Promise<CalendarSyncAccess> => {
+        const access = await resolveBackgroundCalendarAccess(
+          ctx,
+          subject,
+          client,
+          everLinkedBySubject.get(subject) ?? false,
+        );
+        return access;
+      },
+      calendarApi: (accessToken) => ({
+        createEvent: (input) => postCalendarEvent(accessToken, input),
+        updateEvent: (input) => patchCalendarEvent(accessToken, input),
+        deleteEvent: (input) => deleteCalendarEvent(accessToken, input),
+      }),
+      store: {
+        record: async (input) => {
+          const stored: "recorded" | "stale" | "invalid" = await ctx.runMutation(
+            internal.operations.calendar.recordCalendarSyncOutcome,
+            {
+              appointmentId: input.appointmentId,
               attemptedAt: input.attemptedAt,
-            });
-          },
-          recordError: async (input) => {
-            await ctx.runMutation(internal.operations.calendar.recordSyncAttempt, {
-              appointmentId: args.appointmentId,
-              status: "error",
-              attemptedAt: input.attemptedAt,
-              errorCode: input.errorCode,
-            });
-          },
+              expected: { ...input.expected },
+              outcome: input.outcome,
+            },
+          );
+          return stored === "recorded" ? "recorded" : "stale";
         },
-        now: () => attemptedAt,
-        timeZone: AGENDA_TIME_ZONE,
-      });
-      if (outcome.status === "error") {
-        // Rechazo del contrato común (`unauthorized`, `conflict`): no es un
-        // fallo del proveedor y no se registra como `error` de sincronización.
-        return { status: "skipped" as const };
-      }
-      if (outcome.data.status === "error") {
-        lastError = outcome.data.errorCode;
-        continue;
-      }
-      syncedEventId = outcome.data.eventId;
-      lastError = null;
-      break;
-    }
-
-    if (!attempted && lastError === null) {
+      },
+      reschedule: async () => {
+        await ctx.scheduler.runAfter(0, internal.operations.calendar.syncAppointmentCalendar, {
+          appointmentId: args.appointmentId,
+        });
+      },
+      now: () => attemptedAt,
+      timeZone: AGENDA_TIME_ZONE,
+    });
+    if (outcome.status === "error") {
+      // Rechazo del contrato común (`unauthorized`, `conflict`): no es un
+      // fallo del proveedor; queda terminal sin reintento.
       await ctx.runMutation(internal.operations.calendar.recordSyncAttempt, {
         appointmentId: args.appointmentId,
         status: "error",
         attemptedAt,
         errorCode: "not_connected",
       });
-      return { status: "error" as const, errorCode: "not_connected" as const };
+      return { status: "skipped" as const };
     }
-    if (lastError !== null) {
-      return { status: "error" as const, errorCode: lastError };
+    if (outcome.data.status === "synced") {
+      return outcome.data.eventId === undefined
+        ? { status: "synced" as const }
+        : { status: "synced" as const, eventId: outcome.data.eventId };
     }
-    return syncedEventId === undefined
-      ? { status: "synced" as const }
-      : { status: "synced" as const, eventId: syncedEventId };
+    if (outcome.data.status === "error") {
+      return { status: "error" as const, errorCode: outcome.data.errorCode };
+    }
+    return { status: "pending" as const };
   },
 });
 
 /**
  * Reintento de sincronizaciones pendientes o con fallo recuperable (TI2-162).
  *
- * Solo reintenta `pending` y `error` con `unavailable`: `not_connected` pide
- * volver a vincular y espera una acción de la persona, no un reintento
- * automático. Lee por el índice de estado con un tope, sin barrer la tabla.
+ * Solo reintenta `pending` cuyo despacho ya debería haber corrido (gracia de un
+ * minuto, para no duplicar uno en curso) y `error` con `unavailable` con
+ * espera creciente y tope de intentos. `not_connected` pide volver a vincular
+ * y espera una acción de la persona, no un reintento automático. Lee por los
+ * índices de estado ordenado por el intento más antiguo, sin barrer la tabla.
  */
 export const scheduleDueCalendarSyncs = internalMutation({
   args: {},
   returns: v.object({ pending: v.number(), retried: v.number() }),
   handler: async (ctx) => {
+    const now = Date.now();
     const pendingRows = await ctx.db
       .query("appointments")
-      .withIndex("by_calendarSyncStatus", (q) => q.eq("calendarSyncStatus", "pending"))
+      .withIndex("by_calendarSyncStatus_and_scheduledAt", (q) =>
+        q
+          .eq("calendarSyncStatus", "pending")
+          .lt("calendarSyncScheduledAt", now - SYNC_DISPATCH_GRACE_MS),
+      )
+      .order("asc")
       .take(50);
     let scheduled = 0;
     for (const row of pendingRows) {
@@ -458,11 +573,17 @@ export const scheduleDueCalendarSyncs = internalMutation({
     }
     const errorRows = await ctx.db
       .query("appointments")
-      .withIndex("by_calendarSyncStatus", (q) => q.eq("calendarSyncStatus", "error"))
+      .withIndex("by_calendarSyncStatus_and_lastAttemptAt", (q) =>
+        q.eq("calendarSyncStatus", "error"),
+      )
+      .order("asc")
       .take(50);
     let retried = 0;
     for (const row of errorRows) {
       if (row.calendarSyncErrorCode !== "unavailable") continue;
+      const attempts = row.calendarSyncAttempts ?? 0;
+      if (attempts >= MAX_SYNC_ATTEMPTS) continue;
+      if ((row.calendarSyncLastAttemptAt ?? 0) > now - syncRetryBackoffMs(attempts)) continue;
       await ctx.scheduler.runAfter(0, internal.operations.calendar.syncAppointmentCalendar, {
         appointmentId: row._id,
       });

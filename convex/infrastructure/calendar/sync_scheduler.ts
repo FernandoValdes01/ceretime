@@ -17,7 +17,7 @@ export function calendarSyncScheduler(ctx: MutationCtx): CalendarSyncScheduler {
     scheduleSync: async (appointmentId: string): Promise<void> => {
       const normalized = ctx.db.normalizeId("appointments", appointmentId);
       if (normalized === null) return;
-      await markCalendarSyncPending(ctx, normalized);
+      await markCalendarSyncPending(ctx, normalized, Date.now());
       await ctx.scheduler.runAfter(0, internal.operations.calendar.syncAppointmentCalendar, {
         appointmentId,
       });

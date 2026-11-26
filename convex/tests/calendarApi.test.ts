@@ -129,6 +129,9 @@ async function seedAppointment(
     readonly calendarEventAddedAt?: number;
     readonly calendarEventStartsAt?: number;
     readonly calendarEventEndsAt?: number;
+    readonly calendarSyncStatus?: Doc<"appointments">["calendarSyncStatus"];
+    readonly calendarSyncAttempts?: number;
+    readonly calendarSyncErrorCode?: Doc<"appointments">["calendarSyncErrorCode"];
   },
 ) {
   return await t.run(async (ctx) => {
@@ -150,6 +153,15 @@ async function seedAppointment(
       ...(input.calendarEventEndsAt === undefined
         ? {}
         : { calendarEventEndsAt: input.calendarEventEndsAt }),
+      ...(input.calendarSyncStatus === undefined
+        ? {}
+        : { calendarSyncStatus: input.calendarSyncStatus }),
+      ...(input.calendarSyncAttempts === undefined
+        ? {}
+        : { calendarSyncAttempts: input.calendarSyncAttempts }),
+      ...(input.calendarSyncErrorCode === undefined
+        ? {}
+        : { calendarSyncErrorCode: input.calendarSyncErrorCode }),
       createdAt: CREATED_AT,
     });
   });
@@ -552,6 +564,49 @@ test("TI2-122 API: si la atención ya tiene el evento vigente, la acción no lla
   expect(await getAppointment(t, appointmentId)).toMatchObject({
     calendarEventId: "event-1",
     calendarEventAddedAt: CREATED_AT,
+  });
+});
+
+test("TI2-162 API: el listado expone el estado de sincronización para pedir volver a vincular", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "sync-status");
+  const synced = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: BASE_START,
+    endsAt: BASE_START + HOUR,
+    calendarEventId: "event-1",
+    calendarEventAddedAt: CREATED_AT,
+    calendarEventStartsAt: BASE_START,
+    calendarEventEndsAt: BASE_START + HOUR,
+    calendarSyncStatus: "synced",
+    calendarSyncAttempts: 2,
+  });
+  const failed = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: BASE_START + HOUR,
+    endsAt: BASE_START + 2 * HOUR,
+    calendarSyncStatus: "error",
+    calendarSyncAttempts: 1,
+    calendarSyncErrorCode: "not_connected",
+  });
+
+  const rows = await t
+    .withIdentity(agenda.studentIdentity)
+    .query(api.presentation.appointments.listAccompanimentAppointments, {
+      accompanimentId: agenda.accompanimentId,
+    });
+  const byId = new Map(rows.map((row) => [row.appointmentId, row]));
+  // `pending` sin error no pide nada (nadie vinculó); `error/not_connected`
+  // pide volver a vincular.
+  expect(byId.get(synced)).toMatchObject({ calendarSyncStatus: "synced" });
+  expect(byId.get(synced)?.calendarSyncErrorCode).toBeUndefined();
+  expect(byId.get(failed)).toMatchObject({
+    calendarSyncStatus: "error",
+    calendarSyncErrorCode: "not_connected",
   });
 });
 
