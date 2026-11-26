@@ -65,6 +65,7 @@ import type * as domain_accounts_enablement from "../domain/accounts/enablement.
 import type * as domain_accounts_own_profile from "../domain/accounts/own_profile.js";
 import type * as domain_appointments_appointment from "../domain/appointments/appointment.js";
 import type * as domain_appointments_audit from "../domain/appointments/audit.js";
+import type * as domain_appointments_justification_deadline from "../domain/appointments/justification_deadline.js";
 import type * as domain_appointments_online_access from "../domain/appointments/online_access.js";
 import type * as domain_appointments_participants from "../domain/appointments/participants.js";
 import type * as domain_auth_institutional_domain from "../domain/auth/institutional_domain.js";
@@ -73,6 +74,7 @@ import type * as domain_availability_availability from "../domain/availability/a
 import type * as domain_availability_official_channel from "../domain/availability/official_channel.js";
 import type * as domain_calendar_calendar_event from "../domain/calendar/calendar_event.js";
 import type * as domain_calendar_calendar_link from "../domain/calendar/calendar_link.js";
+import type * as domain_calendar_chile_holidays from "../domain/calendar/chile_holidays.js";
 import type * as domain_calendar_civil_days from "../domain/calendar/civil_days.js";
 import type * as domain_errors_api_error from "../domain/errors/api_error.js";
 import type * as domain_follow_up_follow_up from "../domain/follow_up/follow_up.js";
@@ -194,6 +196,7 @@ declare const fullApi: ApiFromModules<{
   "domain/accounts/own_profile": typeof domain_accounts_own_profile;
   "domain/appointments/appointment": typeof domain_appointments_appointment;
   "domain/appointments/audit": typeof domain_appointments_audit;
+  "domain/appointments/justification_deadline": typeof domain_appointments_justification_deadline;
   "domain/appointments/online_access": typeof domain_appointments_online_access;
   "domain/appointments/participants": typeof domain_appointments_participants;
   "domain/auth/institutional_domain": typeof domain_auth_institutional_domain;
@@ -202,6 +205,7 @@ declare const fullApi: ApiFromModules<{
   "domain/availability/official_channel": typeof domain_availability_official_channel;
   "domain/calendar/calendar_event": typeof domain_calendar_calendar_event;
   "domain/calendar/calendar_link": typeof domain_calendar_calendar_link;
+  "domain/calendar/chile_holidays": typeof domain_calendar_chile_holidays;
   "domain/calendar/civil_days": typeof domain_calendar_civil_days;
   "domain/errors/api_error": typeof domain_errors_api_error;
   "domain/follow_up/follow_up": typeof domain_follow_up_follow_up;

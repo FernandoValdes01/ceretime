@@ -736,6 +736,43 @@ export function appointmentChangeReader(ctx: DbReader) {
 }
 
 /**
+ * Lote acotado de inasistencias pendientes para el barrido de vencimiento
+ * (TI2-147). Lee por `by_status_and_startsAt` en orden ascendente: primero
+ * las más antiguas. `hasMore` permite al caso de uso continuar en otra
+ * ejecución sin rebasar el límite de lectura de la mutation.
+ */
+export function pendingJustificationsReader(ctx: DbReader) {
+  return {
+    listPendingJustifications: async (limit: number) => {
+      const rows = await ctx.db
+        .query("appointments")
+        .withIndex("by_status_and_startsAt", (q) => q.eq("status", "no_show"))
+        .take(limit + 1);
+      const hasMore = rows.length > limit;
+      const page = hasMore ? rows.slice(0, limit) : rows;
+      const pending = [];
+      for (const row of page) {
+        const additionalProfessionalIds = await additionalProfessionalIdsOf(ctx, row);
+        pending.push({
+          id: row._id as string,
+          accompanimentId: row.accompanimentId as string,
+          studentId: row.studentId as string,
+          professionalId: row.professionalId as string,
+          status: row.status,
+          startAt: row.startsAt,
+          ...(row.originalStartsAt === undefined ? {} : { originalStartAt: row.originalStartsAt }),
+          ...(row.justificationSubmittedAt === undefined
+            ? {}
+            : { justificationSubmittedAt: row.justificationSubmittedAt }),
+          ...(additionalProfessionalIds.length === 0 ? {} : { additionalProfessionalIds }),
+        });
+      }
+      return { rows: pending, hasMore };
+    },
+  };
+}
+
+/**
  * Profesionales de la atención distintos del responsable, en el orden del
  * índice. Una atención sin filas de participante (anterior a la migración) no
  * tiene adicionales.
