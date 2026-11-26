@@ -472,7 +472,15 @@ test("apertura única no duplica ante aceptación repetida", async () => {
 
 const TI112_WEEK = { from: "2026-07-06", to: "2026-07-12", limit: 10, version: "v1" as const };
 
-const TI112_MINIMIZED_KEYS = ["endAt", "id", "modality", "startAt", "status", "view"];
+const TI112_MINIMIZED_KEYS = [
+  "endAt",
+  "id",
+  "modality",
+  "needsCoordination",
+  "startAt",
+  "status",
+  "view",
+];
 
 /** Datos del error público lanzado, o falla si la operación fue permitida. */
 async function ti112PublicError(promise: Promise<unknown>) {
@@ -541,6 +549,7 @@ test("TI2-112: el Practicante asignado lista y lee la atención minimizada con c
       endAt: Date.UTC(2026, 6, 7, 15),
       modality: "inPerson",
       view: "minimized",
+      needsCoordination: false,
     });
   }
 });
