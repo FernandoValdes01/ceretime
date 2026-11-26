@@ -1,4 +1,4 @@
-import { useAction, useConvex, useQuery } from "convex/react";
+import { useAction, useConvex, useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
 // Provisorio (TI2-3): importa los tipos generados por ruta relativa hasta que
 // el monorepo defina el alias o paquete interno compartido.
@@ -22,6 +22,20 @@ export function useOwnAccompanimentDetail(accompanimentId: string) {
     // ajeno responde denegación genérica sin filtrar existencia.
     accompanimentId: accompanimentId as Id<"accompaniments">,
   });
+}
+
+/**
+ * Actualización de las necesidades de acceso del acompañamiento propio
+ * (TI2-156, pantalla de TI2-166). Recibe el texto ya armado con
+ * `toStoredAccessNeeds`; el Backend decide permiso y estado.
+ */
+export function useUpdateAccompanimentNeeds() {
+  const update = useMutation(api.presentation.accompaniments.updateAccompanimentNeeds);
+  return async (input: { accompanimentId: string; accessNeeds: string }) =>
+    await update({
+      accompanimentId: input.accompanimentId as Id<"accompaniments">,
+      accessNeeds: input.accessNeeds,
+    });
 }
 
 /** Atenciones acotadas del acompañamiento, para las acciones de calendario. */
