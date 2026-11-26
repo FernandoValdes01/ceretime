@@ -226,6 +226,7 @@ export function ProfessionalRequestDetailRouteComponent() {
 }
 
 export function ProfessionalOfficialRequestRouteComponent() {
+  useDocumentTitle("Registrar solicitud por canal oficial");
   return <OfficialRequestFormPage />;
 }
 
