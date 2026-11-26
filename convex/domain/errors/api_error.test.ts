@@ -24,7 +24,6 @@ import {
   noAvailabilityError,
   okResult,
   privacyRequestFieldsInvalidError,
-  privacyRequestFieldsInvalidError,
   requestStudentNotFoundError,
   unauthorizedError,
   type ApiErrorCode,
