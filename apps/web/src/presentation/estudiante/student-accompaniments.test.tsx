@@ -46,6 +46,8 @@ let addCalls: string[] = [];
 let fileCalls: string[] = [];
 let downloadedFiles: DownloadableCalendarFile[] = [];
 let linkSocialCalls: Array<Record<string, unknown>> = [];
+let needsCalls: Array<{ accompanimentId: string; accessNeeds: string }> = [];
+let needsResult: Error | null = null;
 
 let mockedPortalAccompaniments:
   | { page: OwnAccompanimentDetail[]; isDone: boolean; continueCursor: string }
@@ -75,6 +77,12 @@ vi.mock("./student-accompaniments-data.ts", () => ({
     fileCalls.push(appointmentId);
     return mockedCalendarFile;
   },
+  useUpdateAccompanimentNeeds:
+    () => async (input: { accompanimentId: string; accessNeeds: string }) => {
+      needsCalls.push(input);
+      if (needsResult instanceof Error) throw needsResult;
+      return null;
+    },
 }));
 
 vi.mock("./calendar-download.ts", () => ({
@@ -135,14 +143,18 @@ const PAR_SIN_SESION = {
 } as const;
 
 function detallePropio(
-  overrides: Partial<{ _id: string; status: "active" | "paused" | "closed" }> = {},
+  overrides: Partial<{
+    _id: string;
+    status: "active" | "paused" | "closed";
+    accessNeeds: string;
+  }> = {},
 ): OwnAccompanimentDetail {
   return {
     _id: (overrides._id ?? "acc-1") as Id<"accompaniments">,
     studentId: "stu-1" as Id<"users">,
     status: overrides.status ?? "active",
     objective: "Objetivo ficticio del acompañamiento",
-    accessNeeds: "Apoyo ficticio para la prueba",
+    accessNeeds: overrides.accessNeeds ?? "Apoyo ficticio para la prueba",
     referenceCode: "CER-7KQ2-M9XD",
     view: "full",
   };
@@ -196,6 +208,8 @@ beforeEach(() => {
   fileCalls = [];
   downloadedFiles = [];
   linkSocialCalls = [];
+  needsCalls = [];
+  needsResult = null;
   mockedPortalAccompaniments = undefined;
 });
 
@@ -586,5 +600,86 @@ describe("guard del detalle propio (TI2-90)", () => {
       redirect: "/estudiante/acompanamientos/acc-1",
     });
     expect(screen.queryByRole("heading", { name: "Detalle del acompañamiento" })).toBeNull();
+  });
+});
+
+describe("actualización de necesidades de acceso (TI2-166)", () => {
+  const VIGENTES = "Comunicación escrita\nNecesito pausas breves";
+
+  async function abrirEditor() {
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Actualizar necesidades de acceso" }),
+    );
+  }
+
+  test("explica que aplica a atenciones futuras y parte de lo vigente", async () => {
+    mockedDetail = detallePropio({ _id: "acc-1", accessNeeds: VIGENTES });
+    renderAt("/estudiante/acompanamientos/acc-1");
+
+    expect(await screen.findByText(/se aplica a tus próximas atenciones/i)).toBeDefined();
+    expect(screen.getByText(/las atenciones anteriores conservan/i)).toBeDefined();
+    await abrirEditor();
+
+    const escrita = screen.getByRole("checkbox", { name: "Comunicación escrita" });
+    expect((escrita as HTMLInputElement).checked).toBe(true);
+    expect(
+      (screen.getByRole("checkbox", { name: "Persona de apoyo" }) as HTMLInputElement).checked,
+    ).toBe(false);
+    expect(
+      (screen.getByRole("textbox", { name: /otra necesidad de acceso/i }) as HTMLTextAreaElement)
+        .value,
+    ).toBe("Necesito pausas breves");
+  });
+
+  test("guarda el texto con las opciones en orden y la necesidad libre al final", async () => {
+    mockedDetail = detallePropio({ _id: "acc-1", accessNeeds: VIGENTES });
+    renderAt("/estudiante/acompanamientos/acc-1");
+    await abrirEditor();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Persona de apoyo" }));
+    fireEvent.click(screen.getByRole("button", { name: "Guardar para mis próximas atenciones" }));
+
+    expect(await screen.findByRole("status")).toBeDefined();
+    expect(screen.getByRole("status").textContent).toMatch(/próximas atenciones/i);
+    expect(needsCalls).toEqual([
+      {
+        accompanimentId: "acc-1",
+        accessNeeds: "Comunicación escrita\nPersona de apoyo\nNecesito pausas breves",
+      },
+    ]);
+  });
+
+  test("sin ninguna necesidad lo explica junto al campo y no envía", async () => {
+    mockedDetail = detallePropio({ _id: "acc-1", accessNeeds: "Comunicación escrita" });
+    renderAt("/estudiante/acompanamientos/acc-1");
+    await abrirEditor();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Comunicación escrita" }));
+    fireEvent.click(screen.getByRole("button", { name: "Guardar para mis próximas atenciones" }));
+
+    expect(await screen.findByText("Elige al menos una necesidad o describe otra.")).toBeDefined();
+    expect(needsCalls).toEqual([]);
+  });
+
+  test("un conflicto del Backend se informa sin perder lo elegido", async () => {
+    mockedDetail = detallePropio({ _id: "acc-1", accessNeeds: "Comunicación escrita" });
+    needsResult = new ConvexError({ code: "conflict", message: "Conflicto" });
+    renderAt("/estudiante/acompanamientos/acc-1");
+    await abrirEditor();
+
+    fireEvent.click(screen.getByRole("button", { name: "Guardar para mis próximas atenciones" }));
+
+    expect(await screen.findByText(/el acompañamiento cambió/i)).toBeDefined();
+    expect(
+      (screen.getByRole("checkbox", { name: "Comunicación escrita" }) as HTMLInputElement).checked,
+    ).toBe(true);
+  });
+
+  test("un acompañamiento cerrado no ofrece actualizar", async () => {
+    mockedDetail = detallePropio({ _id: "acc-1", status: "closed" });
+    renderAt("/estudiante/acompanamientos/acc-1");
+
+    expect(await screen.findByText("Cerrado")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Actualizar necesidades de acceso" })).toBeNull();
   });
 });
