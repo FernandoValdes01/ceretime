@@ -120,6 +120,92 @@ test("TI2-167 API: derecho no habilitado responde privacy_request_fields_invalid
   expect(error).toMatchObject({ code: "privacy_request_fields_invalid" });
 });
 
+test("TI2-167 API: solo el Administrador revisa, resuelve, prorroga y deja constancia", async () => {
+  const t = convexTest(schema, modules);
+  await seedUser(t, "ti167-est-role", "student");
+  await seedUser(t, "ti167-pro-role", "professional");
+  await seedUser(t, "ti167-adm-role", "admin");
+
+  const asStudent = t.withIdentity(identityFor("ti167-est-role"));
+  const asProfessional = t.withIdentity(identityFor("ti167-pro-role"));
+  const asAdmin = t.withIdentity(identityFor("ti167-adm-role"));
+
+  const receipt = await asStudent.mutation(privacyApi.submitPrivacyRequest, {
+    kind: "access",
+    version: VERSION,
+  });
+
+  const intruders = [asStudent, asProfessional];
+
+  for (const identity of intruders) {
+    // Tomar la solicitud para revisión.
+    expect(
+      await publicError(
+        identity.mutation(privacyApi.startPrivacyRequestReview, {
+          requestId: receipt.id,
+          version: VERSION,
+        }),
+      ),
+    ).toEqual(DENIED);
+
+    // Resolverla con una respuesta fundada.
+    expect(
+      await publicError(
+        identity.mutation(privacyApi.resolvePrivacyRequest, {
+          requestId: receipt.id,
+          outcome: "granted",
+          reasons: "Intento no autorizado.",
+          version: VERSION,
+        }),
+      ),
+    ).toEqual(DENIED);
+
+    // Prorrogar el plazo.
+    expect(
+      await publicError(
+        identity.mutation(privacyApi.extendPrivacyRequestDeadline, {
+          requestId: receipt.id,
+          days: 10,
+          reason: "Intento no autorizado.",
+          version: VERSION,
+        }),
+      ),
+    ).toEqual(DENIED);
+
+    // Registrar la constancia de envío.
+    expect(
+      await publicError(
+        identity.mutation(privacyApi.recordPrivacyResponseDelivery, {
+          requestId: receipt.id,
+          channel: "student_app",
+          reference: "FOLIO-INTENTO",
+          version: VERSION,
+        }),
+      ),
+    ).toEqual(DENIED);
+  }
+
+  // La solicitud queda intacta: recibida, sin prórroga, respuesta ni constancia.
+  const after = await asAdmin.query(privacyApi.getPrivacyRequest, {
+    requestId: receipt.id,
+    version: VERSION,
+  });
+  expect(after.status).toBe("received");
+  expect(after.dueAt).toBe(receipt.dueAt);
+  expect(after.initialDueAt).toBe(receipt.initialDueAt);
+  expect(after.extension).toBeUndefined();
+  expect(after.response).toBeUndefined();
+  expect(after.deliveryReceipt).toBeUndefined();
+  expect(after.effect).toBeUndefined();
+
+  // El Administrador sí puede tomar la solicitud después de los intentos.
+  const inReview = await asAdmin.mutation(privacyApi.startPrivacyRequestReview, {
+    requestId: receipt.id,
+    version: VERSION,
+  });
+  expect(inReview.status).toBe("in_review");
+});
+
 test("TI2-167 API: el titular consulta solo lo propio y el Administrador revisa", async () => {
   const t = convexTest(schema, modules);
   const studentId = await seedUser(t, "ti167-est3", "student");
