@@ -2330,7 +2330,10 @@ test("TI2-143: el registro por canal oficial rechaza correo, fecha, unidad y con
     accountStatus: "inactive",
   });
   const pro = identityOf("ti143-pro-4");
-  const noAccount = INVALID("No hay una cuenta de Estudiante vigente con ese correo.");
+  const noAccount = {
+    code: "request_student_not_found",
+    message: "No hay una cuenta de Estudiante vigente con ese correo.",
+  };
 
   // El correo debe ser de una cuenta de Estudiante vigente
   for (const email of ["nadie-ficticio@uct.cl", "ti143-pro-4@uct.cl", "ti143-est-ina-4@uct.cl"]) {

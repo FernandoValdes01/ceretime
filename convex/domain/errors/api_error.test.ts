@@ -8,6 +8,8 @@ import {
   CONFLICT_ERROR_MESSAGE,
   NO_AVAILABILITY_ERROR_CODE,
   NO_AVAILABILITY_ERROR_MESSAGE,
+  REQUEST_STUDENT_NOT_FOUND_ERROR_CODE,
+  REQUEST_STUDENT_NOT_FOUND_ERROR_MESSAGE,
   SPACE_FIELDS_INVALID_ERROR_CODE,
   SPACE_FIELDS_INVALID_ERROR_MESSAGE,
   UNAUTHORIZED_ERROR_CODE,
@@ -19,6 +21,7 @@ import {
   isOkResult,
   noAvailabilityError,
   okResult,
+  requestStudentNotFoundError,
   unauthorizedError,
   type ApiErrorCode,
   type ApiResult,
@@ -56,6 +59,7 @@ describe("Códigos estables de conflicto, acceso denegado y ausencia de cupo (TI
       "assignment_fields_invalid",
       "request_fields_invalid",
       "follow_up_fields_invalid",
+      "request_student_not_found",
     ]);
   });
 
@@ -94,6 +98,17 @@ describe("Códigos estables de conflicto, acceso denegado y ausencia de cupo (TI
       ASSIGNMENT_FIELDS_INVALID_ERROR_MESSAGE,
     );
     expect(isApiErrorCode(ASSIGNMENT_FIELDS_INVALID_ERROR_CODE)).toBe(true);
+  });
+
+  test("el correo sin Estudiante vigente tiene código propio (TI2-158)", () => {
+    expect(requestStudentNotFoundError()).toEqual({
+      code: "request_student_not_found",
+      message: "No hay una cuenta de Estudiante vigente con ese correo.",
+    });
+    expect(API_ERROR_MESSAGES[REQUEST_STUDENT_NOT_FOUND_ERROR_CODE]).toBe(
+      REQUEST_STUDENT_NOT_FOUND_ERROR_MESSAGE,
+    );
+    expect(isApiErrorCode(REQUEST_STUDENT_NOT_FOUND_ERROR_CODE)).toBe(true);
   });
 
   test("la ausencia de cupo pide coordinación por el canal oficial, no reserva incompatible", () => {

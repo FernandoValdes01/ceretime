@@ -6,6 +6,9 @@ import {
   isOpenRequestState,
   isRequestState,
   findRequestTransition,
+  REFERRAL_REASON_MAX_LENGTH,
+  REFERRAL_UNIT_MAX_LENGTH,
+  referralAllowsAccompaniment,
   REQUEST_STATES,
   type RequestState,
 } from "../../../../../convex/domain/index.ts";
@@ -29,6 +32,9 @@ import {
   useAuthorizedRequests,
   useCloseRequestWithoutAccompaniment,
   useOpenRequests,
+  useRecordReferralAcceptance,
+  useRecordReferralContact,
+  useReferRequest,
   useRequestAdditionalInformation,
   useRequestDetail,
   useTakeRequest,
@@ -53,12 +59,13 @@ const GESTION_FOCUS_VISIBLE =
   "focus-visible:outline-[3px] focus-visible:outline-solid focus-visible:outline-focus-ring focus-visible:outline-offset-[2px]";
 
 /**
- * Enlace de retorno: verde y subrayado como el de la agenda. El subrayado es
+ * Enlaces de la gestión (retorno y registro por canal oficial): verdes y
+ * subrayados como el de la agenda. El subrayado es
  * lo que lo distingue del texto normal, porque el color solo no alcanza a
  * separarlo con visión borrosa o bajo contraste. Mide lo que su contenido y
  * mantiene 44px de alto táctil mínimo.
  */
-const GESTION_BACK_LINK = `flex min-h-[44px] w-fit items-center gap-1 rounded-[0.5rem] text-base font-semibold text-primary underline ${GESTION_FOCUS_VISIBLE}`;
+const GESTION_LINK = `flex min-h-[44px] w-fit items-center gap-1 rounded-[0.5rem] text-base font-semibold text-primary underline ${GESTION_FOCUS_VISIBLE}`;
 /**
  * Campos de texto de los diálogos (TI2-92, migrado por TI2-130): el anillo de
  * foco usa la variable de compatibilidad --ct-ring (igual que antes); no se
@@ -93,6 +100,11 @@ export function ProfessionalRequestsPage({ search }: { search: RequestListSearch
       <h1 id="professional-requests-title" ref={headingRef} tabIndex={-1}>
         Solicitudes
       </h1>
+      <p>
+        <Link to="/profesional/solicitudes/registrar" className={GESTION_LINK}>
+          Registrar solicitud por canal oficial
+        </Link>
+      </p>
       <section aria-labelledby="open-inbox-title" className="student-portal__section">
         <div className="student-portal__section-head">
           <h2 id="open-inbox-title">Bandeja de triage</h2>
@@ -495,7 +507,7 @@ export function ProfessionalRequestDetailPage({
         Detalle de la solicitud
       </h1>
       <p>
-        <Link to="/profesional/solicitudes" search={listSearch} className={GESTION_BACK_LINK}>
+        <Link to="/profesional/solicitudes" search={listSearch} className={GESTION_LINK}>
           <span aria-hidden="true">←</span> Volver a solicitudes
         </Link>
       </p>
@@ -532,7 +544,7 @@ function RequestDetailBody({ requestId }: { requestId: string }) {
 }
 
 /**
- * Acciones del Profesional sobre una solicitud tomada (TI2-92, TI2-157).
+ * Acciones del Profesional sobre una solicitud tomada (TI2-92, TI2-157, TI2-158).
  *
  * Cada acción declara el estado al que lleva y se ofrece solo si la tabla
  * canónica de transiciones del Dominio la admite desde el estado vigente:
@@ -549,6 +561,7 @@ const REVIEW_ACTIONS: ReadonlyArray<{
   { action: "accept", to: "accepted" },
   { action: "requestInformation", to: "awaiting_information_or_acceptance" },
   { action: "close", to: "closed_without_accompaniment" },
+  { action: "refer", to: "referred" },
 ];
 
 function availableActions(status: string): ReadonlySet<RequestAction> {
@@ -577,7 +590,25 @@ function responsibleRow(status: string): { term: string; value: string } {
   return { term: "A cargo de", value: "Tú, como profesional que la tomó" };
 }
 
-type OpenDialog = "requestInformation" | "accept" | "close";
+/** Procedencia legible (TI2-158); una solicitud anterior sin dato no muestra fila. */
+function provenanceLabel(channel: RequestDetail["provenanceChannel"]): string | null {
+  switch (channel) {
+    case "official_channel":
+      return "Registrada por CERETI desde un canal oficial";
+    case "student":
+      return "Enviada por el estudiante";
+    default:
+      return null;
+  }
+}
+
+/** Fecha registrada de un paso de la derivación de entrada, o «Pendiente». */
+function referralStepLabel(at: number | undefined): string {
+  return at === undefined ? "Pendiente" : `Registrado el ${formatAgendaShortDate(at)}`;
+}
+
+type OpenDialog = "requestInformation" | "accept" | "close" | "refer";
+type InlineAction = "take" | "recordReferralContact" | "recordReferralAcceptance";
 
 function RequestDetailView({ request }: { request: RequestDetail }) {
   const requestId = request._id;
@@ -585,9 +616,13 @@ function RequestDetailView({ request }: { request: RequestDetail }) {
   const requestAdditionalInformation = useRequestAdditionalInformation();
   const acceptRequest = useAcceptRequest();
   const closeRequest = useCloseRequestWithoutAccompaniment();
+  const recordReferralContact = useRecordReferralContact();
+  const recordReferralAcceptance = useRecordReferralAcceptance();
+  const referRequest = useReferRequest();
 
-  const [takeFailure, setTakeFailure] = useState<RequestActionFailure | null>(null);
-  const [isTaking, setIsTaking] = useState(false);
+  // Acciones sin diálogo (tomar y los pasos de la derivación de entrada).
+  const [inlineFailure, setInlineFailure] = useState<RequestActionFailure | null>(null);
+  const [inlinePending, setInlinePending] = useState<InlineAction | null>(null);
   const [openDialog, setOpenDialog] = useState<OpenDialog | null>(null);
   const [successNotice, setSuccessNotice] = useState<string | null>(null);
   // Botón que abrió el diálogo: recibe el foco al cancelar.
@@ -617,20 +652,39 @@ function RequestDetailView({ request }: { request: RequestDetail }) {
 
   const actions = availableActions(request.status);
   const responsible = responsibleRow(request.status);
+  const provenance = provenanceLabel(request.provenanceChannel);
+  const incomingReferral = request.incomingReferral;
+  const outgoingReferral = request.outgoingReferral;
+  // Una derivación de entrada no abre acompañamiento sin el contacto y la
+  // aceptación del estudiante (regla del Dominio): sin ellos no se ofrece.
+  const acceptanceAllowed = referralAllowsAccompaniment(incomingReferral);
+  // Los dos registros caben mientras la solicitud todavía puede aceptarse.
+  const referralStepsOpen = incomingReferral !== undefined && actions.has("accept");
+  const canRecordContact = referralStepsOpen && incomingReferral.contactedAt === undefined;
+  const canRecordAcceptance =
+    referralStepsOpen &&
+    incomingReferral.contactedAt !== undefined &&
+    incomingReferral.acceptedAt === undefined;
 
-  const handleTake = async () => {
-    if (isTaking) return;
-    setTakeFailure(null);
-    setIsTaking(true);
+  // La query reactiva (useRequestDetail) trae el estado nuevo tras cada éxito.
+  async function runInline(action: InlineAction, run: () => Promise<unknown>, success?: string) {
+    if (inlinePending !== null) return;
+    setInlineFailure(null);
+    setSuccessNotice(null);
+    setInlinePending(action);
     try {
-      await takeRequest({ requestId });
-      // La query reactiva (useRequestDetail) actualizará el estado automáticamente
+      await run();
+      if (success !== undefined) {
+        setSuccessNotice(success);
+        // El botón usado desaparece con el éxito: el foco pasa al estado.
+        statusRef.current?.focus();
+      }
     } catch (error) {
-      setTakeFailure(requestActionFailureOf(error, "take"));
+      setInlineFailure(requestActionFailureOf(error, action));
     } finally {
-      setIsTaking(false);
+      setInlinePending(null);
     }
-  };
+  }
 
   function handleOpen(event: React.MouseEvent<HTMLButtonElement>, dialog: OpenDialog) {
     openerRef.current = event.currentTarget;
@@ -681,6 +735,16 @@ function RequestDetailView({ request }: { request: RequestDetail }) {
         {request.closureReason === undefined ? null : (
           <DetailRow label="Razón del cierre">{request.closureReason}</DetailRow>
         )}
+        {outgoingReferral === undefined ? null : (
+          <>
+            <DetailRow label="Derivada a">
+              {outgoingReferral.destinationUnit}, el{" "}
+              {formatAgendaShortDate(outgoingReferral.referredAt)}
+            </DetailRow>
+            <DetailRow label="Razón de la derivación">{outgoingReferral.reason}</DetailRow>
+          </>
+        )}
+        {provenance === null ? null : <DetailRow label="Procedencia">{provenance}</DetailRow>}
         {request.accompanimentId === undefined ? null : (
           <DetailRow label="Acompañamiento">Abierto a partir de esta solicitud</DetailRow>
         )}
@@ -692,7 +756,72 @@ function RequestDetailView({ request }: { request: RequestDetail }) {
         </p>
       )}
 
-      {takeFailure && <ActionFailureNotice failure={takeFailure} />}
+      {incomingReferral === undefined ? null : (
+        <section aria-labelledby="incoming-referral-title" className="student-portal__section">
+          <h2 id="incoming-referral-title">Derivación de entrada</h2>
+          <dl className="m-0 divide-y divide-(--ct-line)">
+            <DetailRow label="Unidad que derivó">
+              {incomingReferral.originUnit}, el {formatAgendaShortDate(incomingReferral.referredAt)}
+            </DetailRow>
+            <DetailRow label="Contacto con el estudiante">
+              {referralStepLabel(incomingReferral.contactedAt)}
+            </DetailRow>
+            <DetailRow label="Aceptación del estudiante">
+              {referralStepLabel(incomingReferral.acceptedAt)}
+            </DetailRow>
+          </dl>
+          {referralStepsOpen && !acceptanceAllowed ? (
+            <p className="student-portal__hint">
+              Para abrir el acompañamiento, registra primero el contacto con el estudiante y luego
+              su aceptación. Ambos ocurren fuera de la aplicación; aquí solo quedan registrados.
+            </p>
+          ) : null}
+          {canRecordContact || canRecordAcceptance ? (
+            <div className="student-portal__cta flex flex-wrap gap-3">
+              {canRecordContact && (
+                <button
+                  type="button"
+                  className={`student-portal__btn student-portal__btn--primary ${GESTION_BUTTON_DISABLED}`}
+                  disabled={inlinePending !== null || dialogBusy}
+                  aria-busy={inlinePending === "recordReferralContact"}
+                  onClick={() =>
+                    runInline(
+                      "recordReferralContact",
+                      () => recordReferralContact({ requestId }),
+                      "Registraste el contacto con el estudiante.",
+                    )
+                  }
+                >
+                  {inlinePending === "recordReferralContact"
+                    ? "Registrando…"
+                    : "Registrar contacto con el estudiante"}
+                </button>
+              )}
+              {canRecordAcceptance && (
+                <button
+                  type="button"
+                  className={`student-portal__btn student-portal__btn--primary ${GESTION_BUTTON_DISABLED}`}
+                  disabled={inlinePending !== null || dialogBusy}
+                  aria-busy={inlinePending === "recordReferralAcceptance"}
+                  onClick={() =>
+                    runInline(
+                      "recordReferralAcceptance",
+                      () => recordReferralAcceptance({ requestId }),
+                      "Registraste la aceptación del estudiante. Ya puedes abrir el acompañamiento.",
+                    )
+                  }
+                >
+                  {inlinePending === "recordReferralAcceptance"
+                    ? "Registrando…"
+                    : "Registrar aceptación del estudiante"}
+                </button>
+              )}
+            </div>
+          ) : null}
+        </section>
+      )}
+
+      {inlineFailure && <ActionFailureNotice failure={inlineFailure} />}
 
       {actions.size === 0 ? null : (
         <div className="student-portal__cta flex flex-wrap gap-3">
@@ -700,14 +829,14 @@ function RequestDetailView({ request }: { request: RequestDetail }) {
             <button
               type="button"
               className={`student-portal__btn student-portal__btn--primary ${GESTION_BUTTON_DISABLED}`}
-              disabled={isTaking}
-              onClick={handleTake}
-              aria-busy={isTaking}
+              disabled={inlinePending !== null}
+              onClick={() => runInline("take", () => takeRequest({ requestId }))}
+              aria-busy={inlinePending === "take"}
             >
-              {isTaking ? "Tomando…" : "Tomar solicitud"}
+              {inlinePending === "take" ? "Tomando…" : "Tomar solicitud"}
             </button>
           )}
-          {actions.has("accept") && (
+          {actions.has("accept") && acceptanceAllowed && (
             <button
               type="button"
               className={`student-portal__btn student-portal__btn--primary ${GESTION_BUTTON_DISABLED}`}
@@ -738,6 +867,17 @@ function RequestDetailView({ request }: { request: RequestDetail }) {
               aria-haspopup="dialog"
             >
               Cerrar sin acompañamiento
+            </button>
+          )}
+          {actions.has("refer") && (
+            <button
+              type="button"
+              className={`student-portal__btn student-portal__btn--ghost ${GESTION_BUTTON_DISABLED}`}
+              disabled={dialogBusy}
+              onClick={(event) => handleOpen(event, "refer")}
+              aria-haspopup="dialog"
+            >
+              Derivar a otra unidad
             </button>
           )}
         </div>
@@ -814,6 +954,38 @@ function RequestDetailView({ request }: { request: RequestDetail }) {
           }}
         />
       )}
+
+      {openDialog === "refer" && (
+        <ReviewTextDialog
+          id="refer"
+          title="Derivar a otra unidad"
+          description="La comunicación con la unidad de destino ocurre fuera de la aplicación: aquí no se eligen destinatarios ni se envían antecedentes. El estudiante leerá la unidad y la razón, y la solicitud queda Derivada, sin acompañamiento."
+          unitField={{
+            label: "Unidad de destino",
+            hint: "Nombre de la unidad de la Universidad a la que derivas al estudiante.",
+            requiredMessage: "Indica la unidad de destino.",
+          }}
+          fieldLabel="Razón de la derivación"
+          requiredMessage="Escribe la razón de la derivación."
+          maxLength={{
+            value: REFERRAL_REASON_MAX_LENGTH,
+            message: `La razón no puede exceder ${REFERRAL_REASON_MAX_LENGTH} caracteres.`,
+          }}
+          submitLabel="Derivar"
+          onCancel={() => closeDialog(null)}
+          onSubmit={async (reason, destinationUnit = "") => {
+            const failure = await attempt("refer", () =>
+              referRequest({ requestId, destinationUnit, reason }),
+            );
+            if (failure === null) {
+              closeDialog(
+                "Derivaste la solicitud. Comunícate con la unidad de destino por el canal oficial.",
+              );
+            }
+            return failure;
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -825,7 +997,8 @@ function RequiredMark() {
 
 /**
  * Diálogo con un texto obligatorio (TI2-92, generalizado en TI2-157 para
- * pedir información, aceptar y cerrar).
+ * pedir información, aceptar y cerrar). TI2-158 suma `unitField`, un nombre
+ * de unidad obligatorio antes del texto, para la derivación de salida.
  *
  * Al abrir, el foco va al campo; Tab queda atrapado y Escape cancela. El
  * error del envío vive dentro del diálogo: con `aria-modal` el lector no
@@ -842,6 +1015,7 @@ function ReviewTextDialog({
   submitLabel,
   onCancel,
   onSubmit,
+  unitField,
   children,
 }: {
   id: string;
@@ -856,10 +1030,14 @@ function ReviewTextDialog({
   maxLength?: { readonly value: number; readonly message: string };
   submitLabel: string;
   onCancel: () => void;
-  onSubmit: (text: string) => Promise<RequestActionFailure | null>;
+  onSubmit: (text: string, unit?: string) => Promise<RequestActionFailure | null>;
+  unitField?: { label: string; hint: string; requiredMessage: string };
   children?: ReactNode;
 }) {
   const [text, setText] = useState("");
+  const [unit, setUnit] = useState("");
+  const [unitError, setUnitError] = useState<string | null>(null);
+  const unitRef = useRef<HTMLInputElement>(null);
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [submitFailure, setSubmitFailure] = useState<RequestActionFailure | null>(null);
   const [pending, setPending] = useState(false);
@@ -876,9 +1054,15 @@ function ReviewTextDialog({
       .filter((value) => value !== null)
       .join(" ") || undefined;
 
+  const unitId = `${id}-unit`;
+  const unitErrorId = `${id}-unit-error`;
+  const unitHintId = `${id}-unit-hint`;
+  const hasUnitField = unitField !== undefined;
+
+  // El foco va al primer campo del diálogo.
   useEffect(() => {
-    fieldRef.current?.focus();
-  }, []);
+    (hasUnitField ? unitRef.current : fieldRef.current)?.focus();
+  }, [hasUnitField]);
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
     if (event.key === "Escape") {
@@ -891,7 +1075,7 @@ function ReviewTextDialog({
     }
     const focusableElements = Array.from(
       dialogRef.current.querySelectorAll<HTMLElement>(
-        'button:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
+        'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])',
       ),
     );
     if (focusableElements.length === 0) {
@@ -912,21 +1096,29 @@ function ReviewTextDialog({
     event.preventDefault();
     if (pendingRef.current) return;
 
+    const trimmedUnit = unit.trim();
+    const nextUnitError = hasUnitField && !trimmedUnit ? unitField.requiredMessage : null;
     const trimmed = text.trim();
-    if (!trimmed) {
-      setFieldError(requiredMessage);
+    const nextFieldError = !trimmed
+      ? requiredMessage
+      : maxLength !== undefined && trimmed.length > maxLength.value
+        ? maxLength.message
+        : null;
+    setUnitError(nextUnitError);
+    setFieldError(nextFieldError);
+    if (nextUnitError !== null) {
+      unitRef.current?.focus();
       return;
     }
-    if (maxLength !== undefined && trimmed.length > maxLength.value) {
-      setFieldError(maxLength.message);
+    if (nextFieldError !== null) {
+      fieldRef.current?.focus();
       return;
     }
 
-    setFieldError(null);
     setSubmitFailure(null);
     pendingRef.current = true;
     setPending(true);
-    const failure = await onSubmit(trimmed);
+    const failure = await onSubmit(trimmed, hasUnitField ? trimmedUnit : undefined);
     pendingRef.current = false;
     // Con éxito el diálogo ya se cerró: no queda estado que actualizar.
     if (failure !== null) {
@@ -951,6 +1143,38 @@ function ReviewTextDialog({
         <p className="mb-6! text-base leading-normal text-(--ct-muted)">{description}</p>
         {children}
         <form onSubmit={handleSubmit} noValidate>
+          {unitField === undefined ? null : (
+            <div className="mb-6">
+              <label htmlFor={unitId} className="mb-2 block text-sm font-semibold text-(--ct-ink)">
+                {unitField.label} <RequiredMark />
+              </label>
+              <p id={unitHintId} className="student-portal__hint mb-2!">
+                {unitField.hint}
+              </p>
+              <input
+                id={unitId}
+                ref={unitRef}
+                type="text"
+                className={`${GESTION_TEXTAREA} min-h-[44px] ${unitError ? GESTION_TEXTAREA_ERROR : ""}`}
+                value={unit}
+                onChange={(event) => setUnit(event.target.value)}
+                maxLength={REFERRAL_UNIT_MAX_LENGTH}
+                aria-required="true"
+                aria-describedby={unitError ? `${unitErrorId} ${unitHintId}` : unitHintId}
+                aria-invalid={unitError ? "true" : "false"}
+                disabled={pending}
+              />
+              {unitError && (
+                <p
+                  id={unitErrorId}
+                  className="mt-2! text-sm font-semibold text-(--ct-danger)"
+                  role="alert"
+                >
+                  {unitError}
+                </p>
+              )}
+            </div>
+          )}
           <div className="mb-6">
             <label htmlFor={fieldId} className="mb-2 block text-sm font-semibold text-(--ct-ink)">
               {fieldLabel} <RequiredMark />
