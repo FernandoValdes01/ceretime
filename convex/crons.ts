@@ -22,7 +22,7 @@ crons.interval(
   "expire overdue justifications",
   { hours: 1 },
   internal.operations.appointments.expireOverdueJustifications,
-  {},
+  { cursor: null },
 );
 
 export default crons;

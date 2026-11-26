@@ -12,17 +12,25 @@ import { notificationEventRecorder } from "../infrastructure/notifications/repos
  * Despacho del cierre automático de justificaciones vencidas (TI2-147).
  *
  * Función interna: no forma parte de la API que consumen Web o Mobile. La
- * ejecuta `crons.ts` periódicamente y vuelve a programarse mientras queden
- * lotes pendientes. La decisión vive en Aplicación (`changes.ts`): acá solo
- * se arman los adaptadores de Convex y se continúa el barrido.
+ * ejecuta `crons.ts` periódicamente y continúa por lotes con el cursor del
+ * índice mientras queden filas por revisar; termina cuando `isDone` es
+ * verdadero. La decisión vive en Aplicación (`changes.ts`): acá solo se arman
+ * los adaptadores de Convex.
  */
 
 /** Tope de inasistencias por ejecución, acotado por los límites de la mutation. */
 const JUSTIFICATION_SWEEP_LIMIT = 50;
 
 export const expireOverdueJustifications = internalMutation({
-  args: { limit: v.optional(v.number()) },
-  returns: v.object({ expired: v.number(), hasMore: v.boolean() }),
+  args: {
+    cursor: v.union(v.string(), v.null()),
+    limit: v.optional(v.number()),
+  },
+  returns: v.object({
+    expired: v.number(),
+    cursor: v.union(v.string(), v.null()),
+    isDone: v.boolean(),
+  }),
   handler: async (ctx, args) => {
     const limit = args.limit ?? JUSTIFICATION_SWEEP_LIMIT;
     const result = await expireOverdueJustificationsUseCase(
@@ -31,17 +39,15 @@ export const expireOverdueJustifications = internalMutation({
         persister: appointmentTransitionRepository(ctx).persister,
         notifications: notificationEventRecorder(ctx),
       },
-      { limit },
+      { cursor: args.cursor, limit },
     );
-    if (result.hasMore) {
+    if (!result.isDone) {
       await ctx.scheduler.runAfter(
         0,
         internal.operations.appointments.expireOverdueJustifications,
-        {
-          limit,
-        },
+        { cursor: result.cursor, limit },
       );
     }
-    return { expired: result.expired, hasMore: result.hasMore };
+    return { expired: result.expired, cursor: result.cursor, isDone: result.isDone };
   },
 });

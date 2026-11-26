@@ -690,11 +690,18 @@ export interface PendingJustificationRow extends NotifiableAppointment {
 }
 
 /** Lote acotado de inasistencias pendientes, de la más antigua a la más reciente. */
+export interface JustificationSweepPage {
+  readonly rows: readonly PendingJustificationRow[];
+  /** Posición del índice para continuar; `null` si no hay más filas. */
+  readonly cursor: string | null;
+  readonly isDone: boolean;
+}
+
 export interface PendingJustificationsReader {
-  listPendingJustifications(limit: number): Promise<{
-    readonly rows: readonly PendingJustificationRow[];
-    readonly hasMore: boolean;
-  }>;
+  listPendingJustifications(input: {
+    readonly cursor: string | null;
+    readonly limit: number;
+  }): Promise<JustificationSweepPage>;
 }
 
 export interface ExpireOverdueJustificationsDeps {
@@ -705,12 +712,14 @@ export interface ExpireOverdueJustificationsDeps {
 }
 
 export interface ExpireOverdueJustificationsInput {
+  readonly cursor: string | null;
   readonly limit: number;
 }
 
 export interface ExpireOverdueJustificationsResult {
   readonly expired: number;
-  readonly hasMore: boolean;
+  readonly cursor: string | null;
+  readonly isDone: boolean;
 }
 
 /**
@@ -720,21 +729,21 @@ export interface ExpireOverdueJustificationsResult {
  * de Dominio con `transitionAppointment`, persiste por el puerto de TI2-107 y
  * deja el mismo aviso `notificationEventsForTransition` que deja el
  * Profesional al cerrar sin entrega. No inventa una revisión ni una sanción,
- * no cierra entregas `pending` y solo lee un lote acotado: `hasMore` permite
- * continuar en otra ejecución sin rebasar los límites de la transacción.
- *
- * Idempotente: las filas ya resueltas no aparecen en el lote de `no_show`, y
- * una ejecución repetida sobre el mismo instante no vuelve a cerrar nada.
+ * no cierra entregas `pending` y avanza con el cursor del índice: las filas
+ * que no se pueden cerrar quedan atrás y no bloquean a las siguientes.
  */
 export async function expireOverdueJustifications(
   deps: ExpireOverdueJustificationsDeps,
   input: ExpireOverdueJustificationsInput,
 ): Promise<ExpireOverdueJustificationsResult> {
-  const { rows, hasMore } = await deps.appointments.listPendingJustifications(input.limit);
+  const page = await deps.appointments.listPendingJustifications({
+    cursor: input.cursor,
+    limit: input.limit,
+  });
   const now = occurredNow(deps);
   let expired = 0;
 
-  for (const row of rows) {
+  for (const row of page.rows) {
     if (row.status !== NO_SHOW_PENDING_STATE) continue;
     if (row.justificationSubmittedAt !== undefined) continue;
 
@@ -763,5 +772,5 @@ export async function expireOverdueJustifications(
     expired += 1;
   }
 
-  return { expired, hasMore };
+  return { expired, cursor: page.cursor, isDone: page.isDone };
 }

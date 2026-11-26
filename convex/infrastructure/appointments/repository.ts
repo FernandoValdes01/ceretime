@@ -737,21 +737,26 @@ export function appointmentChangeReader(ctx: DbReader) {
 
 /**
  * Lote acotado de inasistencias pendientes para el barrido de vencimiento
- * (TI2-147). Lee por `by_status_and_startsAt` en orden ascendente: primero
- * las más antiguas. `hasMore` permite al caso de uso continuar en otra
- * ejecución sin rebasar el límite de lectura de la mutation.
+ * (TI2-147). Pagina por `by_status_and_startsAt` con el cursor del índice, de
+ * la más antigua a la más reciente: las filas que no se pueden cerrar quedan
+ * atrás y no bloquean a las siguientes. `isDone` cierra la cadena de
+ * continuaciones sin programar continuaciones infinitas.
  */
 export function pendingJustificationsReader(ctx: DbReader) {
   return {
-    listPendingJustifications: async (limit: number) => {
-      const rows = await ctx.db
+    listPendingJustifications: async ({
+      cursor,
+      limit,
+    }: {
+      readonly cursor: string | null;
+      readonly limit: number;
+    }) => {
+      const page = await ctx.db
         .query("appointments")
         .withIndex("by_status_and_startsAt", (q) => q.eq("status", "no_show"))
-        .take(limit + 1);
-      const hasMore = rows.length > limit;
-      const page = hasMore ? rows.slice(0, limit) : rows;
+        .paginate({ numItems: limit, cursor });
       const pending = [];
-      for (const row of page) {
+      for (const row of page.page) {
         const additionalProfessionalIds = await additionalProfessionalIdsOf(ctx, row);
         pending.push({
           id: row._id as string,
@@ -767,7 +772,7 @@ export function pendingJustificationsReader(ctx: DbReader) {
           ...(additionalProfessionalIds.length === 0 ? {} : { additionalProfessionalIds }),
         });
       }
-      return { rows: pending, hasMore };
+      return { rows: pending, cursor: page.continueCursor, isDone: page.isDone };
     },
   };
 }

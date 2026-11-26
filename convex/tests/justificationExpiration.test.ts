@@ -13,6 +13,7 @@ import {
   justificationTimelinessFor,
 } from "../domain/appointments/justification_deadline";
 import { AGENDA_TIME_ZONE } from "../domain/availability/availability";
+import { CHILE_HOLIDAYS } from "../domain/calendar/chile_holidays";
 import { civilDateOfInstant } from "../domain/calendar/civil_days";
 import schema from "../schema";
 
@@ -24,11 +25,11 @@ const DAY = 24 * HOUR;
 /** Instante fijo de las pruebas: martes 15 de diciembre de 2026 a mediodía UTC. */
 const NOW = Date.UTC(2026, 11, 15, 12);
 
-/** Lunes 7 de diciembre de 2026, 10:00 en Santiago (UTC-4). */
+/** Lunes 7 de diciembre de 2026, 11:00 en Santiago (UTC-3, horario de verano). */
 const ABSENCE_WITH_HOLIDAY = Date.UTC(2026, 11, 7, 14);
-/** Jueves 24 de diciembre de 2026, 10:00 en Santiago (cruza el año). */
+/** Jueves 24 de diciembre de 2026, 11:00 en Santiago (UTC-3, cruza el año). */
 const ABSENCE_YEAR_BOUNDARY = Date.UTC(2026, 11, 24, 14);
-/** Viernes 18 de diciembre de 2026, 10:00 en Santiago (fines de semana). */
+/** Viernes 18 de diciembre de 2026, 11:00 en Santiago (UTC-3, fines de semana). */
 const ABSENCE_WEEKEND = Date.UTC(2026, 11, 18, 14);
 /** Martes 24 de marzo de 2026, 10:00 en Santiago (UTC-3, antes del cambio de hora). */
 const ABSENCE_BEFORE_DST = Date.UTC(2026, 2, 24, 13);
@@ -51,6 +52,11 @@ afterEach(() => {
  * quita un feriado, el `deadlineAt` cambia y la prueba falla.
  */
 describe("calendario único del plazo", () => {
+  test("el catálogo cubre al menos el año siguiente", () => {
+    const lastYear = Math.max(...CHILE_HOLIDAYS.map((holiday) => Number(holiday.slice(0, 4))));
+    expect(lastYear).toBeGreaterThanOrEqual(new Date().getUTCFullYear() + 1);
+  });
+
   test("un feriado mueve el vencimiento y la entrega dentro del plazo se acepta", () => {
     const deadline = justificationDeadlineFor(ABSENCE_WITH_HOLIDAY);
 
@@ -108,7 +114,7 @@ function fakeDeps(rows: readonly PendingJustificationRow[], now: () => number) {
     notifications,
     deps: {
       appointments: {
-        listPendingJustifications: async () => ({ rows, hasMore: false }),
+        listPendingJustifications: async () => ({ rows, cursor: null, isDone: true }),
       },
       persister: {
         persistAppointmentTransition: async (id: string, fields: { status: string }) => {
@@ -152,9 +158,9 @@ describe("caso de uso de cierre automático", () => {
       () => deadline.deadlineAt,
     );
 
-    const result = await expireOverdueJustificationsUseCase(deps, { limit: 10 });
+    const result = await expireOverdueJustificationsUseCase(deps, { cursor: null, limit: 10 });
 
-    expect(result).toEqual({ expired: 1, hasMore: false });
+    expect(result).toEqual({ expired: 1, cursor: null, isDone: true });
     expect(writes).toEqual([{ id: "expired", fields: { status: "no_show_unjustified" } }]);
     expect(notifications).toHaveLength(1);
     expect(notifications[0]?.[0]).toMatchObject({
@@ -234,16 +240,17 @@ describe("barrido programado con reloj adelantado", () => {
     const deadlineAt = justificationDeadlineFor(ABSENCE_WITH_HOLIDAY).deadlineAt;
 
     vi.setSystemTime(deadlineAt - 1);
-    const before = await t.mutation(
-      internal.operations.appointments.expireOverdueJustifications,
-      {},
-    );
-    expect(before).toEqual({ expired: 0, hasMore: false });
+    const before = await t.mutation(internal.operations.appointments.expireOverdueJustifications, {
+      cursor: null,
+    });
+    expect(before).toMatchObject({ expired: 0, isDone: true });
     expect(await appointmentStatus(t, appointmentId)).toBe("no_show");
 
     vi.setSystemTime(deadlineAt);
-    const at = await t.mutation(internal.operations.appointments.expireOverdueJustifications, {});
-    expect(at).toEqual({ expired: 1, hasMore: false });
+    const at = await t.mutation(internal.operations.appointments.expireOverdueJustifications, {
+      cursor: null,
+    });
+    expect(at).toMatchObject({ expired: 1, isDone: true });
     expect(await appointmentStatus(t, appointmentId)).toBe("no_show_unjustified");
 
     const events: Doc<"notificationEvents">[] = await t.run(
@@ -257,11 +264,10 @@ describe("barrido programado con reloj adelantado", () => {
       },
     ]);
 
-    const again = await t.mutation(
-      internal.operations.appointments.expireOverdueJustifications,
-      {},
-    );
-    expect(again).toEqual({ expired: 0, hasMore: false });
+    const again = await t.mutation(internal.operations.appointments.expireOverdueJustifications, {
+      cursor: null,
+    });
+    expect(again).toMatchObject({ expired: 0, isDone: true });
   });
 
   test("no cierra una inasistencia con entrega pending", async () => {
@@ -274,15 +280,14 @@ describe("barrido programado con reloj adelantado", () => {
     const deadlineAt = justificationDeadlineFor(ABSENCE_WITH_HOLIDAY).deadlineAt;
 
     vi.setSystemTime(deadlineAt + HOUR);
-    const result = await t.mutation(
-      internal.operations.appointments.expireOverdueJustifications,
-      {},
-    );
-    expect(result).toEqual({ expired: 0, hasMore: false });
+    const result = await t.mutation(internal.operations.appointments.expireOverdueJustifications, {
+      cursor: null,
+    });
+    expect(result).toMatchObject({ expired: 0, isDone: true });
     expect(await appointmentStatus(t, appointmentId)).toBe("no_show");
   });
 
-  test("procesa más atenciones que el lote sin fallar", async () => {
+  test("avanza por lotes con cursor y termina sin programar otra ejecución", async () => {
     const t = convexTest(schema, modules);
     const deadlineAt = justificationDeadlineFor(ABSENCE_WITH_HOLIDAY).deadlineAt;
     vi.setSystemTime(deadlineAt + HOUR);
@@ -293,28 +298,36 @@ describe("barrido programado con reloj adelantado", () => {
         await seedAbsence(t, {
           label: `batch-${index}`,
           startsAt: ABSENCE_WITH_HOLIDAY - index * DAY,
-          ...(index === 0 ? { justificationSubmittedAt: Date.UTC(2026, 11, 14, 12) } : {}),
+          ...(index < 2 ? { justificationSubmittedAt: Date.UTC(2026, 11, 14, 12) } : {}),
         }),
       );
     }
 
-    const first = await t.mutation(internal.operations.appointments.expireOverdueJustifications, {
-      limit: 2,
-    });
-    expect(first.hasMore).toBe(true);
+    // Las dos entregas pending más antiguas no se pueden cerrar: el cursor
+    // tiene que avanzar por encima de ellas para alcanzar las vencidas.
+    let cursor: string | null = null;
+    let totalExpired = 0;
+    let runs = 0;
+    let last: { expired: number; cursor: string | null; isDone: boolean } | null = null;
+    while (runs < 10) {
+      const result: { expired: number; cursor: string | null; isDone: boolean } = await t.mutation(
+        internal.operations.appointments.expireOverdueJustifications,
+        { cursor, limit: 2 },
+      );
+      totalExpired += result.expired;
+      runs += 1;
+      last = result;
+      if (result.isDone) break;
+      cursor = result.cursor;
+    }
 
-    // Las entregas pending se dejan: se cierran las cuatro vencidas restantes.
-    const second = await t.mutation(internal.operations.appointments.expireOverdueJustifications, {
-      limit: 2,
-    });
-    const third = await t.mutation(internal.operations.appointments.expireOverdueJustifications, {
-      limit: 2,
-    });
-    expect(first.expired + second.expired + third.expired).toBe(4);
-    expect(third.hasMore).toBe(false);
-
+    expect(last?.isDone).toBe(true);
+    expect(last?.expired).toBe(0);
+    expect(runs).toBeLessThanOrEqual(4);
+    expect(totalExpired).toBe(3);
     expect(await appointmentStatus(t, ids[0] as Id<"appointments">)).toBe("no_show");
-    for (const id of ids.slice(1)) {
+    expect(await appointmentStatus(t, ids[1] as Id<"appointments">)).toBe("no_show");
+    for (const id of ids.slice(2)) {
       expect(await appointmentStatus(t, id)).toBe("no_show_unjustified");
     }
   });
