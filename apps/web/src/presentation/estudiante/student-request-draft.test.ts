@@ -7,7 +7,7 @@ import {
   findMissingFields,
   loadRequestDraft,
   saveRequestDraft,
-  toOwnRequestSubmission,
+  toRequestContentSubmission,
   type RequestDraft,
 } from "./student-request-draft.ts";
 
@@ -34,7 +34,7 @@ afterEach(() => {
 
 describe("TI2-149: campos que faltan", () => {
   test("un borrador vacío señala todos los obligatorios y no el horario opcional", () => {
-    expect(Object.keys(findMissingFields(emptyRequestDraft())).sort()).toEqual(
+    expect(Object.keys(findMissingFields(emptyRequestDraft(), "student")).sort()).toEqual(
       [
         "accessNeeds",
         "expectedOutcome",
@@ -47,30 +47,53 @@ describe("TI2-149: campos que faltan", () => {
   });
 
   test("solo espacios en un texto obligatorio cuenta como vacío", () => {
-    expect(findMissingFields(borradorCompleto({ needSummary: "   " }))).toEqual({
+    expect(findMissingFields(borradorCompleto({ needSummary: "   " }), "student")).toEqual({
       needSummary: "Describe la barrera o necesidad.",
     });
   });
 
   test("el texto de «Otra» basta como necesidad de acceso", () => {
     expect(
-      findMissingFields(borradorCompleto({ accessNeedIds: [], otherAccessNeed: "Apoyo ficticio" })),
+      findMissingFields(
+        borradorCompleto({ accessNeedIds: [], otherAccessNeed: "Apoyo ficticio" }),
+        "student",
+      ),
     ).toEqual({});
   });
 
-  test("un horario a medias se señala; completo o vacío no", () => {
-    expect(findMissingFields(borradorCompleto({ availableFrom: "09:00" }))).toHaveProperty(
-      "availableTime",
+  test("en la voz del personal los mensajes hablan del estudiante (TI2-158)", () => {
+    const errores = findMissingFields(
+      borradorCompleto({
+        expectedOutcome: "",
+        modalityPreference: "",
+        preferredAccessibleInformationChannel: "",
+      }),
+      "staff",
     );
+    expect(errores).toEqual({
+      expectedOutcome: "Indica qué espera el estudiante de CERETI.",
+      modalityPreference: "Indica si el estudiante prefiere la modalidad presencial o en línea.",
+      preferredAccessibleInformationChannel:
+        "Indica cómo prefiere recibir información el estudiante.",
+    });
+  });
+
+  test("un horario a medias se señala; completo o vacío no", () => {
     expect(
-      findMissingFields(borradorCompleto({ availableFrom: "09:00", availableTo: "13:00" })),
+      findMissingFields(borradorCompleto({ availableFrom: "09:00" }), "student"),
+    ).toHaveProperty("availableTime");
+    expect(
+      findMissingFields(
+        borradorCompleto({ availableFrom: "09:00", availableTo: "13:00" }),
+        "student",
+      ),
     ).toEqual({});
   });
 });
 
 describe("TI2-149: envío desde el borrador", () => {
   test("arma la forma completa en el orden del formulario y omite lo opcional vacío", () => {
-    expect(toOwnRequestSubmission(borradorCompleto({ otherAccessNeed: "  " }))).toEqual({
+    expect(toRequestContentSubmission(borradorCompleto({ otherAccessNeed: "  " }))).toEqual({
       needSummary: "Necesidad ficticia de prueba",
       expectedOutcome: "Resultado ficticio esperado",
       accessNeeds: [
@@ -84,7 +107,7 @@ describe("TI2-149: envío desde el borrador", () => {
   });
 
   test("incluye el texto libre y el horario cuando están", () => {
-    const submission = toOwnRequestSubmission(
+    const submission = toRequestContentSubmission(
       borradorCompleto({
         otherAccessNeed: "Apoyo ficticio",
         availableFrom: "09:00",
@@ -132,7 +155,7 @@ describe("TI2-149: conservación del borrador", () => {
     );
     const draft = loadRequestDraft(TITULAR);
     expect(draft).toEqual(borradorCompleto());
-    expect(toOwnRequestSubmission(draft)).not.toHaveProperty("idempotencyKey");
+    expect(toRequestContentSubmission(draft)).not.toHaveProperty("idempotencyKey");
   });
 
   test("al cerrar sesión se borran los borradores de todas las cuentas y nada más", () => {
