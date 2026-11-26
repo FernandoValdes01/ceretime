@@ -234,11 +234,11 @@ describe("sincronización automática con Calendar (TI2-162)", () => {
     }
   });
 
-  test("cuando nadie vinculó queda `pending` sin pedir nada", async () => {
+  test("cuando nadie vinculó queda registrado sin pedir nada", async () => {
     const { deps, recorded, reschedules } = depsFor(context(), { access: {} });
     const result = await syncAppointmentToGoogleCalendar(deps);
     expect(result).toEqual({ status: "ok", data: { status: "pending" } });
-    expect(recorded).toHaveLength(0);
+    expect(recorded).toEqual([{ kind: "not_linked" }]);
     expect(reschedules()).toBe(0);
   });
 
@@ -311,6 +311,42 @@ describe("sincronización automática con Calendar (TI2-162)", () => {
     expect(result).toEqual({ status: "ok", data: { status: "synced", eventId: "event-9" } });
     expect(seen).toEqual([STUDENT, PRO]);
     expect(calls).toEqual([{ op: "delete", token: "token-pro", id: "event-9" }]);
+  });
+
+  test("eliminar sigue al próximo calendario si el primero no tiene el evento", async () => {
+    const loaded = context({
+      status: "cancelled_by_cereti",
+      reference: { eventId: "event-9", addedAt: CREATED_AT },
+      referenceIsCurrent: true,
+      ownerId: null,
+    });
+    const order: string[] = [];
+    const api = (token: string): CalendarSyncGateway => ({
+      createEvent: async (input) => ({ status: "created", eventId: input.googleEventId }),
+      updateEvent: async (input) => ({ status: "updated", eventId: input.googleEventId }),
+      deleteEvent: async (input) => {
+        order.push(token);
+        if (token === "token-student") {
+          return { status: "not_found", eventId: input.googleEventId };
+        }
+        return { status: "deleted", eventId: input.googleEventId };
+      },
+    });
+    const access = accessFor({ [STUDENT]: okToken("token-student"), [PRO]: okToken("token-pro") });
+    const row = { startsAt: START_AT, endsAt: END_AT, status: "cancelled_by_cereti" };
+    const store = fakeStore(row);
+    const result = await syncAppointmentToGoogleCalendar({
+      loadAppointment: async () => loaded,
+      resolveAccess: access.resolve,
+      calendarApi: api,
+      store: store.store,
+      reschedule: store.reschedule,
+      now: () => NOW,
+      timeZone: "America/Santiago",
+    });
+    expect(result).toEqual({ status: "ok", data: { status: "synced", eventId: "event-9" } });
+    expect(order).toEqual(["token-student", "token-pro"]);
+    expect(store.recorded).toEqual([{ kind: "noop", eventId: "event-9" }]);
   });
 
   test("dos despachos: el viejo no pisa al nuevo y el siguiente repara Google", async () => {

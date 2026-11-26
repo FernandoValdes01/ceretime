@@ -14,6 +14,8 @@ import {
   googleCalendarOAuthAccess,
 } from "../infrastructure/calendar/google_calendar";
 import { calendarLinkReader, calendarLinkStore } from "../infrastructure/calendar/repository";
+import { calendarSyncScheduler } from "../infrastructure/calendar/sync_scheduler";
+import { linkerFutureAppointmentsReader } from "../infrastructure/appointments/repository";
 import { throwPublicApiError, unwrapApiResult } from "./session";
 
 /**
@@ -97,6 +99,8 @@ export const confirmCalendarLink = mutation({
           auth: authorizationReader(ctx),
           oauth: googleCalendarConnectionReader(ctx),
           store: calendarLinkStore(ctx),
+          futureAppointments: linkerFutureAppointmentsReader(ctx),
+          calendarSync: calendarSyncScheduler(ctx),
           now: () => Date.now(),
         },
         { tokenIdentifier: identity?.tokenIdentifier ?? null },

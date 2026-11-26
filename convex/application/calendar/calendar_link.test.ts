@@ -8,10 +8,12 @@ import {
   getCalendarLinkStatus,
   markCalendarDisconnected,
   revokeCalendarOAuthAccess,
+  type CalendarFutureAppointmentsReader,
   type CalendarLinkMetadataStore,
   type CalendarOAuthAccess,
   type CalendarOAuthLinkReader,
 } from "./calendar_link";
+import type { CalendarSyncScheduler } from "./sync";
 
 type FakeProfile = {
   readonly _id: string;
@@ -143,6 +145,24 @@ function fakeStore(
   };
 }
 
+function linkSync(future: readonly { readonly appointmentId: string }[] = []): {
+  readonly futureAppointments: CalendarFutureAppointmentsReader;
+  readonly calendarSync: CalendarSyncScheduler & { readonly scheduled: string[] };
+} {
+  const scheduled: string[] = [];
+  return {
+    futureAppointments: {
+      listFutureForSync: async () => [...future],
+    },
+    calendarSync: {
+      scheduled,
+      scheduleSync: async (appointmentId) => {
+        scheduled.push(appointmentId);
+      },
+    },
+  };
+}
+
 describe("getCalendarLinkStatus", () => {
   test("exige sesión con perfil vigente", async () => {
     for (const tokenIdentifier of [null, "token-missing", "token-inactive"]) {
@@ -217,7 +237,7 @@ describe("confirmCalendarLink", () => {
   test("rechazar la autorización no bloquea: responde desconectado sin error", async () => {
     const store = fakeStore();
     const result = await confirmCalendarLink(
-      { auth: fakeAuth(), oauth: fakeOAuth([]), store, now: () => 3000 },
+      { auth: fakeAuth(), oauth: fakeOAuth([]), store, now: () => 3000, ...linkSync() },
       { tokenIdentifier: "token-student" },
     );
     expect(result).toEqual({ status: "ok", data: { connected: false, status: "not_connected" } });
@@ -232,6 +252,7 @@ describe("confirmCalendarLink", () => {
         oauth: fakeOAuth(["openid", CALENDAR_EVENTS_SCOPE]),
         store,
         now: () => 3000,
+        ...linkSync(),
       },
       { tokenIdentifier: "token-student" },
     );
@@ -243,7 +264,13 @@ describe("confirmCalendarLink", () => {
   test("una persona no vincula la cuenta de otra", async () => {
     const store = fakeStore();
     await confirmCalendarLink(
-      { auth: fakeAuth(), oauth: fakeOAuth([CALENDAR_EVENTS_SCOPE]), store, now: () => 3000 },
+      {
+        auth: fakeAuth(),
+        oauth: fakeOAuth([CALENDAR_EVENTS_SCOPE]),
+        store,
+        now: () => 3000,
+        ...linkSync(),
+      },
       { tokenIdentifier: "token-pro" },
     );
     expect(store.writes).toEqual([{ userId: "user-pro", kind: "connect" }]);
@@ -253,7 +280,13 @@ describe("confirmCalendarLink", () => {
     for (const tokenIdentifier of ["token-intern", "token-admin"]) {
       const store = fakeStore();
       const result = await confirmCalendarLink(
-        { auth: fakeAuth(), oauth: fakeOAuth([CALENDAR_EVENTS_SCOPE]), store, now: () => 3000 },
+        {
+          auth: fakeAuth(),
+          oauth: fakeOAuth([CALENDAR_EVENTS_SCOPE]),
+          store,
+          now: () => 3000,
+          ...linkSync(),
+        },
         { tokenIdentifier },
       );
       expect(result).toEqual({
@@ -272,6 +305,7 @@ describe("confirmCalendarLink", () => {
           oauth: fakeOAuth([CALENDAR_EVENTS_SCOPE]),
           store: fakeStore(),
           now: () => 3000,
+          ...linkSync(),
         },
         { tokenIdentifier },
       );
@@ -289,6 +323,7 @@ describe("confirmCalendarLink", () => {
         oauth: fakeOAuth([CALENDAR_EVENTS_SCOPE]),
         store: fakeStore(),
         now: () => 0,
+        ...linkSync(),
       },
       { tokenIdentifier: "token-student" },
     );
@@ -296,6 +331,51 @@ describe("confirmCalendarLink", () => {
       status: "error",
       error: { code: "conflict", message: "La solicitud entra en conflicto con el estado actual." },
     });
+  });
+
+  test("al vincular programa las futuras vigentes, acotadas", async () => {
+    const sync = linkSync();
+    const listed: { userId: string; now: number; limit: number }[] = [];
+    const result = await confirmCalendarLink(
+      {
+        auth: fakeAuth(),
+        oauth: fakeOAuth([CALENDAR_EVENTS_SCOPE]),
+        store: fakeStore(),
+        futureAppointments: {
+          listFutureForSync: async (userId, now, limit) => {
+            listed.push({ userId, now, limit });
+            return [{ appointmentId: "appointment-1" }, { appointmentId: "appointment-2" }];
+          },
+        },
+        calendarSync: sync.calendarSync,
+        now: () => 3000,
+      },
+      { tokenIdentifier: "token-student" },
+    );
+    expect(result.status).toBe("ok");
+    expect(listed).toEqual([{ userId: "user-student", now: 3000, limit: 50 }]);
+    expect(sync.calendarSync.scheduled).toEqual(["appointment-1", "appointment-2"]);
+  });
+
+  test("rechazar la autorización no programa nada", async () => {
+    const sync = linkSync([{ appointmentId: "appointment-1" }]);
+    const result = await confirmCalendarLink(
+      {
+        auth: fakeAuth(),
+        oauth: fakeOAuth([]),
+        store: fakeStore(),
+        futureAppointments: {
+          listFutureForSync: async () => {
+            throw new Error("No debe listar sin vínculo");
+          },
+        },
+        calendarSync: sync.calendarSync,
+        now: () => 3000,
+      },
+      { tokenIdentifier: "token-student" },
+    );
+    expect(result).toEqual({ status: "ok", data: { connected: false, status: "not_connected" } });
+    expect(sync.calendarSync.scheduled).toHaveLength(0);
   });
 });
 

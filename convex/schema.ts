@@ -395,6 +395,9 @@ export default defineSchema({
     calendarSyncErrorCode: v.optional(calendarSyncErrorCodeUnion),
     calendarSyncScheduledAt: v.optional(v.number()),
     calendarEventOwnerId: v.optional(v.string()),
+    // Fallos seguidos sin éxito: el reintento los acota y los espera con
+    // backoff. Se reinicia con cada éxito y con cada cambio nuevo.
+    calendarSyncFailures: v.optional(v.number()),
     justificationExplanation: v.optional(v.string()),
     justificationSubmittedAt: v.optional(v.number()),
     justificationReview: v.optional(justificationReviewUnion),

@@ -1,8 +1,8 @@
 /// <reference types="vite/client" />
 import { convexTest } from "convex-test";
 import { expect, test } from "vitest";
-import { api } from "../_generated/api";
-import type { Doc } from "../_generated/dataModel";
+import { api, internal } from "../_generated/api";
+import type { Doc, Id } from "../_generated/dataModel";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -96,6 +96,32 @@ async function readSync(t: ReturnType<typeof convexTest>, appointmentId: string)
   });
 }
 
+async function seedAppointment(
+  t: ReturnType<typeof convexTest>,
+  input: {
+    readonly accompanimentId: Id<"accompaniments">;
+    readonly studentId: Id<"users">;
+    readonly professionalId: Id<"users">;
+    readonly startsAt: number;
+    readonly endsAt: number;
+  },
+) {
+  return await t.run(async (ctx) => {
+    return await ctx.db.insert("appointments", {
+      accompanimentId: input.accompanimentId,
+      studentId: input.studentId,
+      professionalId: input.professionalId,
+      modality: "online",
+      status: "scheduled",
+      startsAt: input.startsAt,
+      endsAt: input.endsAt,
+      createdAt: CREATED_AT,
+    });
+  });
+}
+
+const CREATED_AT = Date.UTC(2026, 10, 1, 12, 0, 0);
+
 const START_AT = Date.UTC(2026, 11, 1, 16, 0, 0);
 const END_AT = Date.UTC(2026, 11, 1, 17, 0, 0);
 
@@ -159,4 +185,122 @@ test("TI2-162 API: reagendar deja pendiente con la última fecha", async () => {
   // no recupera la fecha antigua.
   const again = await readSync(t, booked.appointmentId);
   expect(again?.startsAt).not.toBe(START_AT);
+}, 20_000);
+
+test("TI2-162 API: el reintento toma pendientes vencidos y fallos con backoff, nunca not_linked", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "cron");
+  const duePending = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: START_AT,
+    endsAt: END_AT,
+  });
+  const freshPending = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: START_AT,
+    endsAt: END_AT,
+  });
+  const retryable = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: START_AT,
+    endsAt: END_AT,
+  });
+  const exhausted = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: START_AT,
+    endsAt: END_AT,
+  });
+  const neverLinked = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: START_AT,
+    endsAt: END_AT,
+  });
+  const old = Date.now() - 10 * 60_000;
+  await t.run(async (ctx) => {
+    const due = ctx.db.normalizeId("appointments", duePending);
+    const fresh = ctx.db.normalizeId("appointments", freshPending);
+    const retry = ctx.db.normalizeId("appointments", retryable);
+    const spent = ctx.db.normalizeId("appointments", exhausted);
+    const never = ctx.db.normalizeId("appointments", neverLinked);
+    if (due === null || fresh === null || retry === null || spent === null || never === null) {
+      throw new Error("Siembra inválida");
+    }
+    await ctx.db.patch(due, { calendarSyncStatus: "pending", calendarSyncScheduledAt: old });
+    await ctx.db.patch(fresh, {
+      calendarSyncStatus: "pending",
+      calendarSyncScheduledAt: Date.now(),
+    });
+    await ctx.db.patch(retry, {
+      calendarSyncStatus: "error",
+      calendarSyncErrorCode: "unavailable",
+      calendarSyncAttempts: 3,
+      calendarSyncFailures: 1,
+      calendarSyncLastAttemptAt: old,
+    });
+    await ctx.db.patch(spent, {
+      calendarSyncStatus: "error",
+      calendarSyncErrorCode: "unavailable",
+      calendarSyncAttempts: 12,
+      calendarSyncFailures: 10,
+      calendarSyncLastAttemptAt: old,
+    });
+    await ctx.db.patch(never, { calendarSyncStatus: "not_linked" });
+  });
+
+  const result = await t.mutation(internal.operations.calendar.scheduleDueCalendarSyncs, {});
+  expect(result).toEqual({ pending: 1, retried: 1 });
+
+  // Sin vínculos no se vuelve a programar: queda terminal sin pedir nada.
+  const skipped = await t.mutation(internal.operations.calendar.markCalendarSyncNotLinked, {
+    appointmentId: freshPending,
+  });
+  expect(skipped).toBeNull();
+  expect(await readSync(t, freshPending)).toMatchObject({ status: "not_linked" });
+}, 20_000);
+
+test("TI2-162 API: la escritura con verificación deja pasar solo lo vigente", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "stale");
+  const appointmentId = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: START_AT,
+    endsAt: END_AT,
+  });
+  const expected = { startsAt: START_AT, endsAt: END_AT, status: "scheduled" as const };
+
+  const recorded = await t.mutation(internal.operations.calendar.recordCalendarSyncOutcome, {
+    appointmentId,
+    attemptedAt: Date.now(),
+    expected,
+    outcome: { kind: "success", eventId: "event-1", ownerId: "subject-1" },
+  });
+  expect(recorded).toBe("recorded");
+  expect(await readSync(t, appointmentId)).toMatchObject({ status: "synced" });
+
+  // Un despacho viejo con otro horario no escribe y limpia la referencia.
+  const stale = await t.mutation(internal.operations.calendar.recordCalendarSyncOutcome, {
+    appointmentId,
+    attemptedAt: Date.now(),
+    expected: {
+      startsAt: START_AT - 60_000,
+      endsAt: END_AT - 60_000,
+      status: "scheduled" as const,
+    },
+    outcome: { kind: "success", eventId: "event-old", ownerId: "subject-1" },
+  });
+  expect(stale).toBe("stale");
+  const afterStale = await readSync(t, appointmentId);
+  expect(afterStale).toMatchObject({ status: "pending" });
 }, 20_000);

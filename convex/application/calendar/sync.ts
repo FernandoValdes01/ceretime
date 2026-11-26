@@ -81,7 +81,8 @@ export interface CalendarSyncStore {
     readonly outcome:
       | { readonly kind: "success"; readonly eventId: string; readonly ownerId: string }
       | { readonly kind: "noop"; readonly eventId?: string }
-      | { readonly kind: "failure"; readonly errorCode: "not_connected" | "unavailable" };
+      | { readonly kind: "failure"; readonly errorCode: "not_connected" | "unavailable" }
+      | { readonly kind: "not_linked" };
   }): Promise<"recorded" | "stale">;
 }
 
@@ -143,8 +144,9 @@ function isCancelledStatus(status: AppointmentStatus): boolean {
  * con referencia se usa siempre el calendario del dueño (`ownerId`); sin
  * referencia se prueban los participantes en orden hasta el primer éxito y ese
  * calendario queda como dueño. Eliminar prueba todos los calendarios con
- * acceso (borrar lo inexistente es éxito idempotente). Cuando nadie vinculó,
- * queda `pending` sin pedir nada; con vínculo perdido responde `not_connected`
+ * acceso (borrar lo inexistente es éxito idempotente) y basta con que alguno
+ * responda eliminado o ausente. Cuando nadie vinculó, queda registrado como
+ * `not_linked` sin pedir nada; con vínculo perdido responde `not_connected`
  * para pedir volver a vincular y con fallo temporal `unavailable` para
  * reintentar. Un fallo nunca revierte la reserva. Los errores usan el contrato
  * común; los clientes distinguen por `code`, nunca por el texto.
@@ -197,6 +199,12 @@ export async function syncAppointmentToGoogleCalendar(deps: {
     if (outcome.kind === "success") {
       return okResult({ status: "synced", eventId: outcome.eventId });
     }
+    if (outcome.kind === "not_linked") {
+      // Nadie vinculó: queda registrado sin pedir nada y el reintento no lo
+      // vuelve a programar; si alguien vincula después, la confirmación del
+      // vínculo programa las atenciones futuras vigentes.
+      return okResult({ status: "pending" });
+    }
     return okResult({
       status: "synced",
       ...(outcome.eventId === undefined ? {} : { eventId: outcome.eventId }),
@@ -212,14 +220,13 @@ export async function syncAppointmentToGoogleCalendar(deps: {
       context.ownerId !== null
         ? [{ subject: context.ownerId, everLinked: true }]
         : context.participants;
+    let sawDeletedOrMissing = false;
     let sawUnavailable = false;
     let sawNotConnected = false;
-    let sawNeverLinked = false;
     for (const target of targets) {
       const access = await deps.resolveAccess(target.subject);
       if (access.status === "never_linked") {
         if (context.ownerId !== null) sawNotConnected = true;
-        else sawNeverLinked = true;
         continue;
       }
       if (access.status !== "ok") {
@@ -235,12 +242,20 @@ export async function syncAppointmentToGoogleCalendar(deps: {
         else sawNotConnected = true;
         continue;
       }
-      return await finish({ kind: "noop", eventId: deleted.eventId });
+      // Sin dueño el evento puede estar en otro calendario ya probado: se
+      // sigue con el próximo y basta con que alguno responda eliminado o
+      // ausente para darlo por borrado.
+      if (context.ownerId !== null) {
+        return await finish({ kind: "noop", eventId: deleted.eventId });
+      }
+      sawDeletedOrMissing = true;
+    }
+    if (sawDeletedOrMissing) {
+      return await finish({ kind: "noop", eventId: context.reference.eventId });
     }
     if (sawUnavailable) return await finish({ kind: "failure", errorCode: "unavailable" });
     if (sawNotConnected) return await finish({ kind: "failure", errorCode: "not_connected" });
-    if (sawNeverLinked || targets.length === 0) return okResult({ status: "pending" });
-    return await finish({ kind: "failure", errorCode: "not_connected" });
+    return await finish({ kind: "not_linked" });
   }
 
   if (!isCalendarActionableStatus(context.status)) {
@@ -350,6 +365,7 @@ export async function syncAppointmentToGoogleCalendar(deps: {
   }
   if (sawUnavailable) return await finish({ kind: "failure", errorCode: "unavailable" });
   if (sawNotConnected) return await finish({ kind: "failure", errorCode: "not_connected" });
-  // Nadie vinculó: queda `pending` sin pedir nada; el reintento lo retoma.
-  return okResult({ status: "pending" });
+  // Nadie vinculó: queda registrado sin pedir nada y el reintento no lo
+  // retoma; si alguien vincula después, esa confirmación lo programa.
+  return await finish({ kind: "not_linked" });
 }

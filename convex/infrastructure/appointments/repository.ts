@@ -930,6 +930,50 @@ export function appointmentListReader(ctx: DbReader) {
 }
 
 /**
+ * Futuras atenciones vigentes de quien vincula, para retomar al vincular.
+ *
+ * Lee por los índices del estudiante dueño y del profesional responsable con
+ * rango desde ahora, ordenadas por inicio y acotadas a las más próximas: la
+ * confirmación del vínculo las programa sin barrer la tabla. Solo estados que
+ * admiten calendario (`scheduled`/`rescheduled`).
+ */
+export function linkerFutureAppointmentsReader(ctx: DbReader) {
+  return {
+    listFutureForSync: async (
+      userId: string,
+      now: number,
+      limit: number,
+    ): Promise<readonly { readonly appointmentId: string }[]> => {
+      const id = ctx.db.normalizeId("users", userId);
+      if (id === null || !Number.isFinite(now) || limit <= 0) return [];
+      const [owned, responsible] = await Promise.all([
+        ctx.db
+          .query("appointments")
+          .withIndex("by_studentId_and_startsAt", (q) => q.eq("studentId", id).gte("startsAt", now))
+          .order("asc")
+          .take(limit),
+        ctx.db
+          .query("appointments")
+          .withIndex("by_professionalId_and_startsAt", (q) =>
+            q.eq("professionalId", id).gte("startsAt", now),
+          )
+          .order("asc")
+          .take(limit),
+      ]);
+      const seen = new Set<string>();
+      const upcoming: { readonly appointmentId: string; readonly startsAt: number }[] = [];
+      for (const row of [...owned, ...responsible]) {
+        if (!isCalendarActionableStatus(row.status) || seen.has(row._id)) continue;
+        seen.add(row._id);
+        upcoming.push({ appointmentId: row._id, startsAt: row.startsAt });
+      }
+      upcoming.sort((first, second) => first.startsAt - second.startsAt);
+      return upcoming.slice(0, limit).map(({ appointmentId }) => ({ appointmentId }));
+    },
+  };
+}
+
+/**
  * Guarda la referencia del evento creado o actualizado por TI2-122 y TI2-162.
  * Solo la llama la mutación interna que compone la acción después de un
  * resultado exitoso del proveedor; un reintento con el mismo identificador

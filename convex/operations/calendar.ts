@@ -35,10 +35,7 @@ import {
   normalizeAppointmentId,
   recordCalendarEvent,
 } from "../infrastructure/appointments/repository";
-import {
-  markCalendarSyncPending as markSyncPendingRow,
-  recordCalendarSyncAttempt as recordSyncAttemptRow,
-} from "../infrastructure/calendar/repository";
+import { markCalendarSyncPending as markSyncPendingRow } from "../infrastructure/calendar/repository";
 import {
   calendarOAuthClientConfigFromEnv,
   deleteCalendarEvent,
@@ -301,6 +298,7 @@ const syncOutcomeValidator = v.union(
     kind: v.literal("failure"),
     errorCode: v.union(v.literal("not_connected"), v.literal("unavailable")),
   }),
+  v.object({ kind: v.literal("not_linked") }),
 );
 
 /**
@@ -358,6 +356,17 @@ export const recordCalendarSyncOutcome = internalMutation({
         calendarSyncAttempts: attempts,
         calendarSyncLastAttemptAt: args.attemptedAt,
         calendarSyncErrorCode: args.outcome.errorCode,
+        calendarSyncFailures: (doc.calendarSyncFailures ?? 0) + 1,
+      });
+      return "recorded" as const;
+    }
+    if (args.outcome.kind === "not_linked") {
+      await ctx.db.patch(appointmentId, {
+        calendarSyncStatus: "not_linked",
+        calendarSyncAttempts: attempts,
+        calendarSyncLastAttemptAt: args.attemptedAt,
+        calendarSyncErrorCode: undefined,
+        calendarSyncFailures: 0,
       });
       return "recorded" as const;
     }
@@ -366,6 +375,7 @@ export const recordCalendarSyncOutcome = internalMutation({
       calendarSyncAttempts: attempts,
       calendarSyncLastAttemptAt: args.attemptedAt,
       calendarSyncErrorCode: undefined,
+      calendarSyncFailures: 0,
       ...(args.outcome.kind === "success"
         ? {
             calendarEventId: args.outcome.eventId,
@@ -380,31 +390,19 @@ export const recordCalendarSyncOutcome = internalMutation({
   },
 });
 
-/** Registra un intento de sincronización, exitoso o fallido. */
-export const recordSyncAttempt = internalMutation({
-  args: {
-    appointmentId: v.string(),
-    status: v.union(v.literal("synced"), v.literal("error")),
-    attemptedAt: v.number(),
-    errorCode: v.optional(v.union(v.literal("not_connected"), v.literal("unavailable"))),
-  },
+/** Registra un estado terminal que no pide nada (TI2-162). */
+export const markCalendarSyncNotLinked = internalMutation({
+  args: { appointmentId: v.string() },
   returns: v.null(),
   handler: async (ctx, args) => {
     const appointmentId = normalizeAppointmentId(ctx, args.appointmentId);
     if (appointmentId === null) return null;
-    if (!Number.isFinite(args.attemptedAt) || args.attemptedAt <= 0) return null;
-    if (args.status === "synced") {
-      await recordSyncAttemptRow(ctx, appointmentId, {
-        status: "synced",
-        attemptedAt: args.attemptedAt,
-      });
-      return null;
-    }
-    if (args.errorCode === undefined) return null;
-    await recordSyncAttemptRow(ctx, appointmentId, {
-      status: "error",
-      attemptedAt: args.attemptedAt,
-      errorCode: args.errorCode,
+    const doc = await ctx.db.get(appointmentId);
+    if (doc === null) return null;
+    await ctx.db.patch(appointmentId, {
+      calendarSyncStatus: "not_linked",
+      calendarSyncErrorCode: undefined,
+      calendarSyncFailures: 0,
     });
     return null;
   },
@@ -427,8 +425,8 @@ const syncActionResultValidator = v.union(
  * sincronizan la última fecha. Con referencia usa siempre el calendario del
  * dueño; sin referencia prueba los participantes en orden y el primero con
  * éxito queda como dueño. Eliminar prueba todos los calendarios con acceso.
- * Cuando nadie vinculó queda `pending` sin pedir nada; con vínculo perdido
- * responde `not_connected` y con fallo temporal `unavailable`. Un fallo no
+ * Cuando nadie vinculó queda registrado como `not_linked` sin pedir nada; con
+ * vínculo perdido responde `not_connected` y con fallo temporal `unavailable`. Un fallo no
  * deshace la reserva: registra `error` con el código genérico y la atención
  * sigue vigente.
  */
@@ -451,12 +449,9 @@ export const syncAppointmentCalendar = internalAction({
     });
     if (loaded === null) {
       // Sin atención o sin sujeto no hay nada que sincronizar: estado terminal
-      // que el reintento no vuelve a programar.
-      await ctx.runMutation(internal.operations.calendar.recordSyncAttempt, {
+      // que no pide nada y que el reintento no vuelve a programar.
+      await ctx.runMutation(internal.operations.calendar.markCalendarSyncNotLinked, {
         appointmentId: args.appointmentId,
-        status: "error",
-        attemptedAt: Date.now(),
-        errorCode: "not_connected",
       });
       return { status: "skipped" as const };
     }
@@ -520,12 +515,9 @@ export const syncAppointmentCalendar = internalAction({
     });
     if (outcome.status === "error") {
       // Rechazo del contrato común (`unauthorized`, `conflict`): no es un
-      // fallo del proveedor; queda terminal sin reintento.
-      await ctx.runMutation(internal.operations.calendar.recordSyncAttempt, {
+      // fallo del proveedor; queda terminal sin pedir nada ni reintentar.
+      await ctx.runMutation(internal.operations.calendar.markCalendarSyncNotLinked, {
         appointmentId: args.appointmentId,
-        status: "error",
-        attemptedAt,
-        errorCode: "not_connected",
       });
       return { status: "skipped" as const };
     }
@@ -581,9 +573,9 @@ export const scheduleDueCalendarSyncs = internalMutation({
     let retried = 0;
     for (const row of errorRows) {
       if (row.calendarSyncErrorCode !== "unavailable") continue;
-      const attempts = row.calendarSyncAttempts ?? 0;
-      if (attempts >= MAX_SYNC_ATTEMPTS) continue;
-      if ((row.calendarSyncLastAttemptAt ?? 0) > now - syncRetryBackoffMs(attempts)) continue;
+      const failures = row.calendarSyncFailures ?? row.calendarSyncAttempts ?? 0;
+      if (failures >= MAX_SYNC_ATTEMPTS) continue;
+      if ((row.calendarSyncLastAttemptAt ?? 0) > now - syncRetryBackoffMs(failures)) continue;
       await ctx.scheduler.runAfter(0, internal.operations.calendar.syncAppointmentCalendar, {
         appointmentId: row._id,
       });
