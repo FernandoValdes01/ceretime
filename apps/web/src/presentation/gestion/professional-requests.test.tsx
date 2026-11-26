@@ -10,10 +10,18 @@ import {
   within,
 } from "@testing-library/react";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
+import { ConvexError } from "convex/values";
+import { useSyncExternalStore } from "react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createAppRouter } from "../routes/router.tsx";
 import type { WebSessionRole, WebSessionState } from "../session/session-state.ts";
 import type { Id } from "../../../../../convex/_generated/dataModel";
+import {
+  AGENDA_TIME_ZONE,
+  civilDateOfInstant,
+  RECEIVED_AT_FUTURE_MESSAGE,
+  REFERRAL_REASON_MAX_LENGTH,
+} from "../../../../../convex/domain/index.ts";
 import type {
   AuthorizedRequestsPage,
   OpenRequestsPage,
@@ -21,13 +29,18 @@ import type {
 } from "./professional-requests-data.ts";
 import { usePagedList } from "./paged-requests.ts";
 import { PagedItems } from "./professional-requests.tsx";
+import {
+  REGISTER_OFFICIAL_FALLBACK_MESSAGE,
+  REQUEST_ACTION_FALLBACK_MESSAGE,
+} from "./request-review-errors.ts";
+import { ACCESS_DENIED_MESSAGE } from "../shared/view-states.tsx";
 
 /**
- * Pruebas de bandeja y detalle del Profesional (TI2-91/92).
+ * Pruebas de bandeja y detalle del Profesional (TI2-91/92/157).
  *
  * Integración por el router real (incluye guards): la sesión simulada es de
  * Profesional con toma, salvo los casos de denegación. Las queries de datos
- * se mockean por módulo porque `convex/react` no distingue referencias del
+ * se simulan por módulo porque `convex/react` no distingue referencias del
  * `api` generado (crea un objeto nuevo por acceso); el cableado real
  * query→referencia lo cubren `tsc`, el build y la verificación manual contra
  * el entorno ficticio de TI2-30. Todos los datos son ficticios.
@@ -36,6 +49,17 @@ import { PagedItems } from "./professional-requests.tsx";
 // Mocks de mutaciones (TI2-92)
 const takeRequestMock = vi.fn();
 const requestInfoMock = vi.fn();
+const acceptRequestMock = vi.fn();
+const closeRequestMock = vi.fn();
+const recordContactMock = vi.fn();
+const recordAcceptanceMock = vi.fn();
+const referRequestMock = vi.fn();
+const registerOfficialMock = vi.fn();
+
+/** Denegación del contrato común (TI2-181), tal como la entrega el SDK. */
+const UNAUTHORIZED_ERROR = new ConvexError({ code: "unauthorized", message: "No autorizado" });
+/** Error del SDK con texto técnico: nunca debe llegar a la pantalla. */
+const SDK_ERROR = new Error("[CONVEX M(presentation/requests:acceptRequest)] Server Error");
 
 let mockedSession: WebSessionState;
 let mockedPair:
@@ -54,8 +78,30 @@ let authorizedByCursor: ((cursor: string | null) => AuthorizedRequestsPage | und
 let mockedDetail: RequestDetail | undefined;
 let detailThrows: Error | null = null;
 
+/**
+ * El detalle simulado es reactivo como `useQuery` de Convex: `actualizarDetalle`
+ * cambia la respuesta y vuelve a dibujar a quien la lee, igual que cuando
+ * el Backend empuja la solicitud después de una mutación.
+ */
+const detailListeners = new Set<() => void>();
+let detailVersion = 0;
+function suscribirDetalle(listener: () => void) {
+  detailListeners.add(listener);
+  return () => {
+    detailListeners.delete(listener);
+  };
+}
+function actualizarDetalle(next: RequestDetail) {
+  mockedDetail = next;
+  detailVersion += 1;
+  for (const listener of detailListeners) listener();
+}
+
+/** Las etiquetas de estado de las filas, sin las opciones del filtro. */
+const FICHA = { selector: ".student-portal__chip" };
+
 // Mock global de convex/react: solo lo usa AuthScreen (ruta /login) con
-// useQuery directo; las lecturas de gestión se mockean por módulo abajo con
+// useQuery directo; las lecturas de gestión se simulan por módulo abajo con
 // valores distintos por recurso, así que este mock no interfiere con ellas.
 vi.mock("convex/react", () => ({ useQuery: () => mockedSession }));
 
@@ -70,6 +116,7 @@ vi.mock("./professional-requests-data.ts", () => ({
   useAuthorizedRequests: (cursor: string | null) =>
     authorizedByCursor === null ? mockedAuthorized : authorizedByCursor(cursor),
   useRequestDetail: () => {
+    useSyncExternalStore(suscribirDetalle, () => detailVersion);
     if (detailThrows !== null) {
       throw detailThrows;
     }
@@ -77,6 +124,12 @@ vi.mock("./professional-requests-data.ts", () => ({
   },
   useTakeRequest: () => takeRequestMock,
   useRequestAdditionalInformation: () => requestInfoMock,
+  useAcceptRequest: () => acceptRequestMock,
+  useCloseRequestWithoutAccompaniment: () => closeRequestMock,
+  useRecordReferralContact: () => recordContactMock,
+  useRecordReferralAcceptance: () => recordAcceptanceMock,
+  useReferRequest: () => referRequestMock,
+  useRegisterOfficialRequest: () => registerOfficialMock,
 }));
 
 vi.mock("../../infrastructure/auth/auth-client", () => ({
@@ -139,7 +192,7 @@ function filaAbierta(
   overrides: Partial<{
     _id: string;
     studentId: string;
-    status: "received" | "under_review";
+    status: RequestDetail["status"];
     createdAt: number;
   }> = {},
 ) {
@@ -152,7 +205,7 @@ function filaAbierta(
 }
 
 function filaTomada(
-  overrides: Partial<{ _id: string; status: "under_review"; accessNeeds: string }> = {},
+  overrides: Partial<{ _id: string; status: RequestDetail["status"]; accessNeeds: string }> = {},
 ) {
   return {
     ...filaAbierta(overrides),
@@ -188,8 +241,15 @@ beforeEach(() => {
   authorizedByCursor = null;
   mockedDetail = undefined;
   detailThrows = null;
+  detailListeners.clear();
   takeRequestMock.mockReset();
   requestInfoMock.mockReset();
+  acceptRequestMock.mockReset();
+  closeRequestMock.mockReset();
+  recordContactMock.mockReset();
+  recordAcceptanceMock.mockReset();
+  referRequestMock.mockReset();
+  registerOfficialMock.mockReset();
 });
 
 afterEach(() => {
@@ -221,7 +281,7 @@ describe("bandeja del Profesional (TI2-91)", () => {
 
     const bandeja = await screen.findByRole("heading", { name: "Bandeja de triage" });
     expect(bandeja).toBeDefined();
-    expect(await screen.findAllByText("Recibida")).toHaveLength(2);
+    expect(await screen.findAllByText("Recibida", FICHA)).toHaveLength(2);
     // La bandeja minimizada no expone necesidades de acceso.
     expect(screen.queryByText("Necesidad ficticia")).toBeNull();
     expect(await screen.findByText("No tienes solicitudes tomadas.")).toBeDefined();
@@ -233,7 +293,7 @@ describe("bandeja del Profesional (TI2-91)", () => {
     mockedAuthorized = paginaTomadas([filaTomada({ _id: "req-9", status: "under_review" })], true);
     renderAt("/profesional/solicitudes");
 
-    expect(await screen.findByText("En revisión")).toBeDefined();
+    expect(await screen.findByText("En revisión", FICHA)).toBeDefined();
     const enlace = await screen.findByRole("link", { name: /En revisión/ });
     expect(enlace.getAttribute("href")).toBe("/profesional/solicitudes/req-9");
   });
@@ -253,17 +313,39 @@ describe("bandeja del Profesional (TI2-91)", () => {
     expect(takeRequestMock).toHaveBeenCalledWith({ requestId: "req-1" });
   });
 
+  test("cada «Tomar» de la bandeja describe su fila para el lector de pantalla", async () => {
+    comoProfesional();
+    mockedOpen = paginaAbierta(
+      [filaAbierta({ _id: "req-1" }), filaAbierta({ _id: "req-2" })],
+      true,
+    );
+    mockedAuthorized = paginaTomadas([], true);
+    renderAt("/profesional/solicitudes");
+
+    const controles = await screen.findAllByRole("button", { name: "Tomar" });
+    expect(controles).toHaveLength(2);
+    const textos = controles.map((control) => {
+      const fila = document.getElementById(control.getAttribute("aria-describedby") ?? "");
+      return fila?.textContent ?? "";
+    });
+    for (const texto of textos) expect(texto).toMatch(/^Recibida.*Registrada el /);
+    expect(new Set(controles.map((control) => control.getAttribute("aria-describedby"))).size).toBe(
+      2,
+    );
+  });
+
   test("error al tomar en bandeja muestra aviso y permite reintento", async () => {
     comoProfesional();
     mockedOpen = paginaAbierta([filaAbierta({ _id: "req-1" })], true);
     mockedAuthorized = paginaTomadas([], true);
-    takeRequestMock.mockRejectedValueOnce(new Error("No autorizado"));
+    takeRequestMock.mockRejectedValueOnce(SDK_ERROR);
     renderAt("/profesional/solicitudes");
 
     const tomarBtn = await screen.findByRole("button", { name: "Tomar" });
     fireEvent.click(tomarBtn);
 
-    expect(await screen.findByText("No autorizado")).toBeDefined();
+    expect(await screen.findByText(REQUEST_ACTION_FALLBACK_MESSAGE)).toBeDefined();
+    expect(screen.queryByText(/CONVEX|Server Error/)).toBeNull();
     expect(tomarBtn.hasAttribute("disabled")).toBe(false);
 
     takeRequestMock.mockResolvedValue(undefined);
@@ -321,7 +403,7 @@ describe("bandeja del Profesional (TI2-91)", () => {
     expect(
       await screen.findByText("No pudimos cargar la bandeja de solicitudes.", { exact: false }),
     ).toBeDefined();
-    expect(await screen.findByText("En revisión")).toBeDefined();
+    expect(await screen.findByText("En revisión", FICHA)).toBeDefined();
   });
 
   test("cargar más agrega la página siguiente sin duplicar", async () => {
@@ -333,10 +415,10 @@ describe("bandeja del Profesional (TI2-91)", () => {
     renderAt("/profesional/solicitudes");
 
     // La bandeja ya no tiene enlaces (clickable={false}); busca el texto en la fila
-    expect(await screen.findByText("Recibida")).toBeDefined();
+    expect(await screen.findByText("Recibida", FICHA)).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Cargar más" }));
 
-    await waitFor(() => expect(screen.getAllByText("Recibida")).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByText("Recibida", FICHA)).toHaveLength(2));
     expect(screen.queryByRole("button", { name: "Cargar más" })).toBeNull();
   });
 
@@ -354,7 +436,7 @@ describe("bandeja del Profesional (TI2-91)", () => {
     fireEvent.click(cargarMas);
 
     // La segunda página trae la fila: ni el vacío aparece ni se pierde la fila.
-    expect(await screen.findByText("En revisión")).toBeDefined();
+    expect(await screen.findByText("En revisión", FICHA)).toBeDefined();
     expect(screen.queryByText("No tienes solicitudes tomadas.")).toBeNull();
     expect(screen.queryByRole("button", { name: "Cargar más" })).toBeNull();
   });
@@ -380,7 +462,7 @@ describe("bandeja del Profesional (TI2-91)", () => {
     expect(result.current.tailDone).toBe(false);
   });
 
-  test("un cambio en el conjunto visible con más cargadas reancla a ventana única", () => {
+  test("un cambio en el conjunto visible con más cargadas vuelve a anclar en una ventana única", () => {
     const filaA = { _id: "req-1", status: "received", createdAt: 1700000000000 };
     const pagina = { page: [filaA], isDone: false, continueCursor: "c1" };
 
@@ -399,7 +481,7 @@ describe("bandeja del Profesional (TI2-91)", () => {
     expect(result.current.cursors).toEqual([null, "c1"]);
     expect(result.current.hasItems).toBe(true);
 
-    // Toma insertada antes del límite: cambia el conjunto → reancla.
+    // Toma insertada antes del límite: cambia el conjunto → vuelve a anclar.
     act(() => {
       result.current.reportIds(null, ["req-0", "req-1"]);
     });
@@ -424,7 +506,7 @@ describe("bandeja del Profesional (TI2-91)", () => {
     });
     expect(result.current.cursors).toEqual([null, "c1"]);
 
-    // Toma insertada antes del límite: reancla a ventana única.
+    // Toma insertada antes del límite: vuelve a anclar en una ventana única.
     act(() => {
       result.current.reportIds(null, ["req-0", "req-1"]);
     });
@@ -446,7 +528,7 @@ describe("bandeja del Profesional (TI2-91)", () => {
     expect(result.current.cursors).toEqual([null, "c1"]);
   });
 
-  test("un cambio en la última página no reancla: no deja huecos detrás", () => {
+  test("un cambio en la última página no vuelve a anclar: no deja huecos detrás", () => {
     const filaA = { _id: "req-1", status: "received", createdAt: 1700000000000 };
     const pagina = { page: [filaA], isDone: false, continueCursor: "c1" };
 
@@ -605,26 +687,35 @@ describe("detalle del Profesional (TI2-91)", () => {
     expect(volver.className).toContain("text-primary");
   });
 
-  test("otra cuenta sin toma ve denegación sin filtrar el contenido", async () => {
+  test("otra cuenta sin toma ve acceso denegado sin filtrar el contenido", async () => {
     comoProfesional();
-    detailThrows = new Error("No autorizado");
+    detailThrows = UNAUTHORIZED_ERROR;
     renderAt("/profesional/solicitudes/req-ajena");
+
+    expect(await screen.findByText(ACCESS_DENIED_MESSAGE)).toBeDefined();
+    expect(screen.queryByText("Necesidad ficticia de acceso")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reintentar" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Detalle de la solicitud" })).toBeDefined();
+  });
+
+  test("un fallo de lectura que no es denegación ofrece reintento sin texto técnico", async () => {
+    comoProfesional();
+    detailThrows = SDK_ERROR;
+    renderAt("/profesional/solicitudes/req-9");
 
     expect(
       await screen.findByText("No pudimos cargar el detalle de la solicitud.", { exact: false }),
     ).toBeDefined();
-    expect(screen.queryByText("Necesidad ficticia de acceso")).toBeNull();
-    expect(screen.queryByRole("heading", { name: "Detalle de la solicitud" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Reintentar" })).toBeDefined();
+    expect(screen.queryByText(/CONVEX|Server Error/)).toBeNull();
   });
 
   test("navegar de detalle denegado a uno válido lo muestra sin reintento", async () => {
     comoProfesional();
-    detailThrows = new Error("No autorizado");
+    detailThrows = UNAUTHORIZED_ERROR;
     const { router } = renderAt("/profesional/solicitudes/req-ajena");
 
-    expect(
-      await screen.findByText("No pudimos cargar el detalle de la solicitud.", { exact: false }),
-    ).toBeDefined();
+    expect(await screen.findByText(ACCESS_DENIED_MESSAGE)).toBeDefined();
 
     // Navega dentro del mismo router: el límite debe reiniciarse con el requestId.
     detailThrows = null;
@@ -635,9 +726,7 @@ describe("detalle del Profesional (TI2-91)", () => {
 
     expect(await screen.findByText("En revisión")).toBeDefined();
     expect(screen.getByText("Necesidad ficticia de acceso")).toBeDefined();
-    expect(
-      screen.queryByText("No pudimos cargar el detalle de la solicitud.", { exact: false }),
-    ).toBeNull();
+    expect(screen.queryByText(ACCESS_DENIED_MESSAGE)).toBeNull();
   });
 });
 
@@ -740,7 +829,7 @@ describe("acciones del Profesional (TI2-92)", () => {
     expect(
       await screen.findByRole("dialog", { name: "Pedir información adicional" }),
     ).toBeDefined();
-    expect(await screen.findByLabelText("Motivo *")).toBeDefined();
+    expect(await screen.findByLabelText("Motivo (obligatorio)")).toBeDefined();
   });
 
   test("pedir información valida motivo obligatorio", async () => {
@@ -751,23 +840,25 @@ describe("acciones del Profesional (TI2-92)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
     fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
 
-    expect(await screen.findByText("El motivo es obligatorio")).toBeDefined();
+    expect(await screen.findByText("Escribe el motivo.")).toBeDefined();
     expect(requestInfoMock).not.toHaveBeenCalled();
   });
 
-  test("pedir información valida longitud máxima 2000 caracteres", async () => {
+  test("pedir información no impone un largo que el Backend no pide", async () => {
     comoProfesional();
     mockedDetail = DETALLE_UNDER_REVIEW;
+    requestInfoMock.mockResolvedValue(undefined);
     renderAt("/profesional/solicitudes/req-9");
 
     fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
-    const textarea = screen.getByLabelText("Motivo *");
-    const longReason = "a".repeat(2001);
-    fireEvent.change(textarea, { target: { value: longReason } });
+    const textarea = screen.getByLabelText("Motivo (obligatorio)");
+    expect(textarea.hasAttribute("maxlength")).toBe(false);
+    const motivoLargo = "a".repeat(2001);
+    fireEvent.change(textarea, { target: { value: motivoLargo } });
     fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
 
-    expect(await screen.findByText("El motivo no puede exceder 2000 caracteres")).toBeDefined();
-    expect(requestInfoMock).not.toHaveBeenCalled();
+    await waitFor(() => expect(requestInfoMock).toHaveBeenCalledTimes(1));
+    expect(requestInfoMock).toHaveBeenCalledWith({ requestId: "req-9", reason: motivoLargo });
   });
 
   test("pedir información ejecuta requestAdditionalInformation con motivo válido", async () => {
@@ -777,7 +868,7 @@ describe("acciones del Profesional (TI2-92)", () => {
     renderAt("/profesional/solicitudes/req-9");
 
     fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
-    const textarea = screen.getByLabelText("Motivo *");
+    const textarea = screen.getByLabelText("Motivo (obligatorio)");
     fireEvent.change(textarea, { target: { value: "Falta información sobre horario" } });
     fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
 
@@ -792,8 +883,8 @@ describe("acciones del Profesional (TI2-92)", () => {
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "Pedir información adicional" })).toBeNull(),
     );
-    const estadoTrasExito = await screen.findByText("En revisión");
-    expect(document.activeElement).toBe(estadoTrasExito);
+    const estadoFinal = await screen.findByText("En revisión");
+    expect(document.activeElement).toBe(estadoFinal);
   });
 
   test("tras éxito con cambio de estado el foco va al estado estable", async () => {
@@ -803,11 +894,13 @@ describe("acciones del Profesional (TI2-92)", () => {
     renderAt("/profesional/solicitudes/req-9");
 
     fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
-    fireEvent.change(screen.getByLabelText("Motivo *"), {
+    fireEvent.change(screen.getByLabelText("Motivo (obligatorio)"), {
       target: { value: "Falta información sobre horario" },
     });
     // El estado cambia DURANTE el envío: al cerrar, el botón ya no existe.
-    mockedDetail = { ...DETALLE_UNDER_REVIEW, status: "awaiting_information_or_acceptance" };
+    requestInfoMock.mockImplementation(async () => {
+      actualizarDetalle({ ...DETALLE_UNDER_REVIEW, status: "awaiting_information_or_acceptance" });
+    });
     fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
 
     await waitFor(() => expect(requestInfoMock).toHaveBeenCalledTimes(1));
@@ -821,30 +914,40 @@ describe("acciones del Profesional (TI2-92)", () => {
   test("error en takeRequest muestra mensaje y permite reintento", async () => {
     comoProfesional();
     mockedDetail = DETALLE_RECEIVED;
-    takeRequestMock.mockRejectedValue(new Error("No autorizado"));
+    takeRequestMock.mockRejectedValue(UNAUTHORIZED_ERROR);
     renderAt("/profesional/solicitudes/req-1");
 
     const tomarBtn = await screen.findByRole("button", { name: "Tomar solicitud" });
     fireEvent.click(tomarBtn);
 
-    expect(await screen.findByText("No autorizado")).toBeDefined();
+    expect(await screen.findByText(ACCESS_DENIED_MESSAGE)).toBeDefined();
     expect(tomarBtn.hasAttribute("disabled")).toBe(false);
   });
 
   test("error en requestAdditionalInformation muestra mensaje y permite reintento", async () => {
     comoProfesional();
     mockedDetail = DETALLE_UNDER_REVIEW;
-    requestInfoMock.mockRejectedValue(new Error("No autorizado"));
+    requestInfoMock.mockRejectedValue(
+      new ConvexError({
+        code: "conflict",
+        message: "La solicitud no admite pedir información adicional en su estado actual",
+      }),
+    );
     renderAt("/profesional/solicitudes/req-9");
 
     fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
-    const textarea = screen.getByLabelText("Motivo *");
+    const textarea = screen.getByLabelText("Motivo (obligatorio)");
     fireEvent.change(textarea, { target: { value: "Motivo válido" } });
     fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
 
-    // El aviso vive DENTRO del diálogo abierto (aria-modal lo exige).
+    // El aviso vive DENTRO del diálogo abierto (aria-modal lo exige) y dice
+    // cómo seguir además del motivo público del conflicto.
     const dialogo = await screen.findByRole("dialog", { name: "Pedir información adicional" });
-    expect(within(dialogo).getByText("No autorizado")).toBeDefined();
+    expect(
+      await within(dialogo).findByText(
+        "La solicitud no admite pedir información adicional en su estado actual. El detalle ya muestra el estado vigente; continúa desde ahí.",
+      ),
+    ).toBeDefined();
     const enviarBtn = within(dialogo).getByRole("button", { name: "Enviar" });
     expect(enviarBtn.hasAttribute("disabled")).toBe(false);
   });
@@ -852,27 +955,29 @@ describe("acciones del Profesional (TI2-92)", () => {
   test("reintento exitoso cierra sin conservar el error anterior", async () => {
     comoProfesional();
     mockedDetail = DETALLE_UNDER_REVIEW;
-    requestInfoMock.mockRejectedValueOnce(new Error("No autorizado"));
+    requestInfoMock.mockRejectedValueOnce(SDK_ERROR);
     requestInfoMock.mockResolvedValue(undefined);
     renderAt("/profesional/solicitudes/req-9");
 
     fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
-    fireEvent.change(screen.getByLabelText("Motivo *"), { target: { value: "Motivo válido" } });
+    fireEvent.change(screen.getByLabelText("Motivo (obligatorio)"), {
+      target: { value: "Motivo válido" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
-    expect(await screen.findByText("No autorizado")).toBeDefined();
+    expect(await screen.findByText(REQUEST_ACTION_FALLBACK_MESSAGE)).toBeDefined();
 
     fireEvent.click(screen.getByRole("button", { name: "Enviar" }));
     await waitFor(() =>
       expect(screen.queryByRole("dialog", { name: "Pedir información adicional" })).toBeNull(),
     );
-    expect(screen.queryByText("No autorizado")).toBeNull();
+    expect(screen.queryByText(REQUEST_ACTION_FALLBACK_MESSAGE)).toBeNull();
 
     // Al reabrir no queda el error anterior.
     fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
     expect(
       await screen.findByRole("dialog", { name: "Pedir información adicional" }),
     ).toBeDefined();
-    expect(screen.queryByText("No autorizado")).toBeNull();
+    expect(screen.queryByText(REQUEST_ACTION_FALLBACK_MESSAGE)).toBeNull();
   });
 
   test("doble clic en tomar no duplica la llamada", async () => {
@@ -895,7 +1000,7 @@ describe("acciones del Profesional (TI2-92)", () => {
     renderAt("/profesional/solicitudes/req-9");
 
     fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
-    const textarea = screen.getByLabelText("Motivo *");
+    const textarea = screen.getByLabelText("Motivo (obligatorio)");
     fireEvent.change(textarea, { target: { value: "Motivo válido" } });
     const enviarBtn = screen.getByRole("button", { name: "Enviar" });
     fireEvent.click(enviarBtn);
@@ -928,7 +1033,7 @@ describe("acciones del Profesional (TI2-92)", () => {
     renderAt("/profesional/solicitudes/req-9");
 
     fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
-    const motivo = await screen.findByLabelText("Motivo *");
+    const motivo = await screen.findByLabelText("Motivo (obligatorio)");
 
     await waitFor(() => expect(document.activeElement).toBe(motivo));
   });
@@ -955,7 +1060,7 @@ describe("acciones del Profesional (TI2-92)", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Pedir información" }));
     const dialogo = await screen.findByRole("dialog", { name: "Pedir información adicional" });
-    const motivo = screen.getByLabelText("Motivo *");
+    const motivo = screen.getByLabelText("Motivo (obligatorio)");
 
     // Desde el último foco (Enviar), Tab envuelve al primero (motivo).
     const enviarBtn = screen.getByRole("button", { name: "Enviar" });
@@ -968,25 +1073,804 @@ describe("acciones del Profesional (TI2-92)", () => {
     expect(document.activeElement).toBe(enviarBtn);
   });
 
-  test("estados accepted y awaiting_information_or_acceptance no muestran acciones", async () => {
-    const detalleAccepted: RequestDetail = {
-      ...DETALLE_UNDER_REVIEW,
-      status: "accepted",
-    };
-    const detalleAwaiting: RequestDetail = {
-      ...DETALLE_UNDER_REVIEW,
-      status: "awaiting_information_or_acceptance",
-    };
+  test("cada estado ofrece solo las acciones que admite", async () => {
+    const acciones = [
+      "Tomar solicitud",
+      "Aceptar y abrir acompañamiento",
+      "Pedir información",
+      "Cerrar sin acompañamiento",
+      "Derivar a otra unidad",
+    ];
+    const casos: ReadonlyArray<[RequestDetail["status"], readonly string[]]> = [
+      ["received", ["Tomar solicitud"]],
+      [
+        "under_review",
+        [
+          "Aceptar y abrir acompañamiento",
+          "Pedir información",
+          "Cerrar sin acompañamiento",
+          "Derivar a otra unidad",
+        ],
+      ],
+      [
+        "awaiting_information_or_acceptance",
+        ["Aceptar y abrir acompañamiento", "Cerrar sin acompañamiento", "Derivar a otra unidad"],
+      ],
+      ["accepted", []],
+      ["referred", []],
+      ["closed_without_accompaniment", []],
+      ["cancelled", []],
+    ];
 
-    for (const detalle of [detalleAccepted, detalleAwaiting]) {
+    for (const [status, esperadas] of casos) {
       comoProfesional();
-      mockedDetail = detalle;
-      renderAt("/profesional/solicitudes/req-9");
+      mockedDetail = { ...DETALLE_UNDER_REVIEW, status };
+      const { unmount } = renderAt("/profesional/solicitudes/req-9");
 
-      // Espera el detalle renderizado: sin esto la ausencia de botones sería
-      // vacuosa (el cuerpo aún no monta).
+      // Espera el detalle en pantalla: sin esto la ausencia de botones no
+      // probaría nada (el cuerpo aún no monta).
       expect(await screen.findByText("Necesidad ficticia de acceso")).toBeDefined();
-      expect(screen.queryByRole("button", { name: /Tomar|Pedir información/ })).toBeNull();
+      const visibles = acciones.filter(
+        (nombre) => screen.queryByRole("button", { name: nombre }) !== null,
+      );
+      expect({ status, visibles }).toEqual({ status, visibles: esperadas });
+      unmount();
     }
+  });
+});
+
+describe("revisión completa del Profesional (TI2-157)", () => {
+  const DETALLE: RequestDetail = {
+    _id: "req-9" as Id<"requests">,
+    studentId: "stu-1" as Id<"users">,
+    status: "under_review",
+    accessNeeds: "Comunicación escrita\nMás tiempo para comunicarme",
+    createdAt: 1700000000000,
+  };
+
+  async function openAcceptDialog() {
+    fireEvent.click(await screen.findByRole("button", { name: "Aceptar y abrir acompañamiento" }));
+    return await screen.findByRole("dialog", { name: "Aceptar y abrir acompañamiento" });
+  }
+
+  test("la aceptación muestra necesidades y profesional asignado y exige objetivo", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE;
+    renderAt("/profesional/solicitudes/req-9");
+
+    const dialogo = await openAcceptDialog();
+    expect(within(dialogo).getByText("Necesidades que pasan al acompañamiento")).toBeDefined();
+    expect(
+      within(dialogo).getByText("Comunicación escrita Más tiempo para comunicarme", {
+        normalizer: (texto) => texto.replace(/\s+/g, " ").trim(),
+      }),
+    ).toBeDefined();
+    expect(within(dialogo).getByText("Tú, como profesional responsable")).toBeDefined();
+    const objetivo = within(dialogo).getByLabelText("Objetivo del acompañamiento (obligatorio)");
+    await waitFor(() => expect(document.activeElement).toBe(objetivo));
+
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Aceptar" }));
+    expect(
+      await within(dialogo).findByText("Escribe el objetivo del acompañamiento."),
+    ).toBeDefined();
+    expect(objetivo.getAttribute("aria-invalid")).toBe("true");
+    expect(acceptRequestMock).not.toHaveBeenCalled();
+  });
+
+  test("aceptar envía el objetivo, anuncia el éxito y lleva el foco al estado", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE;
+    acceptRequestMock.mockResolvedValue(undefined);
+    renderAt("/profesional/solicitudes/req-9");
+
+    const dialogo = await openAcceptDialog();
+    fireEvent.change(within(dialogo).getByLabelText("Objetivo del acompañamiento (obligatorio)"), {
+      target: { value: "  Acordar ajustes de comunicación  " },
+    });
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Aceptar" }));
+
+    await waitFor(() => expect(acceptRequestMock).toHaveBeenCalledTimes(1));
+    expect(acceptRequestMock).toHaveBeenCalledWith({
+      requestId: "req-9",
+      objective: "Acordar ajustes de comunicación",
+    });
+    expect(
+      await screen.findByText("Aceptaste la solicitud y se abrió su acompañamiento."),
+    ).toBeDefined();
+    expect(document.activeElement).toBe(screen.getByText("En revisión"));
+  });
+
+  test("doble envío de la aceptación llama una sola vez", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE;
+    acceptRequestMock.mockImplementation(() => new Promise(() => {}));
+    renderAt("/profesional/solicitudes/req-9");
+
+    const dialogo = await openAcceptDialog();
+    fireEvent.change(within(dialogo).getByLabelText("Objetivo del acompañamiento (obligatorio)"), {
+      target: { value: "Objetivo ficticio" },
+    });
+    const aceptar = within(dialogo).getByRole("button", { name: "Aceptar" });
+    fireEvent.click(aceptar);
+    fireEvent.click(aceptar);
+
+    expect(acceptRequestMock).toHaveBeenCalledTimes(1);
+    expect(within(dialogo).getByRole("button", { name: "Enviando…" })).toBeDefined();
+  });
+
+  test("repetir la aceptación no muestra un segundo acompañamiento", async () => {
+    comoProfesional();
+    // Otra pestaña ya aceptó: el detalle reactivo trae el acompañamiento único,
+    // pero esta vista aún ofrecía aceptar cuando se abrió el diálogo.
+    mockedDetail = DETALLE;
+    acceptRequestMock.mockRejectedValue(
+      new ConvexError({ code: "conflict", message: "La solicitud ya fue aceptada" }),
+    );
+    renderAt("/profesional/solicitudes/req-9");
+
+    const dialogo = await openAcceptDialog();
+    fireEvent.change(within(dialogo).getByLabelText("Objetivo del acompañamiento (obligatorio)"), {
+      target: { value: "Objetivo ficticio" },
+    });
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Aceptar" }));
+
+    expect(
+      await within(dialogo).findByText(
+        "La solicitud ya fue aceptada. El detalle ya muestra el estado vigente; continúa desde ahí.",
+      ),
+    ).toBeDefined();
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Cancelar" }));
+
+    // Llega la versión aceptada: un solo acompañamiento y ninguna acción más.
+    act(() => {
+      actualizarDetalle({
+        ...DETALLE,
+        status: "accepted",
+        accompanimentId: "acc-1" as Id<"accompaniments">,
+      });
+    });
+    expect(await screen.findByText("Aceptada")).toBeDefined();
+    expect(screen.getAllByText("Acompañamiento")).toHaveLength(1);
+    expect(screen.getAllByText("Abierto a partir de esta solicitud")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Aceptar y abrir acompañamiento" })).toBeNull();
+  });
+
+  test("una aceptación denegada por el Backend muestra acceso denegado", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE;
+    acceptRequestMock.mockRejectedValue(UNAUTHORIZED_ERROR);
+    renderAt("/profesional/solicitudes/req-9");
+
+    const dialogo = await openAcceptDialog();
+    fireEvent.change(within(dialogo).getByLabelText("Objetivo del acompañamiento (obligatorio)"), {
+      target: { value: "Objetivo ficticio" },
+    });
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Aceptar" }));
+
+    expect(await within(dialogo).findByText(ACCESS_DENIED_MESSAGE)).toBeDefined();
+    expect(within(dialogo).queryByText("No autorizado", { exact: true })).toBeNull();
+  });
+
+  test("un error desconocido usa el mensaje de respaldo sin texto técnico", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE;
+    acceptRequestMock.mockRejectedValue(SDK_ERROR);
+    renderAt("/profesional/solicitudes/req-9");
+
+    const dialogo = await openAcceptDialog();
+    fireEvent.change(within(dialogo).getByLabelText("Objetivo del acompañamiento (obligatorio)"), {
+      target: { value: "Objetivo ficticio" },
+    });
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Aceptar" }));
+
+    expect(await within(dialogo).findByText(REQUEST_ACTION_FALLBACK_MESSAGE)).toBeDefined();
+    expect(screen.queryByText(/CONVEX|Server Error|acceptRequest/)).toBeNull();
+  });
+
+  test("un dato rechazado muestra el mensaje público que dice qué corregir", async () => {
+    comoProfesional();
+    mockedDetail = DETALLE;
+    acceptRequestMock.mockRejectedValue(
+      new ConvexError({
+        code: "request_fields_invalid",
+        message: "Se requiere el objetivo para abrir el acompañamiento",
+      }),
+    );
+    renderAt("/profesional/solicitudes/req-9");
+
+    const dialogo = await openAcceptDialog();
+    fireEvent.change(within(dialogo).getByLabelText("Objetivo del acompañamiento (obligatorio)"), {
+      target: { value: "Objetivo ficticio" },
+    });
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Aceptar" }));
+
+    expect(
+      await within(dialogo).findByText("Se requiere el objetivo para abrir el acompañamiento."),
+    ).toBeDefined();
+  });
+
+  test("cerrar sin acompañamiento exige la razón y la envía", async () => {
+    comoProfesional();
+    mockedDetail = { ...DETALLE, status: "awaiting_information_or_acceptance" };
+    closeRequestMock.mockResolvedValue(undefined);
+    renderAt("/profesional/solicitudes/req-9");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Cerrar sin acompañamiento" }));
+    const dialogo = await screen.findByRole("dialog", { name: "Cerrar sin acompañamiento" });
+    expect(within(dialogo).getByText(/El estudiante leerá esta razón/)).toBeDefined();
+
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Cerrar solicitud" }));
+    expect(await within(dialogo).findByText("Escribe la razón del cierre.")).toBeDefined();
+    expect(closeRequestMock).not.toHaveBeenCalled();
+
+    fireEvent.change(within(dialogo).getByLabelText("Razón del cierre (obligatorio)"), {
+      target: { value: "La necesidad corresponde a otra unidad" },
+    });
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Cerrar solicitud" }));
+
+    await waitFor(() => expect(closeRequestMock).toHaveBeenCalledTimes(1));
+    expect(closeRequestMock).toHaveBeenCalledWith({
+      requestId: "req-9",
+      reason: "La necesidad corresponde a otra unidad",
+    });
+    expect(await screen.findByText("Cerraste la solicitud sin acompañamiento.")).toBeDefined();
+  });
+
+  test("queda visible quién resolvió la solicitud", async () => {
+    const casos: ReadonlyArray<[RequestDetail["status"], string, string]> = [
+      ["under_review", "A cargo de", "Tú, como profesional que la tomó"],
+      ["accepted", "Resuelta por", "Tú, como profesional a cargo"],
+      ["closed_without_accompaniment", "Resuelta por", "Tú, como profesional a cargo"],
+      ["referred", "Resuelta por", "Tú, como profesional a cargo"],
+      ["cancelled", "Resuelta por", "El estudiante, al cancelarla"],
+    ];
+    for (const [status, termino, valor] of casos) {
+      comoProfesional();
+      mockedDetail = { ...DETALLE, status };
+      const { unmount } = renderAt("/profesional/solicitudes/req-9");
+
+      const dt = await screen.findByText(termino, { selector: "dt" });
+      expect({ status, valor: dt.nextElementSibling?.textContent }).toEqual({ status, valor });
+      unmount();
+    }
+  });
+
+  test("el detalle muestra el intercambio y la razón de cierre", async () => {
+    comoProfesional();
+    mockedDetail = {
+      ...DETALLE,
+      status: "closed_without_accompaniment",
+      informationResponse: "Puedo asistir los martes",
+      closureReason: "Corresponde a otra unidad",
+    };
+    renderAt("/profesional/solicitudes/req-9");
+
+    expect(await screen.findByText("Puedo asistir los martes")).toBeDefined();
+    expect(screen.getByText("Respuesta del estudiante")).toBeDefined();
+    expect(screen.getByText("Corresponde a otra unidad")).toBeDefined();
+    expect(screen.getByText("Razón del cierre")).toBeDefined();
+  });
+
+  test("el filtro por estado conserva el contexto al ir y volver del detalle", async () => {
+    comoProfesional();
+    mockedOpen = paginaAbierta([], true);
+    mockedAuthorized = paginaTomadas(
+      [
+        filaTomada({ _id: "req-1", status: "under_review" }),
+        filaTomada({ _id: "req-2", status: "accepted" }),
+      ],
+      true,
+    );
+    const { router } = renderAt("/profesional/solicitudes?estado=accepted");
+
+    const filtro = await screen.findByLabelText("Filtrar por estado");
+    expect((filtro as HTMLSelectElement).value).toBe("accepted");
+    const enlace = await screen.findByRole("link", { name: /Aceptada/ });
+    expect(screen.queryByRole("link", { name: /En revisión/ })).toBeNull();
+    expect(enlace.getAttribute("href")).toBe("/profesional/solicitudes/req-2?estado=accepted");
+
+    mockedDetail = { ...DETALLE, _id: "req-2" as Id<"requests">, status: "accepted" };
+    fireEvent.click(enlace);
+    const volver = await screen.findByRole("link", { name: "Volver a solicitudes" });
+    expect(volver.getAttribute("href")).toBe("/profesional/solicitudes?estado=accepted");
+
+    fireEvent.click(volver);
+    await waitFor(() => expect(router.state.location.pathname).toBe("/profesional/solicitudes"));
+    expect(router.state.location.search).toEqual({ estado: "accepted" });
+    expect(((await screen.findByLabelText("Filtrar por estado")) as HTMLSelectElement).value).toBe(
+      "accepted",
+    );
+  });
+
+  test("cambiar el filtro actualiza la URL y muestra todos los estados al quitarlo", async () => {
+    comoProfesional();
+    mockedOpen = paginaAbierta([], true);
+    mockedAuthorized = paginaTomadas(
+      [
+        filaTomada({ _id: "req-1", status: "under_review" }),
+        filaTomada({ _id: "req-2", status: "cancelled" }),
+      ],
+      true,
+    );
+    const { router } = renderAt("/profesional/solicitudes");
+
+    const filtro = await screen.findByLabelText("Filtrar por estado");
+    // Todos los estados del contrato están disponibles para filtrar.
+    expect(within(filtro).getAllByRole("option")).toHaveLength(8);
+    expect(await screen.findByRole("link", { name: /Cancelada/ })).toBeDefined();
+
+    fireEvent.change(filtro, { target: { value: "under_review" } });
+    await waitFor(() => expect(router.state.location.search).toEqual({ estado: "under_review" }));
+    expect(screen.queryByRole("link", { name: /Cancelada/ })).toBeNull();
+
+    fireEvent.change(filtro, { target: { value: "" } });
+    await waitFor(() => expect(router.state.location.search).toEqual({}));
+    expect(await screen.findByRole("link", { name: /Cancelada/ })).toBeDefined();
+  });
+
+  test("un filtro sin coincidencias explica cómo ver el resto", async () => {
+    comoProfesional();
+    mockedOpen = paginaAbierta([], true);
+    mockedAuthorized = paginaTomadas([filaTomada({ _id: "req-1", status: "under_review" })], true);
+    renderAt("/profesional/solicitudes?estado=referred");
+
+    expect(
+      await screen.findByText("No tienes solicitudes tomadas en estado «Derivada»."),
+    ).toBeDefined();
+    expect(screen.queryByText("No tienes solicitudes tomadas.")).toBeNull();
+  });
+
+  test("un estado desconocido en la URL se descarta", async () => {
+    comoProfesional();
+    mockedOpen = paginaAbierta([], true);
+    mockedAuthorized = paginaTomadas([filaTomada({ _id: "req-1", status: "under_review" })], true);
+    renderAt("/profesional/solicitudes?estado=inventado");
+
+    expect(await screen.findByRole("link", { name: /En revisión/ })).toBeDefined();
+    expect(((await screen.findByLabelText("Filtrar por estado")) as HTMLSelectElement).value).toBe(
+      "",
+    );
+  });
+});
+
+describe("derivaciones en el detalle del Profesional (TI2-158)", () => {
+  const DERIVADA: RequestDetail = {
+    _id: "req-9" as Id<"requests">,
+    studentId: "stu-1" as Id<"users">,
+    status: "under_review",
+    accessNeeds: "Necesidad ficticia de acceso",
+    createdAt: 1700000000000,
+    provenanceChannel: "official_channel",
+    incomingReferral: { originUnit: "Unidad ficticia de origen", referredAt: 1700000000000 },
+  };
+
+  test("sin aceptación del estudiante no se ofrece abrir acompañamiento", async () => {
+    comoProfesional();
+    mockedDetail = DERIVADA;
+    renderAt("/profesional/solicitudes/req-9");
+
+    expect(await screen.findByRole("heading", { name: "Derivación de entrada" })).toBeDefined();
+    expect(screen.getByText(/Unidad ficticia de origen/)).toBeDefined();
+    expect(screen.getAllByText("Pendiente")).toHaveLength(2);
+    expect(screen.getByText("Registrada por CERETI desde un canal oficial")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Aceptar y abrir acompañamiento" })).toBeNull();
+    expect(screen.getByText(/registra primero el contacto con el estudiante/)).toBeDefined();
+    // Solo el siguiente paso: la aceptación exige el contacto previo.
+    expect(
+      screen.getByRole("button", { name: "Registrar contacto con el estudiante" }),
+    ).toBeDefined();
+    expect(
+      screen.queryByRole("button", { name: "Registrar aceptación del estudiante" }),
+    ).toBeNull();
+  });
+
+  test("contacto y aceptación se registran en orden y recién entonces se ofrece aceptar", async () => {
+    comoProfesional();
+    mockedDetail = DERIVADA;
+    recordContactMock.mockImplementation(async () => {
+      actualizarDetalle({
+        ...DERIVADA,
+        incomingReferral: { ...DERIVADA.incomingReferral!, contactedAt: 1700000100000 },
+      });
+    });
+    recordAcceptanceMock.mockImplementation(async () => {
+      actualizarDetalle({
+        ...DERIVADA,
+        incomingReferral: {
+          ...DERIVADA.incomingReferral!,
+          contactedAt: 1700000100000,
+          acceptedAt: 1700000200000,
+        },
+      });
+    });
+    renderAt("/profesional/solicitudes/req-9");
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Registrar contacto con el estudiante" }),
+    );
+    await waitFor(() => expect(recordContactMock).toHaveBeenCalledWith({ requestId: "req-9" }));
+    expect(await screen.findByText("Registraste el contacto con el estudiante.")).toBeDefined();
+    expect(document.activeElement).toBe(screen.getByText("En revisión"));
+    expect(screen.queryByRole("button", { name: "Aceptar y abrir acompañamiento" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Registrar aceptación del estudiante" }));
+    await waitFor(() => expect(recordAcceptanceMock).toHaveBeenCalledWith({ requestId: "req-9" }));
+    expect(
+      await screen.findByRole("button", { name: "Aceptar y abrir acompañamiento" }),
+    ).toBeDefined();
+    expect(screen.queryByText("Pendiente")).toBeNull();
+    expect(screen.queryByText(/registra primero el contacto/)).toBeNull();
+  });
+
+  test("un registro rechazado por conflicto explica cómo seguir", async () => {
+    comoProfesional();
+    mockedDetail = DERIVADA;
+    recordContactMock.mockRejectedValue(
+      new ConvexError({
+        code: "conflict",
+        message: "El contacto con el estudiante ya está registrado.",
+      }),
+    );
+    renderAt("/profesional/solicitudes/req-9");
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Registrar contacto con el estudiante" }),
+    );
+    expect(
+      await screen.findByText(
+        "El contacto con el estudiante ya está registrado. El detalle ya muestra el estado vigente; continúa desde ahí.",
+      ),
+    ).toBeDefined();
+  });
+
+  test("derivar a otra unidad informa que la comunicación ocurre fuera de la aplicación", async () => {
+    comoProfesional();
+    mockedDetail = { ...DERIVADA, incomingReferral: undefined, provenanceChannel: "student" };
+    referRequestMock.mockImplementation(async () => {
+      actualizarDetalle({
+        ...DERIVADA,
+        incomingReferral: undefined,
+        provenanceChannel: "student",
+        status: "referred",
+        outgoingReferral: {
+          destinationUnit: "Unidad ficticia de destino",
+          referredAt: 1700000300000,
+          reason: "El apoyo lo entrega esa unidad",
+        },
+      });
+    });
+    renderAt("/profesional/solicitudes/req-9");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Derivar a otra unidad" }));
+    const dialogo = await screen.findByRole("dialog", { name: "Derivar a otra unidad" });
+    expect(
+      within(dialogo).getByText(/ocurre fuera de la aplicación/, { exact: false }),
+    ).toBeDefined();
+    expect(
+      within(dialogo).getByText(/no se eligen destinatarios ni se envían antecedentes/),
+    ).toBeDefined();
+    const unidad = within(dialogo).getByLabelText("Unidad de destino (obligatorio)");
+    await waitFor(() => expect(document.activeElement).toBe(unidad));
+
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Derivar" }));
+    expect(await within(dialogo).findByText("Indica la unidad de destino.")).toBeDefined();
+    expect(unidad.getAttribute("aria-invalid")).toBe("true");
+    expect(document.activeElement).toBe(unidad);
+    expect(referRequestMock).not.toHaveBeenCalled();
+
+    fireEvent.change(unidad, { target: { value: "  Unidad ficticia de destino " } });
+    fireEvent.change(within(dialogo).getByLabelText("Razón de la derivación (obligatorio)"), {
+      target: { value: "El apoyo lo entrega esa unidad" },
+    });
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Derivar" }));
+
+    await waitFor(() =>
+      expect(referRequestMock).toHaveBeenCalledWith({
+        requestId: "req-9",
+        destinationUnit: "Unidad ficticia de destino",
+        reason: "El apoyo lo entrega esa unidad",
+      }),
+    );
+    expect(await screen.findByText("Derivada")).toBeDefined();
+    expect(screen.getByText(/Unidad ficticia de destino, el/)).toBeDefined();
+    expect(screen.getByText("El apoyo lo entrega esa unidad")).toBeDefined();
+    expect(screen.getByText("Enviada por el estudiante")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Aceptar y abrir acompañamiento" })).toBeNull();
+  });
+
+  test("la razón de la derivación respeta el tope que fija el Dominio", async () => {
+    comoProfesional();
+    mockedDetail = { ...DERIVADA, incomingReferral: undefined };
+    renderAt("/profesional/solicitudes/req-9");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Derivar a otra unidad" }));
+    const dialogo = await screen.findByRole("dialog", { name: "Derivar a otra unidad" });
+    const motivoDerivar = within(dialogo).getByLabelText("Razón de la derivación (obligatorio)");
+    expect(motivoDerivar.getAttribute("maxlength")).toBe(String(REFERRAL_REASON_MAX_LENGTH));
+    expect(
+      within(dialogo).getByText(`Máximo ${REFERRAL_REASON_MAX_LENGTH} caracteres`, {
+        exact: false,
+      }),
+    ).toBeDefined();
+
+    fireEvent.change(within(dialogo).getByLabelText("Unidad de destino (obligatorio)"), {
+      target: { value: "Unidad ficticia" },
+    });
+    fireEvent.change(motivoDerivar, {
+      target: { value: "a".repeat(REFERRAL_REASON_MAX_LENGTH + 1) },
+    });
+    fireEvent.click(within(dialogo).getByRole("button", { name: "Derivar" }));
+
+    expect(
+      await within(dialogo).findByText(
+        `La razón no puede exceder ${REFERRAL_REASON_MAX_LENGTH} caracteres.`,
+      ),
+    ).toBeDefined();
+    expect(referRequestMock).not.toHaveBeenCalled();
+  });
+
+  test("Tab recorre la unidad, la razón y los botones sin salir del diálogo", async () => {
+    comoProfesional();
+    mockedDetail = { ...DERIVADA, incomingReferral: undefined };
+    renderAt("/profesional/solicitudes/req-9");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Derivar a otra unidad" }));
+    const dialogo = await screen.findByRole("dialog", { name: "Derivar a otra unidad" });
+    const unidad = within(dialogo).getByLabelText("Unidad de destino (obligatorio)");
+    const derivar = within(dialogo).getByRole("button", { name: "Derivar" });
+
+    derivar.focus();
+    fireEvent.keyDown(dialogo, { key: "Tab" });
+    expect(document.activeElement).toBe(unidad);
+    fireEvent.keyDown(dialogo, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(derivar);
+  });
+});
+
+describe("registro por canal oficial (TI2-158)", () => {
+  function completarContenido() {
+    fireEvent.change(screen.getByLabelText(/Correo institucional del estudiante/), {
+      target: { value: "  estudiante.ficticio@alu.uct.cl " },
+    });
+    fireEvent.change(screen.getByLabelText(/Describe la barrera o necesidad/), {
+      target: { value: "Necesidad ficticia" },
+    });
+    fireEvent.change(screen.getByLabelText(/Qué espera el estudiante de CERETI/), {
+      target: { value: "Resultado ficticio" },
+    });
+    fireEvent.click(screen.getAllByRole("checkbox")[0]);
+    fireEvent.click(screen.getByRole("radio", { name: "En línea" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Martes" }));
+    fireEvent.change(screen.getByLabelText(/Medio accesible para recibir información/), {
+      target: { value: "Correo con letra grande" },
+    });
+  }
+
+  test("se llega desde Solicitudes", async () => {
+    comoProfesional();
+    mockedOpen = paginaAbierta([], true);
+    mockedAuthorized = paginaTomadas([], true);
+    renderAt("/profesional/solicitudes");
+
+    const enlace = await screen.findByRole("link", {
+      name: "Registrar solicitud por canal oficial",
+    });
+    expect(enlace.getAttribute("href")).toBe("/profesional/solicitudes/registrar");
+  });
+
+  test("cada campo tiene nombre accesible y dice si es obligatorio u opcional", async () => {
+    comoProfesional();
+    renderAt("/profesional/solicitudes/registrar");
+
+    expect(
+      await screen.findByRole("heading", { name: "Registrar solicitud por canal oficial" }),
+    ).toBeDefined();
+    expect(screen.getByText("Canal oficial de CERETI")).toBeDefined();
+    expect(
+      screen.getByLabelText("Correo institucional del estudiante (obligatorio)"),
+    ).toBeDefined();
+    expect(screen.getByLabelText("Fecha en que CERETI la recibió (opcional)")).toBeDefined();
+    expect(screen.getByLabelText("Unidad que derivó al estudiante (opcional)")).toBeDefined();
+    expect(
+      screen.getByRole("group", { name: "Necesidades de acceso (obligatorio)" }),
+    ).toBeDefined();
+    expect(screen.getByRole("group", { name: "Modalidad preferida (obligatorio)" })).toBeDefined();
+    expect(screen.getByRole("group", { name: "Días disponibles (obligatorio)" })).toBeDefined();
+    // La voz es la del personal: habla del estudiante.
+    expect(screen.getByRole("heading", { name: "Necesidad del estudiante" })).toBeDefined();
+    expect(screen.queryByText("Tu necesidad")).toBeNull();
+  });
+
+  test("lo que falta se resume, enlaza a cada campo y no se envía", async () => {
+    comoProfesional();
+    renderAt("/profesional/solicitudes/registrar");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Registrar solicitud" }));
+
+    const resumen = await screen.findByRole("heading", {
+      name: "Revisa estos campos antes de registrar",
+    });
+    await waitFor(() => expect(document.activeElement).toBe(resumen));
+    const enlaceCorreo = screen.getByRole("link", {
+      name: "Correo del estudiante: Indica el correo institucional del estudiante.",
+    });
+    expect(
+      screen.getByRole("link", {
+        name: "Qué espera el estudiante de CERETI: Indica qué espera el estudiante de CERETI.",
+      }),
+    ).toBeDefined();
+    fireEvent.click(enlaceCorreo);
+    expect(document.activeElement).toBe(
+      screen.getByLabelText(/Correo institucional del estudiante/),
+    );
+    const correo = screen.getByLabelText(/Correo institucional del estudiante/);
+    expect(correo.getAttribute("aria-invalid")).toBe("true");
+    expect(correo.getAttribute("aria-describedby")).toContain("request-studentEmail-error");
+    expect(registerOfficialMock).not.toHaveBeenCalled();
+  });
+
+  test("registra con procedencia y queda como derivación de entrada", async () => {
+    comoProfesional();
+    registerOfficialMock.mockResolvedValue({ _id: "req-nueva" });
+    renderAt("/profesional/solicitudes/registrar");
+
+    await screen.findByRole("heading", { name: "Registrar solicitud por canal oficial" });
+    completarContenido();
+    fireEvent.change(screen.getByLabelText(/Unidad que derivó al estudiante/), {
+      target: { value: " Unidad ficticia de origen " },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Registrar solicitud" }));
+
+    await waitFor(() => expect(registerOfficialMock).toHaveBeenCalledTimes(1));
+    const [datos] = registerOfficialMock.mock.calls[0] as [Record<string, unknown>];
+    expect(datos).toMatchObject({
+      studentEmail: "estudiante.ficticio@alu.uct.cl",
+      originUnit: "Unidad ficticia de origen",
+      needSummary: "Necesidad ficticia",
+      expectedOutcome: "Resultado ficticio",
+      modalityPreference: "online",
+      generalAvailability: { preferredWeekdays: [2] },
+      preferredAccessibleInformationChannel: "Correo con letra grande",
+    });
+    // Desde TI2-165 el contrato no admite clave de idempotencia.
+    expect(datos).not.toHaveProperty("idempotencyKey");
+    expect(datos).not.toHaveProperty("receivedAt");
+
+    const registrada = await screen.findByRole("heading", { name: "Solicitud registrada" });
+    await waitFor(() => expect(document.activeElement).toBe(registrada));
+    expect(screen.getByText(/Quedó también como derivación de entrada/)).toBeDefined();
+
+    // Registrar otra lleva el foco al título: el botón desaparece con la confirmación.
+    fireEvent.click(screen.getByRole("button", { name: "Registrar otra solicitud" }));
+    expect(document.activeElement).toBe(
+      screen.getByRole("heading", { name: "Registrar solicitud por canal oficial" }),
+    );
+    expect(screen.getByLabelText(/Unidad que derivó al estudiante/)).toHaveProperty("value", "");
+  });
+
+  test("una fecha pasada se envía al mediodía UTC de ese día", async () => {
+    comoProfesional();
+    registerOfficialMock.mockResolvedValue({ _id: "req-nueva" });
+    renderAt("/profesional/solicitudes/registrar");
+
+    await screen.findByRole("heading", { name: "Registrar solicitud por canal oficial" });
+    completarContenido();
+    fireEvent.change(screen.getByLabelText(/Fecha en que CERETI la recibió/), {
+      target: { value: "2026-03-10" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Registrar solicitud" }));
+
+    await waitFor(() => expect(registerOfficialMock).toHaveBeenCalledTimes(1));
+    const [datos] = registerOfficialMock.mock.calls[0] as [{ receivedAt: number }];
+    expect(datos.receivedAt).toBe(Date.UTC(2026, 2, 10, 12));
+    expect(screen.queryByText(/derivación de entrada/)).toBeNull();
+  });
+
+  test("una fecha futura se rechaza junto al campo y no se envía", async () => {
+    comoProfesional();
+    renderAt("/profesional/solicitudes/registrar");
+
+    await screen.findByRole("heading", { name: "Registrar solicitud por canal oficial" });
+    completarContenido();
+    const fecha = screen.getByLabelText(/Fecha en que CERETI la recibió/);
+    fireEvent.change(fecha, { target: { value: "2099-01-15" } });
+    fireEvent.click(screen.getByRole("button", { name: "Registrar solicitud" }));
+
+    expect(
+      await screen.findByRole("link", {
+        name: `Fecha de recepción: ${RECEIVED_AT_FUTURE_MESSAGE}`,
+      }),
+    ).toBeDefined();
+    expect(fecha.getAttribute("aria-invalid")).toBe("true");
+    const descripciones = (fecha.getAttribute("aria-describedby") ?? "")
+      .split(" ")
+      .map((id) => document.getElementById(id)?.textContent ?? "");
+    expect(descripciones.some((texto) => texto.includes(RECEIVED_AT_FUTURE_MESSAGE))).toBe(true);
+    expect(registerOfficialMock).not.toHaveBeenCalled();
+  });
+
+  test("la fecha de hoy registra sin quedar después del envío", async () => {
+    // 08:00 en Chile: el mediodía UTC de hoy todavía no llega.
+    const ahora = Date.UTC(2026, 10, 25, 11);
+    const reloj = vi.spyOn(Date, "now").mockReturnValue(ahora);
+    try {
+      comoProfesional();
+      registerOfficialMock.mockResolvedValue({ _id: "req-nueva" });
+      renderAt("/profesional/solicitudes/registrar");
+
+      await screen.findByRole("heading", { name: "Registrar solicitud por canal oficial" });
+      completarContenido();
+      fireEvent.change(screen.getByLabelText(/Fecha en que CERETI la recibió/), {
+        target: { value: civilDateOfInstant(ahora, AGENDA_TIME_ZONE) },
+      });
+      fireEvent.click(screen.getByRole("button", { name: "Registrar solicitud" }));
+
+      await waitFor(() => expect(registerOfficialMock).toHaveBeenCalledTimes(1));
+      const [datos] = registerOfficialMock.mock.calls[0] as [{ receivedAt: number }];
+      expect(datos.receivedAt).toBe(ahora);
+    } finally {
+      reloj.mockRestore();
+    }
+  });
+
+  test("cada rechazo muestra un mensaje comprensible y se puede reintentar", async () => {
+    comoProfesional();
+    const sinEstudiante = "No hay una cuenta de Estudiante vigente con ese correo.";
+    // Mismo texto con otro código: el campo se marca por el código, no por el mensaje.
+    registerOfficialMock.mockRejectedValueOnce(
+      new ConvexError({ code: "request_fields_invalid", message: sinEstudiante }),
+    );
+    registerOfficialMock.mockRejectedValueOnce(
+      new ConvexError({
+        code: "request_student_not_found",
+        message: sinEstudiante,
+      }),
+    );
+    registerOfficialMock.mockRejectedValueOnce(SDK_ERROR);
+    registerOfficialMock.mockRejectedValueOnce(UNAUTHORIZED_ERROR);
+    renderAt("/profesional/solicitudes/registrar");
+
+    await screen.findByRole("heading", { name: "Registrar solicitud por canal oficial" });
+    completarContenido();
+    const registrar = screen.getByRole("button", { name: "Registrar solicitud" });
+    const correo = screen.getByLabelText(/Correo institucional del estudiante/);
+
+    fireEvent.click(registrar);
+    expect(await screen.findByText(sinEstudiante)).toBeDefined();
+    expect(correo.getAttribute("aria-invalid")).toBe("false");
+
+    // El correo rechazado se marca en su campo y el resumen lleva a él.
+    fireEvent.click(registrar);
+    expect(
+      await screen.findByRole("link", { name: `Correo del estudiante: ${sinEstudiante}` }),
+    ).toBeDefined();
+    expect(correo.getAttribute("aria-invalid")).toBe("true");
+
+    // Un fallo sin código pide revisar la bandeja antes de reintentar.
+    fireEvent.click(registrar);
+    expect(await screen.findByText(REGISTER_OFFICIAL_FALLBACK_MESSAGE)).toBeDefined();
+    expect(screen.queryByText(/CONVEX|Server Error/)).toBeNull();
+    expect(correo.getAttribute("aria-invalid")).toBe("false");
+
+    fireEvent.click(registrar);
+    expect(await screen.findByText(ACCESS_DENIED_MESSAGE)).toBeDefined();
+    expect(registerOfficialMock).toHaveBeenCalledTimes(4);
+  });
+
+  test("un doble clic mientras se registra llama una sola vez", async () => {
+    comoProfesional();
+    registerOfficialMock.mockImplementation(() => new Promise(() => {}));
+    renderAt("/profesional/solicitudes/registrar");
+
+    await screen.findByRole("heading", { name: "Registrar solicitud por canal oficial" });
+    completarContenido();
+    const registrar = screen.getByRole("button", { name: "Registrar solicitud" });
+    fireEvent.click(registrar);
+    fireEvent.click(registrar);
+
+    expect(registerOfficialMock).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("button", { name: "Registrando…" }).hasAttribute("disabled")).toBe(
+      true,
+    );
   });
 });

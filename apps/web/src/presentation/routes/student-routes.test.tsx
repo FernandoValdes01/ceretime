@@ -205,10 +205,41 @@ describe("índice y rutas desconocidas (TI2-6)", () => {
     await waitFor(() => expect(router.state.location.pathname).toBe("/estudiante"));
   });
 
-  test("una ruta desconocida vuelve al índice", async () => {
+  test("una ruta desconocida muestra la página de no encontrado sin redirigir", async () => {
     mockedSession = SIN_SESION;
     const { router } = renderAt("/no-existe");
 
-    await waitFor(() => expect(router.state.location.pathname).toBe("/"));
+    const heading = await screen.findByRole("heading", { name: "Página no encontrada" });
+    expect(heading).toBeDefined();
+    expect(router.state.location.pathname).toBe("/no-existe");
+    expect(document.title).toBe("Página no encontrada · CERETI");
+    expect(screen.getByRole("link", { name: "Volver al inicio" }).getAttribute("href")).toBe("/");
+  });
+});
+
+describe("títulos por pantalla (TI2-185)", () => {
+  afterEach(() => {
+    document.title = "";
+  });
+
+  test("la carga directa usa el título de la pantalla", async () => {
+    mockedSession = SIN_SESION;
+    renderAt("/denegado");
+
+    await screen.findByRole("heading", { name: "Acceso denegado" });
+    expect(document.title).toBe("Acceso denegado · CERETI");
+  });
+
+  test("la navegación actualiza el título", async () => {
+    mockedSession = SIN_SESION;
+    const { router } = renderAt("/");
+
+    await screen.findByRole("heading", { name: "Acceso institucional" });
+    expect(document.title).toBe("Acceso institucional · CERETI");
+
+    await router.navigate({ to: "/denegado" });
+
+    await screen.findByRole("heading", { name: "Acceso denegado" });
+    expect(document.title).toBe("Acceso denegado · CERETI");
   });
 });

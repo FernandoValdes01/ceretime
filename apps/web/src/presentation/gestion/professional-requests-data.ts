@@ -6,7 +6,7 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 
 /**
- * Lecturas y escrituras de solicitudes del Profesional (TI2-91/92).
+ * Lecturas y escrituras de solicitudes del Profesional (TI2-91/92/157/158).
  *
  * Cableado delgado, un hook por recurso: consume solo queries/mutations públicas
  * ya existentes. Cada query responde `undefined` mientras carga y la
@@ -44,6 +44,39 @@ export function useTakeRequest() {
 /** Mutación para pedir información adicional (TI2-92). */
 export function useRequestAdditionalInformation() {
   return useMutation(api.presentation.requests.requestAdditionalInformation);
+}
+
+/**
+ * Mutación para aceptar y abrir el acompañamiento (TI2-157). El Backend
+ * rechaza repetirla sin abrir otro acompañamiento.
+ */
+export function useAcceptRequest() {
+  return useMutation(api.presentation.requests.acceptRequest);
+}
+
+/** Mutación para cerrar sin acompañamiento con una razón (TI2-157). */
+export function useCloseRequestWithoutAccompaniment() {
+  return useMutation(api.presentation.requests.closeRequestWithoutAccompaniment);
+}
+
+/** Registro de una solicitud recibida por canal oficial (TI2-158). */
+export function useRegisterOfficialRequest() {
+  return useMutation(api.presentation.requests.registerOfficialRequest);
+}
+
+/** Registro del contacto con el estudiante por una derivación de entrada (TI2-158). */
+export function useRecordReferralContact() {
+  return useMutation(api.presentation.requests.recordReferralContact);
+}
+
+/** Registro de la aceptación del estudiante de una derivación de entrada (TI2-158). */
+export function useRecordReferralAcceptance() {
+  return useMutation(api.presentation.requests.recordReferralAcceptance);
+}
+
+/** Derivación de salida a otra unidad (TI2-158), sin destinatarios ni antecedentes. */
+export function useReferRequest() {
+  return useMutation(api.presentation.requests.referRequest);
 }
 
 /** Página de bandeja o tomadas, derivada del contrato generado (sin duplicar formas). */

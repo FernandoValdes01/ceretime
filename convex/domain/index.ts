@@ -45,6 +45,7 @@ export type {
 } from "./requests/request";
 export {
   INITIAL_REQUEST_STATE,
+  isRequestState,
   REFERRAL_REQUEST_STATES,
   REQUEST_STATES,
   REQUEST_STATE_LABELS,
@@ -52,6 +53,14 @@ export {
 } from "./requests/state";
 export type { ReferralRequestState, RequestState, Sprint1RequestState } from "./requests/state";
 export { isOpenRequestState } from "./requests/transitions";
+export { findRequestTransition } from "./requests/transition_policy";
+// Derivaciones de entrada y de salida (TI2-143): límites y condición de apertura.
+export {
+  RECEIVED_AT_FUTURE_MESSAGE,
+  REFERRAL_REASON_MAX_LENGTH,
+  REFERRAL_UNIT_MAX_LENGTH,
+  referralAllowsAccompaniment,
+} from "./requests/referral";
 
 // Acompañamiento y sus vistas de lectura.
 export {
@@ -98,6 +107,8 @@ export {
   CONFLICT_ERROR_MESSAGE,
   NO_AVAILABILITY_ERROR_CODE,
   NO_AVAILABILITY_ERROR_MESSAGE,
+  REQUEST_FIELDS_INVALID_ERROR_CODE,
+  REQUEST_STUDENT_NOT_FOUND_ERROR_CODE,
   SPACE_FIELDS_INVALID_ERROR_CODE,
   SPACE_FIELDS_INVALID_ERROR_MESSAGE,
   UNAUTHORIZED_ERROR_CODE,
@@ -119,6 +130,8 @@ export {
   AVAILABILITY_CONTRACT_VERSION,
   AVAILABILITY_EXCEPTION_KIND_VALUES,
 } from "./availability/availability";
+// Fecha civil de un instante en una zona horaria, para comparar con lo que escribe la persona.
+export { civilDateOfInstant } from "./calendar/civil_days";
 export type {
   AvailabilityBlock,
   AvailabilityContractVersion,
@@ -315,6 +328,9 @@ export {
   notificationEventsForRequestReceived,
   notificationEventsForRequestTransition,
   notificationEventsForTransition,
+  notificationEventsForAvailabilityChange,
+  notificationEventsForSpaceChange,
+  notificationEventsForNeedsUpdated,
   notificationIdempotencyKey,
   toExternalNotification,
   toNotificationEvent,
@@ -338,11 +354,14 @@ export type {
   RequestNotificationSubject,
 } from "./notifications/notification";
 
-// Entrega de avisos por canal: estados, errores e intentos (TI2-145).
+// Entrega de avisos por canal: estados, errores, intentos y reintentos (TI2-145, TI2-159).
 export {
+  MAX_PROVIDER_UNAVAILABLE_ATTEMPTS,
   NOTIFICATION_DELIVERY_CHANNEL_VALUES,
   NOTIFICATION_DELIVERY_ERROR_VALUES,
   NOTIFICATION_DELIVERY_STATUS_VALUES,
+  SENDER_SETUP_RETRY_DELAY_MS,
+  deliveryRetryAt,
   isNotificationDeliveryChannel,
   isNotificationDeliveryError,
   isNotificationDeliveryStatus,

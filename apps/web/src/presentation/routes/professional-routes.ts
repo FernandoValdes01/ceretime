@@ -7,10 +7,12 @@ import {
   ProfessionalAvailabilityRouteComponent,
   ProfessionalIndexRouteComponent,
   ProfessionalLayoutRouteComponent,
+  ProfessionalOfficialRequestRouteComponent,
   ProfessionalRequestDetailRouteComponent,
   ProfessionalRequestsRouteComponent,
 } from "./route-components.tsx";
 import { rootRoute } from "./root-route.ts";
+import { toRequestListSearch } from "../gestion/paged-requests.ts";
 
 /**
  * Área del Profesional (TI2-133).
@@ -35,13 +37,22 @@ const professionalIndexRoute = createRoute({
 const professionalRequestsRoute = createRoute({
   getParentRoute: () => professionalLayoutRoute,
   path: "solicitudes",
+  validateSearch: toRequestListSearch,
   component: ProfessionalRequestsRouteComponent,
 });
 
 const professionalRequestDetailRoute = createRoute({
   getParentRoute: () => professionalLayoutRoute,
   path: "solicitudes/$requestId",
+  validateSearch: toRequestListSearch,
   component: ProfessionalRequestDetailRouteComponent,
+});
+
+// Registro por canal oficial (TI2-158). El segmento fijo gana sobre `$requestId`.
+const professionalOfficialRequestRoute = createRoute({
+  getParentRoute: () => professionalLayoutRoute,
+  path: "solicitudes/registrar",
+  component: ProfessionalOfficialRequestRouteComponent,
 });
 
 const professionalAccompanimentsRoute = createRoute({
@@ -79,6 +90,7 @@ export const professionalRoutes = [
     professionalIndexRoute,
     professionalRequestsRoute,
     professionalRequestDetailRoute,
+    professionalOfficialRequestRoute,
     professionalAccompanimentsRoute,
     professionalAccompanimentDetailRoute,
     professionalAvailabilityRoute,

@@ -5,11 +5,25 @@ import {
   setSpaceCatalogActive,
   updateSpaceCatalogEntry,
 } from "../application/spaces/mutations";
-import { listSpaceCatalogUseCase } from "../application/spaces/queries";
+import {
+  listInactiveSpaceCatalogUseCase,
+  listSpaceCatalogUseCase,
+} from "../application/spaces/queries";
 import { mutation, query } from "../_generated/server";
 import { SPACE_CATALOG_CONTRACT_VERSION } from "../domain/spaces/space";
-import { authorizationReader } from "../infrastructure/accompaniments/repository";
-import { spaceReader, spaceWriter } from "../infrastructure/spaces/repository";
+import {
+  accompanimentNeedsAtDateReader,
+  authorizationReader,
+} from "../infrastructure/accompaniments/repository";
+import { futureAppointmentsReader } from "../infrastructure/appointments/repository";
+import { availabilityReader } from "../infrastructure/availability/repository";
+import { notificationEventRecorder } from "../infrastructure/notifications/repository";
+import {
+  compatibilitySpaceSource,
+  inactiveSpaceReader,
+  spaceReader,
+  spaceWriter,
+} from "../infrastructure/spaces/repository";
 import { spaceFieldsShape } from "../infrastructure/validators";
 import { unwrapApiResult as unwrap } from "./session";
 
@@ -117,12 +131,20 @@ export const updateSpace = mutation({
           spaceId,
           ...fields,
         },
+        {
+          future: futureAppointmentsReader(ctx),
+          auth: authorizationReader(ctx),
+          availability: availabilityReader(ctx),
+          needs: accompanimentNeedsAtDateReader(ctx),
+          compatibility: compatibilitySpaceSource(ctx),
+          notifications: notificationEventRecorder(ctx),
+        },
       ),
     );
   },
 });
 
-/** Retira o reactiva una sala sin borrarla. La retirada no avisa: es TI2-156. */
+/** Retira o reactiva una sala sin borrarla, avisando a futuras afectadas. */
 export const setSpaceActive = mutation({
   args: {
     spaceId: v.string(),
@@ -142,6 +164,14 @@ export const setSpaceActive = mutation({
           spaceId,
           isActive,
         },
+        {
+          future: futureAppointmentsReader(ctx),
+          auth: authorizationReader(ctx),
+          availability: availabilityReader(ctx),
+          needs: accompanimentNeedsAtDateReader(ctx),
+          compatibility: compatibilitySpaceSource(ctx),
+          notifications: notificationEventRecorder(ctx),
+        },
       ),
     );
   },
@@ -158,6 +188,28 @@ export const getSpace = query({
         tokenIdentifier: identity?.tokenIdentifier ?? null,
         version: SPACE_CATALOG_CONTRACT_VERSION,
         spaceId,
+      }),
+    );
+  },
+});
+
+/**
+ * Lista las salas retiradas para Administración (TI2-156, nota TI2-169).
+ * Solo administración; permite reactivar desde la Web en el siguiente módulo.
+ */
+export const listInactiveSpaces = query({
+  args: {
+    limit: v.number(),
+    cursor: v.optional(v.string()),
+    version: v.literal(SPACE_CATALOG_CONTRACT_VERSION),
+  },
+  returns: spaceCatalogPageValidator,
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrap(
+      await listInactiveSpaceCatalogUseCase(authorizationReader(ctx), inactiveSpaceReader(ctx), {
+        tokenIdentifier: identity?.tokenIdentifier ?? null,
+        ...args,
       }),
     );
   },

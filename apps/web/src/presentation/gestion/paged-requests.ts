@@ -1,4 +1,18 @@
 import { useCallback, useState } from "react";
+import { isRequestState, type RequestState } from "../../../../../convex/domain/index.ts";
+
+/**
+ * Filtro de «Mis tomadas» en la URL (TI2-157): `?estado=` con un estado del
+ * contrato. Vive en la búsqueda de la bandeja y del detalle para que volver
+ * del detalle conserve el filtro; un valor desconocido se descarta.
+ */
+export type RequestListSearch = { readonly estado?: RequestState };
+
+export function toRequestListSearch(search: Record<string, unknown>): RequestListSearch {
+  return typeof search.estado === "string" && isRequestState(search.estado)
+    ? { estado: search.estado }
+    : {};
+}
 
 /** Fila mínima que muestran las listas: coincide con ambas vistas. */
 export type RequestListItem = {

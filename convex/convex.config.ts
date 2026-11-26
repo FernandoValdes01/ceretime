@@ -16,6 +16,22 @@ const app = defineApp({
     // activa por entorno con `convex env set`; el cliente nunca puede
     // controlarlo. En producción permanece ausente y `createTestUser` rechaza.
     TEST_SEEDS_ENABLED: v.optional(v.string()),
+    // Remitente de los avisos por correo (TI2-159): cuenta institucional
+    // autorizada con OAuth solo para `gmail.send` con el mismo cliente
+    // `GOOGLE_CLIENT_ID`. El token de actualización es secreto y lo renueva el
+    // responsable del remitente. Sin ellos, el aviso queda pendiente con
+    // `not_configured` y se reintenta.
+    GMAIL_SENDER_ADDRESS: v.optional(v.string()),
+    GMAIL_SENDER_REFRESH_TOKEN: v.optional(v.string()),
+    // Destinos de prueba habilitados, separados por comas. Si existe, ningún
+    // correo sale a una dirección fuera de la lista.
+    EMAIL_ALLOWED_RECIPIENTS: v.optional(v.string()),
+    // Claves VAPID para Web Push opcional (TI2-160). La clave pública se
+    // entrega al navegador al activar la suscripción; la privada nunca sale
+    // del servidor. Sin ellas, el envío push registra `not_configured`.
+    VAPID_PUBLIC_KEY: v.optional(v.string()),
+    VAPID_PRIVATE_KEY: v.optional(v.string()),
+    VAPID_SUBJECT: v.optional(v.string()),
   },
 });
 // Cast acotado a este borde: Bun aísla `convex` por workspace y el `tsc`

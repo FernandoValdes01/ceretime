@@ -455,7 +455,26 @@ export default defineSchema({
   })
     // Participantes de la atención: una fila basta para decidir y el conjunto
     // se lee sin filtrar en memoria.
-    .index("by_appointmentId_and_professionalId", ["appointmentId", "professionalId"]),
+    .index("by_appointmentId_and_professionalId", ["appointmentId", "professionalId"])
+    // Futuras donde el profesional participa (TI2-156, TI2-142): responsable o
+    // adicional, para avisarle cuando su disponibilidad deja de cubrirlas.
+    .index("by_professionalId", ["professionalId"]),
+
+  // Tabla 'accompanimentNeeds': versiones de necesidades de acceso (TI2-156).
+  // NECESIDADES_ACCESO del MER (`vigenteDesde`, `vigenteHasta?`): cada fila es
+  // la versión vigente desde `validFrom` hasta `validUntil` (exclusivo;
+  // ausente en la vigente). Actualizar cierra la vigente y crea una nueva con
+  // `validFrom` en el instante del cambio, sin tocar `accompaniments`, que
+  // conserva solo la copia vigente como caché. Las atenciones se evalúan con
+  // la versión vigente a su `startsAt`, así las anteriores no cambian.
+  accompanimentNeeds: defineTable({
+    accompanimentId: v.id("accompaniments"),
+    accessNeeds: v.string(),
+    validFrom: v.number(),
+    validUntil: v.optional(v.number()),
+    createdBy: v.optional(v.id("users")),
+    createdAt: v.number(),
+  }).index("by_accompanimentId_and_validFrom", ["accompanimentId", "validFrom"]),
 
   // Tabla 'notificationEvents': eventos de aviso con un único recurso
   // (atención o solicitud) y su destinatario (TI2-118, ampliada por TI2-145).
@@ -497,20 +516,30 @@ export default defineSchema({
   // `attempts`, `lastAttemptAt` y el resultado, sin crear otro aviso ni otra
   // fila. `errorCode` es un código estable y genérico: no guarda respuestas,
   // encabezados ni credenciales del proveedor. El envío real es TI2-159
-  // (correo) y TI2-160 (push).
+  // (correo) y TI2-160 (push). `nextAttemptAt` es el instante desde el que
+  // un despacho puede intentar la entrega (TI2-159): lo fija la política de
+  // reintento al registrar cada resultado y se elimina al reservar la entrega
+  // antes de invocar al proveedor, dejando la fila provisionalmente en
+  // `delivery_uncertain` para que el cron no la vuelva a recoger si la acción
+  // se interrumpe antes de confirmar el resultado. Ausente significa que no
+  // queda intento automático pendiente.
   notificationDeliveries: defineTable({
     eventId: v.id("notificationEvents"),
     channel: notificationDeliveryChannelUnion,
     status: notificationDeliveryStatusUnion,
     attempts: v.number(),
+    providerFailureAttempts: v.optional(v.number()),
     lastAttemptAt: v.optional(v.number()),
     sentAt: v.optional(v.number()),
     errorCode: v.optional(notificationDeliveryErrorUnion),
+    nextAttemptAt: v.optional(v.number()),
   })
     // Entrega del evento por canal: una fila basta para decidir y actualizar.
     .index("by_eventId_and_channel", ["eventId", "channel"])
     // Despacho pendiente por canal, sin barrer todas las entregas.
-    .index("by_channel_and_status", ["channel", "status"]),
+    .index("by_channel_and_status", ["channel", "status"])
+    // Barrido de reintentos: entregas del canal cuyo próximo intento ya venció.
+    .index("by_channel_and_nextAttemptAt", ["channel", "nextAttemptAt"]),
 
   // Tabla 'pushSubscriptions': suscripciones Web Push opcionales de cada
   // persona (TI2-145). Guarda el endpoint y las claves públicas del navegador
