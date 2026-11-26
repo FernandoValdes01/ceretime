@@ -177,7 +177,10 @@ export function noAvailabilityError(): PublicApiError {
 
 /** Error público del correo sin Estudiante vigente (TI2-158). */
 export function requestStudentNotFoundError(): PublicApiError {
-  return { code: REQUEST_STUDENT_NOT_FOUND_ERROR_CODE, message: REQUEST_STUDENT_NOT_FOUND_ERROR_MESSAGE };
+  return {
+    code: REQUEST_STUDENT_NOT_FOUND_ERROR_CODE,
+    message: REQUEST_STUDENT_NOT_FOUND_ERROR_MESSAGE,
+  };
 }
 export function okResult<T>(data: T): ApiResult<T> {
   return { status: "ok", data };
