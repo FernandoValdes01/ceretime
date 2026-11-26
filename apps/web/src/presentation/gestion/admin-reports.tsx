@@ -54,17 +54,17 @@ function dateValidationMessage(value: string): string | null {
 
 export function AdminReportsPage() {
   const headingRef = useRef<HTMLHeadingElement>(null);
-  const initialPeriod = useRef(defaultReportPeriod());
-  const [fromInput, setFromInput] = useState(initialPeriod.current.from);
-  const [toInput, setToInput] = useState(initialPeriod.current.to);
+  const [initialPeriod] = useState(() => defaultReportPeriod());
+  const [fromInput, setFromInput] = useState(initialPeriod.from);
+  const [toInput, setToInput] = useState(initialPeriod.to);
   const [modalityInput, setModalityInput] = useState<ReportModalityFilter>("all");
   const [appliedFilters, setAppliedFilters] = useState<{
     readonly from: string;
     readonly to: string;
     readonly modality: ReportModalityFilter;
   }>({
-    from: initialPeriod.current.from,
-    to: initialPeriod.current.to,
+    from: initialPeriod.from,
+    to: initialPeriod.to,
     modality: "all",
   });
   const [filterError, setFilterError] = useState<string | null>(null);
@@ -234,18 +234,13 @@ function AdminReportsLoaded({
   const updateThreshold = useUpdateMinimumGroupSize();
   const [exporting, setExporting] = useState<ReportExportFormat | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
-  const [thresholdInput, setThresholdInput] = useState<string>(
-    String(report.metadata.minimumGroupSize),
-  );
+  const [thresholdDraft, setThresholdDraft] = useState<string | null>(null);
   const [savingThreshold, setSavingThreshold] = useState(false);
   const [thresholdError, setThresholdError] = useState<string | null>(null);
 
-  useEffect(() => {
-    setThresholdInput(String(report.metadata.minimumGroupSize));
-  }, [report.metadata.minimumGroupSize]);
-
   const { metadata, requests, waitTime, appointments } = report;
   const minSize = metadata.minimumGroupSize;
+  const thresholdInput = thresholdDraft ?? String(minSize);
 
   async function handleExport(format: ReportExportFormat) {
     if (exporting !== null) return;
@@ -298,6 +293,7 @@ function AdminReportsLoaded({
     setThresholdError(null);
     try {
       const result = await updateThreshold({ minimumGroupSize: parsed });
+      setThresholdDraft(null);
       if (result.auditEventId !== null) {
         notify(
           `Tamaño mínimo de grupo actualizado de ${result.previousThreshold} a ${result.newThreshold} y registrado en auditoría.`,
@@ -541,7 +537,7 @@ function AdminReportsLoaded({
               max={MAX_MINIMUM_GROUP_SIZE}
               step={1}
               value={thresholdInput}
-              onChange={(event) => setThresholdInput(event.target.value)}
+              onChange={(event) => setThresholdDraft(event.target.value)}
             />
           </div>
           <button

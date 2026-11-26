@@ -141,10 +141,10 @@ describe("reportes agregados (TI2-175)", () => {
     expect(screenReport.requests.total).toEqual({ suppressed: false, count: 13 });
 
     // Tiempo de espera: 11 solicitudes con transición (>= 5 -> visible).
-    expect(screenReport.waitTime.status).toBe("visible");
-    if (screenReport.waitTime.status === "visible") {
-      expect(screenReport.waitTime.sampleCount).toBe(11);
-    }
+    expect(screenReport.waitTime).toMatchObject({
+      status: "visible",
+      sampleCount: 11,
+    });
 
     // Cancelaciones (2 < 5) suprimido; inasistencias (5 >= 5) visible.
     expect(screenReport.appointments.cancellationsTotal).toEqual({

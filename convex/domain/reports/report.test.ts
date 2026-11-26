@@ -90,21 +90,16 @@ describe("suppressMatrixWithTotals", () => {
       5,
     );
     // Ninguna fila con total visible puede tener exactamente 1 celda suprimida.
-    for (let r = 0; r < result.cells.length; r += 1) {
-      const rowTotal = result.rowTotals[r];
-      if (rowTotal !== undefined && !rowTotal.suppressed) {
-        const suppressedInRow = (result.cells[r] ?? []).filter((c) => c.suppressed).length;
-        expect(suppressedInRow).not.toBe(1);
-      }
-    }
+    const violatingRows = result.cells.filter(
+      (row, r) => !result.rowTotals[r]?.suppressed && row.filter((c) => c.suppressed).length === 1,
+    );
+    expect(violatingRows).toHaveLength(0);
     // Ninguna columna con total visible puede tener exactamente 1 celda suprimida.
-    for (let c = 0; c < result.columnTotals.length; c += 1) {
-      const colTotal = result.columnTotals[c];
-      if (colTotal !== undefined && !colTotal.suppressed) {
-        const suppressedInCol = result.cells.filter((row) => row[c]?.suppressed).length;
-        expect(suppressedInCol).not.toBe(1);
-      }
-    }
+    const violatingCols = result.columnTotals.filter(
+      (colTotal, c) =>
+        !colTotal.suppressed && result.cells.filter((row) => row[c]?.suppressed).length === 1,
+    );
+    expect(violatingCols).toHaveLength(0);
     expect(result.cells[0]?.[1]).toEqual({ suppressed: true, reason: "below_threshold" });
     expect(result.cells[0]?.[0]).toEqual({ suppressed: true, reason: "complementary" });
   });

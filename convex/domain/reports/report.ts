@@ -12,10 +12,11 @@
  * identificadores de personas.
  */
 
-import { AGENDA_TIME_ZONE, isValidCivilDate } from "../availability/availability";
-import type { Modality } from "../availability/availability";
+import { AGENDA_TIME_ZONE, MODALITY_VALUES, isValidCivilDate } from "../availability/availability";
 import { APPOINTMENT_STATUS_VALUES, type AppointmentStatus } from "../appointments/appointment";
 import { REQUEST_STATES, type RequestState } from "../requests/state";
+
+type ReportAppointmentModality = (typeof MODALITY_VALUES)[number];
 
 /** Versión del contrato de reportes agregados. */
 export const REPORT_CONTRACT_VERSION = 1 as const;
@@ -114,12 +115,12 @@ export type AggregateReportMetadata = {
 export type AggregateReport = {
   readonly metadata: AggregateReportMetadata;
   readonly requests: {
-    readonly rows: readonly RequestStatusReportRow[];
+    readonly rows: RequestStatusReportRow[];
     readonly total: AggregateCountCell;
   };
   readonly waitTime: WaitTimeSummary;
   readonly appointments: {
-    readonly rows: readonly AppointmentMatrixRow[];
+    readonly rows: AppointmentMatrixRow[];
     readonly columnTotals: {
       readonly inPerson: AggregateCountCell;
       readonly online: AggregateCountCell;
@@ -139,7 +140,7 @@ export type ReportRequestSample = {
 
 export type ReportAppointmentSample = {
   readonly status: AppointmentStatus;
-  readonly modality: Modality;
+  readonly modality: ReportAppointmentModality;
 };
 
 export type BuildAggregateReportInput = {
