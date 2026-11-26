@@ -9,6 +9,7 @@
  */
 
 import type * as application_accompaniments_commands from "../application/accompaniments/commands.js";
+import type * as application_accompaniments_needs from "../application/accompaniments/needs.js";
 import type * as application_accompaniments_professionals from "../application/accompaniments/professionals.js";
 import type * as application_accompaniments_queries from "../application/accompaniments/queries.js";
 import type * as application_accompaniments_status from "../application/accompaniments/status.js";
@@ -19,6 +20,7 @@ import type * as application_appointments_audit from "../application/appointment
 import type * as application_appointments_booking from "../application/appointments/booking.js";
 import type * as application_appointments_changes from "../application/appointments/changes.js";
 import type * as application_appointments_commands from "../application/appointments/commands.js";
+import type * as application_appointments_impact from "../application/appointments/impact.js";
 import type * as application_appointments_occupancy from "../application/appointments/occupancy.js";
 import type * as application_appointments_online_access from "../application/appointments/online_access.js";
 import type * as application_appointments_queries from "../application/appointments/queries.js";
@@ -34,6 +36,8 @@ import type * as application_notifications_dispatch from "../application/notific
 import type * as application_notifications_inbox from "../application/notifications/inbox.js";
 import type * as application_notifications_ports from "../application/notifications/ports.js";
 import type * as application_notifications_push from "../application/notifications/push.js";
+import type * as application_reports_ports from "../application/reports/ports.js";
+import type * as application_reports_use_cases from "../application/reports/use_cases.js";
 import type * as application_requests_commands from "../application/requests/commands.js";
 import type * as application_requests_notifications from "../application/requests/notifications.js";
 import type * as application_requests_ports from "../application/requests/ports.js";
@@ -75,9 +79,11 @@ import type * as domain_identity_roles from "../domain/identity/roles.js";
 import type * as domain_index from "../domain/index.js";
 import type * as domain_notifications_delivery from "../domain/notifications/delivery.js";
 import type * as domain_notifications_notification from "../domain/notifications/notification.js";
+import type * as domain_notifications_push from "../domain/notifications/push.js";
 import type * as domain_privacy_privacy_controls from "../domain/privacy/privacy_controls.js";
 import type * as domain_privacy_privacy_deadlines from "../domain/privacy/privacy_deadlines.js";
 import type * as domain_privacy_privacy_request from "../domain/privacy/privacy_request.js";
+import type * as domain_reports_report from "../domain/reports/report.js";
 import type * as domain_requests_referral from "../domain/requests/referral.js";
 import type * as domain_requests_request from "../domain/requests/request.js";
 import type * as domain_requests_state from "../domain/requests/state.js";
@@ -99,6 +105,7 @@ import type * as infrastructure_notifications_gmail_sender from "../infrastructu
 import type * as infrastructure_notifications_repository from "../infrastructure/notifications/repository.js";
 import type * as infrastructure_notifications_web_push_sender from "../infrastructure/notifications/web_push_sender.js";
 import type * as infrastructure_privacy_repository from "../infrastructure/privacy/repository.js";
+import type * as infrastructure_reports_repository from "../infrastructure/reports/repository.js";
 import type * as infrastructure_requests_repository from "../infrastructure/requests/repository.js";
 import type * as infrastructure_spaces_repository from "../infrastructure/spaces/repository.js";
 import type * as infrastructure_validators from "../infrastructure/validators.js";
@@ -117,6 +124,7 @@ import type * as presentation_availability from "../presentation/availability.js
 import type * as presentation_calendar from "../presentation/calendar.js";
 import type * as presentation_follow_up from "../presentation/follow_up.js";
 import type * as presentation_notifications from "../presentation/notifications.js";
+import type * as presentation_reports from "../presentation/reports.js";
 import type * as presentation_requests from "../presentation/requests.js";
 import type * as presentation_session from "../presentation/session.js";
 import type * as presentation_spaces from "../presentation/spaces.js";
@@ -129,6 +137,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "application/accompaniments/commands": typeof application_accompaniments_commands;
+  "application/accompaniments/needs": typeof application_accompaniments_needs;
   "application/accompaniments/professionals": typeof application_accompaniments_professionals;
   "application/accompaniments/queries": typeof application_accompaniments_queries;
   "application/accompaniments/status": typeof application_accompaniments_status;
@@ -139,6 +148,7 @@ declare const fullApi: ApiFromModules<{
   "application/appointments/booking": typeof application_appointments_booking;
   "application/appointments/changes": typeof application_appointments_changes;
   "application/appointments/commands": typeof application_appointments_commands;
+  "application/appointments/impact": typeof application_appointments_impact;
   "application/appointments/occupancy": typeof application_appointments_occupancy;
   "application/appointments/online_access": typeof application_appointments_online_access;
   "application/appointments/queries": typeof application_appointments_queries;
@@ -154,6 +164,8 @@ declare const fullApi: ApiFromModules<{
   "application/notifications/inbox": typeof application_notifications_inbox;
   "application/notifications/ports": typeof application_notifications_ports;
   "application/notifications/push": typeof application_notifications_push;
+  "application/reports/ports": typeof application_reports_ports;
+  "application/reports/use_cases": typeof application_reports_use_cases;
   "application/requests/commands": typeof application_requests_commands;
   "application/requests/notifications": typeof application_requests_notifications;
   "application/requests/ports": typeof application_requests_ports;
@@ -195,9 +207,11 @@ declare const fullApi: ApiFromModules<{
   "domain/index": typeof domain_index;
   "domain/notifications/delivery": typeof domain_notifications_delivery;
   "domain/notifications/notification": typeof domain_notifications_notification;
+  "domain/notifications/push": typeof domain_notifications_push;
   "domain/privacy/privacy_controls": typeof domain_privacy_privacy_controls;
   "domain/privacy/privacy_deadlines": typeof domain_privacy_privacy_deadlines;
   "domain/privacy/privacy_request": typeof domain_privacy_privacy_request;
+  "domain/reports/report": typeof domain_reports_report;
   "domain/requests/referral": typeof domain_requests_referral;
   "domain/requests/request": typeof domain_requests_request;
   "domain/requests/state": typeof domain_requests_state;
@@ -219,6 +233,7 @@ declare const fullApi: ApiFromModules<{
   "infrastructure/notifications/repository": typeof infrastructure_notifications_repository;
   "infrastructure/notifications/web_push_sender": typeof infrastructure_notifications_web_push_sender;
   "infrastructure/privacy/repository": typeof infrastructure_privacy_repository;
+  "infrastructure/reports/repository": typeof infrastructure_reports_repository;
   "infrastructure/requests/repository": typeof infrastructure_requests_repository;
   "infrastructure/spaces/repository": typeof infrastructure_spaces_repository;
   "infrastructure/validators": typeof infrastructure_validators;
@@ -237,6 +252,7 @@ declare const fullApi: ApiFromModules<{
   "presentation/calendar": typeof presentation_calendar;
   "presentation/follow_up": typeof presentation_follow_up;
   "presentation/notifications": typeof presentation_notifications;
+  "presentation/reports": typeof presentation_reports;
   "presentation/requests": typeof presentation_requests;
   "presentation/session": typeof presentation_session;
   "presentation/spaces": typeof presentation_spaces;
