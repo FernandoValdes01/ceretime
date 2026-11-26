@@ -37,7 +37,10 @@ export type ApiResult<T> = { status: "ok"; data: T } | { status: "error"; error:
  * registro de seguimiento: `conflict` queda para lo que depende del estado.
  * TI2-158 suma `request_student_not_found` para el correo del registro por
  * canal oficial que no es de un Estudiante vigente, para que la Web marque
- * ese campo por código y no por el texto del mensaje.
+ * ese campo por código y no por el texto del mensaje. TI2-167 suma
+ * `privacy_request_fields_invalid` para los campos de una solicitud de
+ * derechos y de su resolución; el estado y la vigencia del plazo siguen
+ * usando `conflict`.
  */
 export const API_ERROR_CODE_VALUES = [
   "access_needs_empty",
@@ -50,6 +53,7 @@ export const API_ERROR_CODE_VALUES = [
   "request_fields_invalid",
   "follow_up_fields_invalid",
   "request_student_not_found",
+  "privacy_request_fields_invalid",
 ] as const;
 
 /** Código estable de un error público del contrato común. */
@@ -89,6 +93,9 @@ export const FOLLOW_UP_FIELDS_INVALID_ERROR_CODE = "follow_up_fields_invalid" as
  */
 export const REQUEST_STUDENT_NOT_FOUND_ERROR_CODE = "request_student_not_found" as const;
 
+/** Campos de la solicitud de privacidad o de su resolución inválidos. */
+export const PRIVACY_REQUEST_FIELDS_INVALID_ERROR_CODE = "privacy_request_fields_invalid" as const;
+
 /** Conflicto con el estado actual, sin filtrar la existencia del recurso. */
 export const CONFLICT_ERROR_CODE = "conflict" as const;
 
@@ -118,6 +125,10 @@ export const FOLLOW_UP_FIELDS_INVALID_ERROR_MESSAGE = "Los datos del seguimiento
 export const REQUEST_STUDENT_NOT_FOUND_ERROR_MESSAGE =
   "No hay una cuenta de Estudiante vigente con ese correo.";
 
+/** Mensaje genérico para campos de la solicitud de privacidad inválidos. */
+export const PRIVACY_REQUEST_FIELDS_INVALID_ERROR_MESSAGE =
+  "Los datos de la solicitud de privacidad no son válidos.";
+
 /** Mensaje comprensible para conflicto, sin detalles sensibles. */
 export const CONFLICT_ERROR_MESSAGE = "La solicitud entra en conflicto con el estado actual.";
 
@@ -141,6 +152,7 @@ export const API_ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   request_fields_invalid: REQUEST_FIELDS_INVALID_ERROR_MESSAGE,
   follow_up_fields_invalid: FOLLOW_UP_FIELDS_INVALID_ERROR_MESSAGE,
   request_student_not_found: REQUEST_STUDENT_NOT_FOUND_ERROR_MESSAGE,
+  privacy_request_fields_invalid: PRIVACY_REQUEST_FIELDS_INVALID_ERROR_MESSAGE,
 };
 
 /** Verdadero cuando el código pertenece al contrato público estable. */
