@@ -110,6 +110,7 @@ import type * as infrastructure_requests_repository from "../infrastructure/requ
 import type * as infrastructure_spaces_repository from "../infrastructure/spaces/repository.js";
 import type * as infrastructure_validators from "../infrastructure/validators.js";
 import type * as operations_accounts from "../operations/accounts.js";
+import type * as operations_appointments from "../operations/appointments.js";
 import type * as operations_assignments from "../operations/assignments.js";
 import type * as operations_calendar from "../operations/calendar.js";
 import type * as operations_fictitiousData from "../operations/fictitiousData.js";
@@ -238,6 +239,7 @@ declare const fullApi: ApiFromModules<{
   "infrastructure/spaces/repository": typeof infrastructure_spaces_repository;
   "infrastructure/validators": typeof infrastructure_validators;
   "operations/accounts": typeof operations_accounts;
+  "operations/appointments": typeof operations_appointments;
   "operations/assignments": typeof operations_assignments;
   "operations/calendar": typeof operations_calendar;
   "operations/fictitiousData": typeof operations_fictitiousData;
