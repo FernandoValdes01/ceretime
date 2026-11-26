@@ -50,6 +50,7 @@ export const API_ERROR_CODE_VALUES = [
   "request_fields_invalid",
   "follow_up_fields_invalid",
   "privacy_request_fields_invalid",
+  "request_student_not_found",
 ] as const;
 
 /** Código estable de un error público del contrato común. */
@@ -86,6 +87,12 @@ export const FOLLOW_UP_FIELDS_INVALID_ERROR_CODE = "follow_up_fields_invalid" as
 /** Campos de la solicitud de privacidad o de su resolución inválidos. */
 export const PRIVACY_REQUEST_FIELDS_INVALID_ERROR_CODE = "privacy_request_fields_invalid" as const;
 
+/**
+ * El correo del registro por canal oficial no es de un Estudiante vigente
+ * (TI2-158). Solo lo recibe el personal que registra.
+ */
+export const REQUEST_STUDENT_NOT_FOUND_ERROR_CODE = "request_student_not_found" as const;
+
 /** Conflicto con el estado actual, sin filtrar la existencia del recurso. */
 export const CONFLICT_ERROR_CODE = "conflict" as const;
 
@@ -115,6 +122,10 @@ export const FOLLOW_UP_FIELDS_INVALID_ERROR_MESSAGE = "Los datos del seguimiento
 export const PRIVACY_REQUEST_FIELDS_INVALID_ERROR_MESSAGE =
   "Los datos de la solicitud de privacidad no son válidos.";
 
+/** Mensaje del correo sin Estudiante vigente: dice qué dato corregir. */
+export const REQUEST_STUDENT_NOT_FOUND_ERROR_MESSAGE =
+  "No hay una cuenta de Estudiante vigente con ese correo.";
+
 /** Mensaje comprensible para conflicto, sin detalles sensibles. */
 export const CONFLICT_ERROR_MESSAGE = "La solicitud entra en conflicto con el estado actual.";
 
@@ -138,6 +149,7 @@ export const API_ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   request_fields_invalid: REQUEST_FIELDS_INVALID_ERROR_MESSAGE,
   follow_up_fields_invalid: FOLLOW_UP_FIELDS_INVALID_ERROR_MESSAGE,
   privacy_request_fields_invalid: PRIVACY_REQUEST_FIELDS_INVALID_ERROR_MESSAGE,
+  request_student_not_found: REQUEST_STUDENT_NOT_FOUND_ERROR_MESSAGE,
 };
 
 /** Verdadero cuando el código pertenece al contrato público estable. */
@@ -163,7 +175,10 @@ export function noAvailabilityError(): PublicApiError {
   return { code: NO_AVAILABILITY_ERROR_CODE, message: NO_AVAILABILITY_ERROR_MESSAGE };
 }
 
-/** Resultado de éxito con las claves exactas `{status, data}`. */
+/** Error público del correo sin Estudiante vigente (TI2-158). */
+export function requestStudentNotFoundError(): PublicApiError {
+  return { code: REQUEST_STUDENT_NOT_FOUND_ERROR_CODE, message: REQUEST_STUDENT_NOT_FOUND_ERROR_MESSAGE };
+}
 export function okResult<T>(data: T): ApiResult<T> {
   return { status: "ok", data };
 }

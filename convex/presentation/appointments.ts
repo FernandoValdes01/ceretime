@@ -29,6 +29,7 @@ import { action, mutation, query } from "../_generated/server";
 import { APPOINTMENT_CONTRACT_VERSION } from "../domain/appointments/appointment";
 import { AGENDA_TIME_ZONE } from "../domain/availability/availability";
 import {
+  accompanimentNeedsAtDateReader,
   accompanimentNeedsReader,
   authorizationReader,
 } from "../infrastructure/accompaniments/repository";
@@ -39,6 +40,7 @@ import {
   appointmentChangeReader,
   appointmentListReader,
   appointmentOccupier,
+  appointmentParticipantsReader,
   appointmentTransitionRepository,
   onlineAccessReader,
   onlineAccessStore,
@@ -338,6 +340,7 @@ const appointmentProjectionValidator = v.union(
     status: appointmentStatusUnion,
     version,
     view: v.literal("full"),
+    needsCoordination: v.boolean(),
   }),
   v.object({
     id: v.string(),
@@ -355,6 +358,7 @@ const appointmentProjectionValidator = v.union(
     status: appointmentStatusUnion,
     version,
     view: v.literal("shared"),
+    needsCoordination: v.boolean(),
   }),
   v.object({
     id: v.string(),
@@ -363,6 +367,7 @@ const appointmentProjectionValidator = v.union(
     endAt: v.number(),
     modality: modalityUnion,
     view: v.literal("minimized"),
+    needsCoordination: v.boolean(),
   }),
 );
 
@@ -391,7 +396,14 @@ export const listAppointments = query({
     const identity = await ctx.auth.getUserIdentity();
     const page = unwrapApiResult(
       await listAppointmentsUseCase(
-        { auth: authorizationReader(ctx), appointments: appointmentAgendaReader(ctx) },
+        {
+          auth: authorizationReader(ctx),
+          appointments: appointmentAgendaReader(ctx),
+          availability: availabilityReader(ctx),
+          needsAtDate: accompanimentNeedsAtDateReader(ctx),
+          compatibility: compatibilitySpaceSource(ctx),
+          participants: appointmentParticipantsReader(ctx),
+        },
         { ...args, timeZone: AGENDA_TIME_ZONE, tokenIdentifier: identity?.tokenIdentifier ?? null },
       ),
     );
@@ -408,7 +420,14 @@ export const getAppointment = query({
     const identity = await ctx.auth.getUserIdentity();
     return unwrapApiResult(
       await getAppointmentUseCase(
-        { auth: authorizationReader(ctx), appointments: appointmentAgendaReader(ctx) },
+        {
+          auth: authorizationReader(ctx),
+          appointments: appointmentAgendaReader(ctx),
+          availability: availabilityReader(ctx),
+          needsAtDate: accompanimentNeedsAtDateReader(ctx),
+          compatibility: compatibilitySpaceSource(ctx),
+          participants: appointmentParticipantsReader(ctx),
+        },
         { ...args, tokenIdentifier: identity?.tokenIdentifier ?? null },
       ),
     );

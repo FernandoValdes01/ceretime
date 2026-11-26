@@ -78,7 +78,7 @@ export function useNavigateToPath() {
       void router.navigate({
         // `to` solo lleva el pathname; la query va en `search` para que
         // TanStack no la trate como parte de la ruta y no caiga en
-        // NotFoundRedirect. El target ya viene validado por
+        // la página de no encontrado. El target ya viene validado por
         // `resolveReturnTarget`.
         to: url.pathname as "/",
         search: search as never,

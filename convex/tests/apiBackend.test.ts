@@ -1761,6 +1761,7 @@ test("TI2-112: la agenda y el detalle entregan las claves y los valores exactos 
     status: "scheduled",
     version: "v1",
     view: "full",
+    needsCoordination: false,
   };
   const cancelledView = {
     id: appointments.cancelled,
@@ -1775,6 +1776,7 @@ test("TI2-112: la agenda y el detalle entregan las claves y los valores exactos 
     status: "cancelled_by_cereti",
     version: "v1",
     view: "full",
+    needsCoordination: false,
   };
 
   const { cancelReason: _omitted, ...cancelledWithoutReason } = cancelledView;

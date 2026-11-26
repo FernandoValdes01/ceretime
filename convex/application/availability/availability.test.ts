@@ -191,6 +191,28 @@ function fakeNeeds(needs: readonly AccessNeed[]): AccompanimentNeedsReader {
   };
 }
 
+function emptyImpact() {
+  return {
+    future: {
+      listResponsibleByWeekdays: async () => ({
+        complete: true as const,
+        appointments: [] as const,
+      }),
+      listResponsibleByDate: async () => ({ complete: true as const, appointments: [] as const }),
+      listAdditionalByWeekdays: async () => ({
+        complete: true as const,
+        appointments: [] as const,
+      }),
+      listAdditionalByDate: async () => ({ complete: true as const, appointments: [] as const }),
+    },
+    needs: {
+      findNeedsAt: async () => null,
+    },
+    compatibility: fakeCompatibility(),
+    notifications: { record: async () => {} },
+  };
+}
+
 /** Ocupación mutable por inicio y por predicado de intervalo. */
 function fakeOccupancy(data?: {
   readonly occupyAll?: boolean;
@@ -347,18 +369,28 @@ describe("publicación de bloques propios (TI2-97)", () => {
       modality: "online",
     } as const;
     expect(
-      await updateAvailabilityBlock(auth, foreign, {
-        tokenIdentifier: "token-pro",
-        blockId: "block-1",
-        block,
-      }),
+      await updateAvailabilityBlock(
+        auth,
+        foreign,
+        {
+          tokenIdentifier: "token-pro",
+          blockId: "block-1",
+          block,
+        },
+        emptyImpact(),
+      ),
     ).toEqual(DENIED);
     expect(
-      await updateAvailabilityBlock(auth, missing, {
-        tokenIdentifier: "token-pro",
-        blockId: "block-inexistente",
-        block,
-      }),
+      await updateAvailabilityBlock(
+        auth,
+        missing,
+        {
+          tokenIdentifier: "token-pro",
+          blockId: "block-inexistente",
+          block,
+        },
+        emptyImpact(),
+      ),
     ).toEqual(DENIED);
     expect(foreign.calls.updateBlock).toBe(0);
     expect(missing.calls.updateBlock).toBe(0);
@@ -379,17 +411,27 @@ describe("publicación de bloques propios (TI2-97)", () => {
       ],
     });
     expect(
-      await setAvailabilityBlockActive(auth, store, {
-        tokenIdentifier: "token-pro",
-        blockId: "block-1",
-        isActive: false,
-      }),
+      await setAvailabilityBlockActive(
+        auth,
+        store,
+        {
+          tokenIdentifier: "token-pro",
+          blockId: "block-1",
+          isActive: false,
+        },
+        emptyImpact(),
+      ),
     ).toEqual({ status: "ok", data: null });
     expect(
-      await removeAvailabilityException(auth, store, {
-        tokenIdentifier: "token-pro",
-        exceptionId: "exc-1",
-      }),
+      await removeAvailabilityException(
+        auth,
+        store,
+        {
+          tokenIdentifier: "token-pro",
+          exceptionId: "exc-1",
+        },
+        emptyImpact(),
+      ),
     ).toEqual({ status: "ok", data: null });
     expect(store.calls.removeException).toBe(1);
   });
@@ -409,16 +451,26 @@ describe("publicación de bloques propios (TI2-97)", () => {
     });
     const missing = fakeAvailability({ exceptions: [] });
     expect(
-      await removeAvailabilityException(auth, foreign, {
-        tokenIdentifier: "token-pro",
-        exceptionId: "exc-1",
-      }),
+      await removeAvailabilityException(
+        auth,
+        foreign,
+        {
+          tokenIdentifier: "token-pro",
+          exceptionId: "exc-1",
+        },
+        emptyImpact(),
+      ),
     ).toEqual(DENIED);
     expect(
-      await removeAvailabilityException(auth, missing, {
-        tokenIdentifier: "token-pro",
-        exceptionId: "exc-inexistente",
-      }),
+      await removeAvailabilityException(
+        auth,
+        missing,
+        {
+          tokenIdentifier: "token-pro",
+          exceptionId: "exc-inexistente",
+        },
+        emptyImpact(),
+      ),
     ).toEqual(DENIED);
     expect(foreign.calls.removeException).toBe(0);
   });
@@ -428,16 +480,26 @@ describe("publicación de bloques propios (TI2-97)", () => {
     const store = fakeAvailability({});
     const exception = { date: "2026-10-26", kind: "cancelled" } as const;
     expect(
-      await publishAvailabilityException(auth, store, {
-        tokenIdentifier: "token-pro",
-        exception,
-      }),
+      await publishAvailabilityException(
+        auth,
+        store,
+        {
+          tokenIdentifier: "token-pro",
+          exception,
+        },
+        emptyImpact(),
+      ),
     ).toEqual({ status: "ok", data: { exceptionId: "exc-nueva" } });
     expect(
-      await publishAvailabilityException(auth, store, {
-        tokenIdentifier: "token-student",
-        exception,
-      }),
+      await publishAvailabilityException(
+        auth,
+        store,
+        {
+          tokenIdentifier: "token-student",
+          exception,
+        },
+        emptyImpact(),
+      ),
     ).toEqual(DENIED);
   });
 });

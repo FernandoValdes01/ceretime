@@ -17,11 +17,13 @@ import {
   canRescheduleAppointment,
   canReviewAppointmentJustification,
   canSubmitAppointmentJustification,
+  canUpdateAccompanimentNeeds,
   canUseAppointmentOnlineAccess,
   canWriteFollowUp,
   getAccompanimentView,
   getAppointmentView,
   getFollowUpView,
+  isProfileActive,
   isProfessionalBookable,
   type AccompanimentView,
   type AccountStatus,
@@ -33,6 +35,7 @@ import {
   type Role,
 } from "../../domain/authorization/permissions";
 import {
+  conflictError,
   errResult,
   okResult,
   UNAUTHORIZED_ERROR_CODE,
@@ -318,6 +321,27 @@ export async function authorizeAccompanimentStatusChange(
   const loaded = await loadAgendaContext(reader, request);
   if (loaded === null || !canChangeAccompanimentStatus(loaded.context)) return denied();
   return okResult({ callerId: loaded.callerId, status: loaded.context.accompanimentStatus });
+}
+
+/**
+ * Actualizar necesidades de acceso (TI2-156): solo el Estudiante dueño con
+ * cuenta vigente, sobre un acompañamiento activo o en pausa. El dueño de un
+ * acompañamiento cerrado recibe `conflict`; quien no es dueño recibe
+ * `unauthorized` aunque esté cerrado, para no revelar cerrados ajenos.
+ */
+export async function authorizeAccompanimentNeedsUpdate(
+  reader: AuthorizationReader,
+  request: AgendaRequest,
+): Promise<ApiResult<AgendaGrant>> {
+  const loaded = await loadAgendaContext(reader, request);
+  if (loaded === null) return denied();
+  if (!isProfileActive(loaded.context)) return denied();
+  if (!loaded.context.isOwner) return denied();
+  if (loaded.context.accompanimentStatus === "closed") {
+    return errResult(conflictError());
+  }
+  if (!canUpdateAccompanimentNeeds(loaded.context)) return denied();
+  return okResult({ callerId: loaded.callerId });
 }
 
 /**
