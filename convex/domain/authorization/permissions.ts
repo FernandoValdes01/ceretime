@@ -46,6 +46,9 @@ export const AUTHORIZATION_ACTIONS = [
   "account:read",
   "account:enable",
   "account:revoke",
+  "report:read",
+  "report:export",
+  "report:configureThreshold",
 ] as const;
 
 export type AuthorizationAction = (typeof AUTHORIZATION_ACTIONS)[number];
@@ -475,6 +478,35 @@ export function canManageSpaceCatalog(input: {
 }
 
 /**
+ * Reportes agregados, exportación registrada y umbral mínimo (TI2-175).
+ *
+ * Solo el Administrador con cuenta habilitada y vigente consulta reportes
+ * agregados, los exporta y configura el umbral mínimo de grupo (siempre >= 5).
+ * Estos reportes nunca entregan datos personales ni habilitan acceso a
+ * acompañamientos o notas internas.
+ */
+export type ReportAuthorizationContext = {
+  readonly role: Role;
+  readonly institutionalStatus: InstitutionalStatus;
+  readonly accountStatus: AccountStatus;
+};
+
+/** Verdadero solo cuando el actor puede consultar reportes agregados (TI2-175). */
+export function canReadAggregateReports(context: ReportAuthorizationContext): boolean {
+  return context.role === "admin" && isProfileActive(context);
+}
+
+/** Verdadero solo cuando el actor puede exportar reportes agregados (TI2-175). */
+export function canExportAggregateReports(context: ReportAuthorizationContext): boolean {
+  return context.role === "admin" && isProfileActive(context);
+}
+
+/** Verdadero solo cuando el actor puede configurar el umbral de grupo mínimo (TI2-175). */
+export function canConfigureReportThreshold(context: ReportAuthorizationContext): boolean {
+  return context.role === "admin" && isProfileActive(context);
+}
+
+/**
  * Matriz explícita para documentación y revisión con CERETI. Cada celda indica
  * el resultado esperado en Backend; la UI no sustituye esta decisión (RN-08).
  */
@@ -634,5 +666,26 @@ export const PERMISSION_MATRIX: ReadonlyArray<{
     professional: "denegado",
     intern: "denegado",
     admin: "permitido con cuenta vigente, solo profesional o administrador",
+  },
+  {
+    action: "report:read",
+    student: "denegado",
+    professional: "denegado",
+    intern: "denegado",
+    admin: "permitido con cuenta vigente, solo agregados con grupo mínimo",
+  },
+  {
+    action: "report:export",
+    student: "denegado",
+    professional: "denegado",
+    intern: "denegado",
+    admin: "permitido con cuenta vigente, exportación agregada registrada",
+  },
+  {
+    action: "report:configureThreshold",
+    student: "denegado",
+    professional: "denegado",
+    intern: "denegado",
+    admin: "permitido con cuenta vigente, solo hacia arriba desde 5 con auditoría",
   },
 ];

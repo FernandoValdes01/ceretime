@@ -5,13 +5,16 @@ import {
   canBookAppointment,
   canCancelAppointment,
   canChangeAccompanimentStatus,
+  canConfigureReportThreshold,
   canCoordinateAppointment,
   canEditAvailability,
   canEnableAccount,
+  canExportAggregateReports,
   canListAccounts,
   canManageAccounts,
   canManageSpaceCatalog,
   canReadAccount,
+  canReadAggregateReports,
   canReadAvailability,
   canReadInternalNote,
   canReadSpaceCatalog,
@@ -789,6 +792,40 @@ describe("canManageSpaceCatalog", () => {
         accountStatus: "inactive",
       }),
     ).toBe(false);
+  });
+});
+
+describe("canReadAggregateReports / canExportAggregateReports / canConfigureReportThreshold", () => {
+  test("solo el Administrador con cuenta habilitada y vigente opera reportes agregados", () => {
+    const adminActive = {
+      role: "admin" as const,
+      institutionalStatus: "enabled" as const,
+      accountStatus: "active" as const,
+    };
+    expect(canReadAggregateReports(adminActive)).toBe(true);
+    expect(canExportAggregateReports(adminActive)).toBe(true);
+    expect(canConfigureReportThreshold(adminActive)).toBe(true);
+  });
+
+  test("otros roles o cuentas no vigentes son denegados", () => {
+    for (const role of ["student", "professional", "intern"] as const) {
+      const ctx = {
+        role,
+        institutionalStatus: "enabled" as const,
+        accountStatus: "active" as const,
+      };
+      expect(canReadAggregateReports(ctx)).toBe(false);
+      expect(canExportAggregateReports(ctx)).toBe(false);
+      expect(canConfigureReportThreshold(ctx)).toBe(false);
+    }
+    const disabledAdmin = {
+      role: "admin" as const,
+      institutionalStatus: "disabled" as const,
+      accountStatus: "active" as const,
+    };
+    expect(canReadAggregateReports(disabledAdmin)).toBe(false);
+    expect(canExportAggregateReports(disabledAdmin)).toBe(false);
+    expect(canConfigureReportThreshold(disabledAdmin)).toBe(false);
   });
 });
 
