@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   DEFAULT_MINIMUM_GROUP_SIZE,
   MAX_MINIMUM_GROUP_SIZE,
+  REPORT_FILTERS_INVALID_ERROR_CODE,
   UNAUTHORIZED_ERROR_CODE,
   type AggregateCountCell,
   type ReportExportFormat,
@@ -15,7 +16,13 @@ import {
   civilDateIssue,
   formatCivilDateWithYear,
 } from "../shared/date-format.ts";
-import { ACCESS_DENIED_MESSAGE, DeniedState, LoadingState } from "../shared/view-states.tsx";
+import {
+  ACCESS_DENIED_MESSAGE,
+  DeniedState,
+  EmptyState,
+  ErrorState,
+  LoadingState,
+} from "../shared/view-states.tsx";
 import { adminLoadFallback } from "./admin-load-fallback.tsx";
 import {
   appointmentStatusReportLabel,
@@ -208,8 +215,12 @@ function AdminReportsContent({
     // eslint-disable-next-line react-hooks/rules-of-hooks
     report = useAggregateReport(filters);
   } catch (error) {
-    if (publicErrorOf(error)?.code === UNAUTHORIZED_ERROR_CODE) {
+    const publicError = publicErrorOf(error);
+    if (publicError?.code === UNAUTHORIZED_ERROR_CODE) {
       return <DeniedState tone="admin" description={REPORTS_DENIED_HINT} />;
+    }
+    if (publicError?.code === REPORT_FILTERS_INVALID_ERROR_CODE) {
+      return <ErrorState tone="admin" message={publicError.message} />;
     }
     throw error;
   }
@@ -241,6 +252,11 @@ function AdminReportsLoaded({
   const { metadata, requests, waitTime, appointments } = report;
   const minSize = metadata.minimumGroupSize;
   const thresholdInput = thresholdDraft ?? String(minSize);
+  const isPeriodEmpty =
+    !requests.total.suppressed &&
+    requests.total.count === 0 &&
+    !appointments.total.suppressed &&
+    appointments.total.count === 0;
 
   async function handleExport(format: ReportExportFormat) {
     if (exporting !== null) return;
@@ -383,19 +399,28 @@ function AdminReportsLoaded({
           </p>
         ) : null}
 
-        <div className="admin-reports__kpis">
-          <article className="admin-reports__kpi">
-            <p className="admin-reports__kpi-label">Solicitudes en el periodo</p>
-            <p className="admin-reports__kpi-value">
+        {isPeriodEmpty ? (
+          <EmptyState title="No hay registros agregados en el periodo seleccionado.">
+            <p>
+              Ajusta las fechas o la modalidad para consultar un periodo con solicitudes o
+              atenciones registradas.
+            </p>
+          </EmptyState>
+        ) : null}
+
+        <div className="admin-reports__summary">
+          <article className="admin-reports__metric">
+            <p className="admin-reports__metric-label">Solicitudes en el periodo</p>
+            <p className="admin-reports__metric-value">
               <ReportCellValue cell={requests.total} minimumGroupSize={minSize} />
             </p>
           </article>
-          <article className="admin-reports__kpi">
-            <p className="admin-reports__kpi-label">Tiempo de espera (solicitudes)</p>
+          <article className="admin-reports__metric">
+            <p className="admin-reports__metric-label">Tiempo de espera (solicitudes)</p>
             {waitTime.status === "empty" ? (
-              <p className="admin-reports__kpi-value">Sin datos</p>
+              <p className="admin-reports__metric-value">Sin datos</p>
             ) : waitTime.status === "suppressed" ? (
-              <p className="admin-reports__kpi-value">
+              <p className="admin-reports__metric-value">
                 <span className="admin-reports__suppressed">
                   {waitTime.reason === "below_threshold"
                     ? `Suprimido (< ${minSize})`
@@ -404,28 +429,28 @@ function AdminReportsLoaded({
               </p>
             ) : (
               <>
-                <p className="admin-reports__kpi-value">{waitTime.averageHours} h promedio</p>
-                <p className="admin-reports__kpi-sub">
+                <p className="admin-reports__metric-value">{waitTime.averageHours} h promedio</p>
+                <p className="admin-reports__metric-sub">
                   Mediana: {waitTime.medianHours} h · Muestra: {waitTime.sampleCount}
                 </p>
               </>
             )}
           </article>
-          <article className="admin-reports__kpi">
-            <p className="admin-reports__kpi-label">Atenciones en el periodo</p>
-            <p className="admin-reports__kpi-value">
+          <article className="admin-reports__metric">
+            <p className="admin-reports__metric-label">Atenciones en el periodo</p>
+            <p className="admin-reports__metric-value">
               <ReportCellValue cell={appointments.total} minimumGroupSize={minSize} />
             </p>
           </article>
-          <article className="admin-reports__kpi">
-            <p className="admin-reports__kpi-label">Cancelaciones</p>
-            <p className="admin-reports__kpi-value">
+          <article className="admin-reports__metric">
+            <p className="admin-reports__metric-label">Cancelaciones</p>
+            <p className="admin-reports__metric-value">
               <ReportCellValue cell={appointments.cancellationsTotal} minimumGroupSize={minSize} />
             </p>
           </article>
-          <article className="admin-reports__kpi">
-            <p className="admin-reports__kpi-label">Inasistencias</p>
-            <p className="admin-reports__kpi-value">
+          <article className="admin-reports__metric">
+            <p className="admin-reports__metric-label">Inasistencias</p>
+            <p className="admin-reports__metric-value">
               <ReportCellValue cell={appointments.noShowsTotal} minimumGroupSize={minSize} />
             </p>
           </article>

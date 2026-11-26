@@ -47,6 +47,13 @@ El historial de cambios de estado queda con 5 registros: tres tomas, el pedido d
   3. `cancelled_by_student` (Cancelada por el estudiante con motivo) el 2026-10-12, el mismo día del bloque cancelado por la excepción.
   4. `scheduled` (Programada) el 2026-10-19.
 
+## Muestras para reportes agregados (TI2-175)
+
+Para comprobar los reportes agregados, la supresión primaria y la supresión complementaria, `internal.operations.fictitiousData.loadReportSamples` carga una muestra ficticia idempotente en octubre de 2026 (`bunx convex run operations/fictitiousData:loadReportSamples`, con `TEST_SEEDS_ENABLED=true`).
+
+- **Solicitudes:** 6 en estado `accepted`, 5 en `under_review` y 2 en `received` (por debajo del umbral mínimo de 5, activando supresión primaria sobre `received` y supresión complementaria sobre `under_review`), con transiciones deterministas para el tiempo de espera.
+- **Atenciones:** 6 `completed` en línea, 5 `completed` presenciales, 5 `no_show` en línea y 2 `cancelled_by_student` presenciales (por debajo del umbral de 5, activando supresión primaria y complementaria en filas, columnas y subtotales).
+
 ## Comprobación
 
-`convex/tests/fictitiousData.test.ts` comprueba el rechazo sin `TEST_SEEDS_ENABLED`, los roles, los estados, el historial, los espacios, la disponibilidad, las excepciones, las atenciones, el aislamiento por rol y el acompañamiento de este inventario, y que una segunda carga no escribe nada. Sobre la agenda, verifica que las atenciones se consultan con la vista de cada rol (compartida para el Estudiante, completa para el Profesional y minimizada para el Practicante), que la revocación del Practicante corta el acceso, que las respuestas no exponen motivos ni notas, y que el bloque cancelado y la ventana agregada se reflejan en la búsqueda de cupos. Corre con `bun run test:convex`.
+`convex/tests/fictitiousData.test.ts` comprueba el rechazo sin `TEST_SEEDS_ENABLED`, los roles, los estados, el historial, los espacios, la disponibilidad, las excepciones, las atenciones, el aislamiento por rol y el acompañamiento de este inventario, y que una segunda carga no escribe nada. Sobre la agenda, verifica que las atenciones se consultan con la vista de cada rol (compartida para el Estudiante, completa para el Profesional y minimizada para el Practicante), que la revocación del Practicante corta el acceso, que las respuestas no exponen motivos ni notas, y que el bloque cancelado y la ventana agregada se reflejan en la búsqueda de cupos. `convex/tests/reports.test.ts` comprueba `loadReportSamples`, la coincidencia entre pantalla y exportaciones CSV/JSON y la supresión primaria y complementaria. Corre con `bun run test:convex`.

@@ -3,6 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
+  REPORT_FILTERS_INVALID_ERROR_CODE,
   UNAUTHORIZED_ERROR_CODE,
   UNAUTHORIZED_ERROR_MESSAGE,
   buildAggregateReport,
@@ -132,6 +133,31 @@ describe("AdminReportsPage (TI2-175)", () => {
     });
     expect(screen.getByRole("status").textContent).toContain(
       "Exportación CSV generada y registrada",
+    );
+  });
+
+  test("muestra el mensaje controlado cuando los filtros son rechazados por el backend", () => {
+    mocks.report = new ConvexError({
+      code: REPORT_FILTERS_INVALID_ERROR_CODE,
+      message: "El periodo consultado no puede superar 366 días.",
+    });
+    render(<AdminReportsPage />);
+    expect(screen.getByRole("alert").textContent).toContain(
+      "El periodo consultado no puede superar 366 días.",
+    );
+  });
+
+  test("muestra estado vacío cuando el periodo no tiene solicitudes ni atenciones", () => {
+    mocks.report = buildAggregateReport({
+      filters: { from: "2026-01-01", to: "2026-01-31", modality: "all" },
+      minimumGroupSize: 5,
+      truncated: false,
+      requests: [],
+      appointments: [],
+    });
+    render(<AdminReportsPage />);
+    expect(screen.getByRole("status").textContent).toContain(
+      "No hay registros agregados en el periodo seleccionado.",
     );
   });
 
