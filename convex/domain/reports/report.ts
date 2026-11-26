@@ -4,7 +4,7 @@
  *
  * Dominio puro: no importa Convex, React ni Expo y no lee el reloj. Toda la
  * lógica de agregación, supresión primaria, supresión complementaria y
- * serialización de exportaciones (CSV/JSON) vive aquí para garantizar que la
+ * generación de exportaciones (CSV/JSON) vive aquí para garantizar que la
  * pantalla y cada exportación produzcan exactamente los mismos valores,
  * celdas suprimidas y metadatos de cálculo.
  *
@@ -430,8 +430,40 @@ export function buildCalculationNote(minimumGroupSize: number): string {
     `Conteos agregados en zona horaria ${AGENDA_TIME_ZONE}. ` +
     `Umbral mínimo de grupo: ${minimumGroupSize}. ` +
     `Toda celda positiva menor al umbral se oculta (supresión primaria) y, cuando queda una sola celda oculta frente a un total visible, se oculta otra celda o el total (supresión complementaria). ` +
+    `El filtro de modalidad aplica a las atenciones del periodo; las solicitudes y el tiempo de espera abarcan todo el periodo seleccionado. ` +
     `El tiempo de espera mide horas desde la creación de la solicitud hasta la primera transición registrada.`
   );
+}
+
+/**
+ * Aplica supresión primaria y complementaria a un subtotal derivado de un
+ * subconjunto de filas de la tabla de atenciones (como cancelaciones o
+ * inasistencias) para impedir reconstruir una fila oculta por diferencia contra
+ * el subtotal o contra el total general.
+ */
+function suppressGroupedSubtotal(input: {
+  readonly rawSum: number;
+  readonly threshold: number;
+  readonly groupRowTotals: readonly AggregateCountCell[];
+  readonly allRowTotals: readonly AggregateCountCell[];
+  readonly grandTotal: AggregateCountCell;
+}): AggregateCountCell {
+  const primary = suppressSingleCount(input.rawSum, input.threshold);
+  if (primary.suppressed) {
+    return primary;
+  }
+  const suppressedInGroup = input.groupRowTotals.filter((cell) => cell.suppressed).length;
+  if (suppressedInGroup === 0) {
+    return primary;
+  }
+  if (suppressedInGroup === 1) {
+    return { suppressed: true, reason: "complementary" };
+  }
+  const totalSuppressedRows = input.allRowTotals.filter((cell) => cell.suppressed).length;
+  if (!input.grandTotal.suppressed && totalSuppressedRows - suppressedInGroup === 1) {
+    return { suppressed: true, reason: "complementary" };
+  }
+  return primary;
 }
 
 /** Construye el reporte agregado completo desde las muestras acotadas. */
@@ -456,17 +488,15 @@ export function buildAggregateReport(input: BuildAggregateReportInput): Aggregat
   const waitTime = computeWaitTimeSummary(requests, minimumGroupSize);
 
   // 3. Atenciones por estado × modalidad (inPerson, online).
+  // La matriz y su supresión complementaria siempre se calculan sobre ambas
+  // modalidades del periodo antes de proyectar el filtro, para impedir fugas
+  // por diferencia al comparar `all` con `inPerson` u `online`.
   const appointmentMatrixRaw: number[][] = APPOINTMENT_STATUS_VALUES.map(() => [0, 0]);
   const statusIndexByValue = new Map<AppointmentStatus, number>(
     APPOINTMENT_STATUS_VALUES.map((status, index) => [status, index]),
   );
-  let rawCancellations = 0;
-  let rawNoShows = 0;
 
   for (const appointment of appointments) {
-    if (filters.modality !== "all" && appointment.modality !== filters.modality) {
-      continue;
-    }
     const rowIdx = statusIndexByValue.get(appointment.status);
     if (rowIdx !== undefined) {
       const colIdx = appointment.modality === "inPerson" ? 0 : 1;
@@ -474,6 +504,65 @@ export function buildAggregateReport(input: BuildAggregateReportInput): Aggregat
       if (targetRow !== undefined) {
         targetRow[colIdx] = (targetRow[colIdx] ?? 0) + 1;
       }
+    }
+  }
+
+  const suppressedMatrix = suppressMatrixWithTotals(appointmentMatrixRaw, minimumGroupSize);
+  const zeroCell: AggregateCountCell = { suppressed: false, count: 0 };
+
+  const appointmentRows: AppointmentMatrixRow[] = APPOINTMENT_STATUS_VALUES.map(
+    (status, rowIdx) => {
+      const rowCells = suppressedMatrix.cells[rowIdx] as readonly AggregateCountCell[];
+      const inPersonCell = rowCells[0] as AggregateCountCell;
+      const onlineCell = rowCells[1] as AggregateCountCell;
+      const rowTotalCell = suppressedMatrix.rowTotals[rowIdx] as AggregateCountCell;
+      if (filters.modality === "inPerson") {
+        return {
+          status,
+          inPerson: inPersonCell,
+          online: zeroCell,
+          total: inPersonCell,
+        };
+      }
+      if (filters.modality === "online") {
+        return {
+          status,
+          inPerson: zeroCell,
+          online: onlineCell,
+          total: onlineCell,
+        };
+      }
+      return {
+        status,
+        inPerson: inPersonCell,
+        online: onlineCell,
+        total: rowTotalCell,
+      };
+    },
+  );
+
+  const columnTotals =
+    filters.modality === "inPerson"
+      ? { inPerson: suppressedMatrix.columnTotals[0] as AggregateCountCell, online: zeroCell }
+      : filters.modality === "online"
+        ? { inPerson: zeroCell, online: suppressedMatrix.columnTotals[1] as AggregateCountCell }
+        : {
+            inPerson: suppressedMatrix.columnTotals[0] as AggregateCountCell,
+            online: suppressedMatrix.columnTotals[1] as AggregateCountCell,
+          };
+
+  const appointmentsGrandTotal =
+    filters.modality === "inPerson"
+      ? (suppressedMatrix.columnTotals[0] as AggregateCountCell)
+      : filters.modality === "online"
+        ? (suppressedMatrix.columnTotals[1] as AggregateCountCell)
+        : suppressedMatrix.grandTotal;
+
+  let rawCancellations = 0;
+  let rawNoShows = 0;
+  for (const appointment of appointments) {
+    if (filters.modality !== "all" && appointment.modality !== filters.modality) {
+      continue;
     }
     if (CANCELLATION_APPOINTMENT_STATUSES.has(appointment.status)) {
       rawCancellations += 1;
@@ -483,25 +572,28 @@ export function buildAggregateReport(input: BuildAggregateReportInput): Aggregat
     }
   }
 
-  const suppressedMatrix = suppressMatrixWithTotals(appointmentMatrixRaw, minimumGroupSize);
-  const appointmentRows: AppointmentMatrixRow[] = APPOINTMENT_STATUS_VALUES.map(
-    (status, rowIdx) => {
-      const rowCells = suppressedMatrix.cells[rowIdx] as readonly AggregateCountCell[];
-      return {
-        status,
-        inPerson: rowCells[0] as AggregateCountCell,
-        online: rowCells[1] as AggregateCountCell,
-        total: suppressedMatrix.rowTotals[rowIdx] as AggregateCountCell,
-      };
-    },
-  );
+  const allProjectedRowTotals = appointmentRows.map((row) => row.total);
+  const cancellationRowTotals = appointmentRows
+    .filter((row) => CANCELLATION_APPOINTMENT_STATUSES.has(row.status))
+    .map((row) => row.total);
+  const noShowRowTotals = appointmentRows
+    .filter((row) => NO_SHOW_APPOINTMENT_STATUSES.has(row.status))
+    .map((row) => row.total);
 
-  // Subtotales de cancelaciones e inasistencias: si están bajo el umbral se
-  // ocultan; además, si la matriz ocultó el total general por supresión
-  // complementaria y alguno de estos subtotales podría reconstruirse, se
-  // evalúan independientemente con el mismo umbral mínimo.
-  const cancellationsTotal = suppressSingleCount(rawCancellations, minimumGroupSize);
-  const noShowsTotal = suppressSingleCount(rawNoShows, minimumGroupSize);
+  const cancellationsTotal = suppressGroupedSubtotal({
+    rawSum: rawCancellations,
+    threshold: minimumGroupSize,
+    groupRowTotals: cancellationRowTotals,
+    allRowTotals: allProjectedRowTotals,
+    grandTotal: appointmentsGrandTotal,
+  });
+  const noShowsTotal = suppressGroupedSubtotal({
+    rawSum: rawNoShows,
+    threshold: minimumGroupSize,
+    groupRowTotals: noShowRowTotals,
+    allRowTotals: allProjectedRowTotals,
+    grandTotal: appointmentsGrandTotal,
+  });
 
   return {
     metadata: {
@@ -522,11 +614,8 @@ export function buildAggregateReport(input: BuildAggregateReportInput): Aggregat
     waitTime,
     appointments: {
       rows: appointmentRows,
-      columnTotals: {
-        inPerson: suppressedMatrix.columnTotals[0] as AggregateCountCell,
-        online: suppressedMatrix.columnTotals[1] as AggregateCountCell,
-      },
-      total: suppressedMatrix.grandTotal,
+      columnTotals,
+      total: appointmentsGrandTotal,
       cancellationsTotal,
       noShowsTotal,
     },
@@ -564,14 +653,14 @@ export function serializeAggregateReportCsv(report: AggregateReport): string {
     lines.push(cols.map(escapeCsvCell).join(","));
   };
 
-  pushRow(["seccion", "indicador", "presencial", "en_linea", "total"]);
+  pushRow(["sección", "indicador", "presencial", "en_línea", "total"]);
   pushRow(["metadatos", "periodo_desde", "", "", metadata.periodFrom]);
   pushRow(["metadatos", "periodo_hasta", "", "", metadata.periodTo]);
   pushRow(["metadatos", "zona_horaria", "", "", metadata.timeZone]);
   pushRow(["metadatos", "filtro_modalidad", "", "", metadata.modalityFilter]);
-  pushRow(["metadatos", "grupo_minimo", "", "", String(minSize)]);
-  pushRow(["metadatos", "limite_consulta_alcanzado", "", "", metadata.truncated ? "si" : "no"]);
-  pushRow(["metadatos", "calculo", "", "", metadata.calculationNote]);
+  pushRow(["metadatos", "grupo_mínimo", "", "", String(minSize)]);
+  pushRow(["metadatos", "límite_consulta_alcanzado", "", "", metadata.truncated ? "sí" : "no"]);
+  pushRow(["metadatos", "cálculo", "", "", metadata.calculationNote]);
 
   for (const row of requests.rows) {
     pushRow(["solicitudes", row.status, "", "", formatCellForCsv(row.cell, minSize)]);

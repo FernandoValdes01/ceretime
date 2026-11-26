@@ -13,7 +13,7 @@ import {
  * Repositorio de infraestructura para reportes agregados (TI2-175).
  *
  * Todas las lecturas usan índices explícitos (`by_createdAt`, `by_request`,
- * `by_startsAt`, `by_modality_and_startsAt`) y un tope explícito (`take(limit + 1)`)
+ * `by_modality_and_startsAt`) y un tope explícito (`take(limit + 1)`)
  * para evitar lecturas ilimitadas y señalar cuándo se alcanzó el límite.
  * Nunca proyecta nombres, correos, notas ni necesidades de acceso.
  */
@@ -140,6 +140,9 @@ export async function readBoundedRequestSamples(
 /**
  * Lee muestras mínimas de atenciones dentro del rango `[startAt, endAt)` y
  * filtro de modalidad mediante consultas indexadas y acotadas por `limit`.
+ * Cuando `modality === "all"`, consulta cada modalidad con su propio tope por
+ * índice `by_modality_and_startsAt` para no truncar prematuramente una
+ * modalidad por volumen de la otra y disponer siempre de la matriz completa.
  */
 export async function readBoundedAppointmentSamples(
   ctx: DbReader,
@@ -154,23 +157,44 @@ export async function readBoundedAppointmentSamples(
   readonly truncated: boolean;
 }> {
   const limit = input.limit ?? REPORT_SCAN_LIMIT;
-  const rows =
-    input.modality === "all"
-      ? await ctx.db
-          .query("appointments")
-          .withIndex("by_startsAt", (q) =>
-            q.gte("startsAt", input.startAt).lt("startsAt", input.endAt),
-          )
-          .take(limit + 1)
-      : await ctx.db
-          .query("appointments")
-          .withIndex("by_modality_and_startsAt", (q) =>
-            q
-              .eq("modality", input.modality as "inPerson" | "online")
-              .gte("startsAt", input.startAt)
-              .lt("startsAt", input.endAt),
-          )
-          .take(limit + 1);
+  if (input.modality === "all") {
+    const [inPersonRows, onlineRows] = await Promise.all([
+      ctx.db
+        .query("appointments")
+        .withIndex("by_modality_and_startsAt", (q) =>
+          q.eq("modality", "inPerson").gte("startsAt", input.startAt).lt("startsAt", input.endAt),
+        )
+        .take(limit + 1),
+      ctx.db
+        .query("appointments")
+        .withIndex("by_modality_and_startsAt", (q) =>
+          q.eq("modality", "online").gte("startsAt", input.startAt).lt("startsAt", input.endAt),
+        )
+        .take(limit + 1),
+    ]);
+    const truncated = inPersonRows.length > limit || onlineRows.length > limit;
+    const bounded = [
+      ...(inPersonRows.length > limit ? inPersonRows.slice(0, limit) : inPersonRows),
+      ...(onlineRows.length > limit ? onlineRows.slice(0, limit) : onlineRows),
+    ];
+    return {
+      samples: bounded.map((row) => ({
+        status: row.status,
+        modality: row.modality,
+      })),
+      truncated,
+    };
+  }
+
+  const rows = await ctx.db
+    .query("appointments")
+    .withIndex("by_modality_and_startsAt", (q) =>
+      q
+        .eq("modality", input.modality as "inPerson" | "online")
+        .gte("startsAt", input.startAt)
+        .lt("startsAt", input.endAt),
+    )
+    .take(limit + 1);
 
   const truncated = rows.length > limit;
   const bounded = truncated ? rows.slice(0, limit) : rows;

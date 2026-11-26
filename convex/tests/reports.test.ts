@@ -146,12 +146,29 @@ describe("reportes agregados (TI2-175)", () => {
       sampleCount: 11,
     });
 
-    // Cancelaciones (2 < 5) suprimido; inasistencias (5 >= 5) visible.
+    // Cancelaciones (2 < 5) suprimido por umbral; `no_show` quedó con supresión
+    // complementaria para impedir calcular 18 - 11 - 5 = 2, por lo que
+    // `noShowsTotal` también queda protegido por supresión complementaria.
     expect(screenReport.appointments.cancellationsTotal).toEqual({
       suppressed: true,
       reason: "below_threshold",
     });
-    expect(screenReport.appointments.noShowsTotal).toEqual({ suppressed: false, count: 5 });
+    expect(screenReport.appointments.noShowsTotal).toEqual({
+      suppressed: true,
+      reason: "complementary",
+    });
+
+    // Cambiar el filtro a `online` conserva la supresión complementaria de la
+    // matriz completa para impedir deducir por diferencia el grupo presencial < 5.
+    const onlineOnlyReport = await asAdmin.query(api.presentation.reports.getAggregateReport, {
+      from: "2026-10-01",
+      to: "2026-10-31",
+      modality: "online",
+    });
+    const completedOnline = onlineOnlyReport.appointments.rows.find(
+      (row) => row.status === "completed",
+    );
+    expect(completedOnline?.online).toEqual({ suppressed: true, reason: "complementary" });
 
     // Exportación JSON coincide exactamente con la pantalla y queda registrada.
     const jsonExport = await asAdmin.mutation(api.presentation.reports.exportAggregateReport, {

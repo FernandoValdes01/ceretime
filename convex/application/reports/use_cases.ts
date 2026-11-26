@@ -96,7 +96,10 @@ async function computeReportForFilters(
     deps.samples.readAppointmentSamples({
       startAt,
       endAt,
-      modality: validated.filters.modality,
+      // Siempre leemos ambas modalidades del periodo para aplicar supresión
+      // complementaria antes de proyectar el filtro de modalidad y evitar
+      // fugas por diferencia entre `all`, `inPerson` y `online`.
+      modality: "all",
       limit: REPORT_SCAN_LIMIT,
     }),
   ]);

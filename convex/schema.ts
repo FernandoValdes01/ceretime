@@ -437,8 +437,7 @@ export default defineSchema({
     // de un profesional adicional, porque su fila de participante no guarda
     // horario (TI2-165), sin leer las canceladas.
     .index("by_status_and_startsAt", ["status", "startsAt"])
-    // Atenciones por fecha de inicio y modalidad: consultas limitadas de reportes agregados (TI2-175).
-    .index("by_startsAt", ["startsAt"])
+    // Atenciones por modalidad y fecha de inicio: consultas limitadas de reportes agregados (TI2-175).
     .index("by_modality_and_startsAt", ["modality", "startsAt"]),
 
   // Tabla 'appointmentProfessionals': profesionales que participan en una
