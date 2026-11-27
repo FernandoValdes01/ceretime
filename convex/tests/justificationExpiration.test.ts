@@ -22,6 +22,9 @@ const modules = import.meta.glob("../**/*.ts");
 const HOUR = 60 * 60 * 1000;
 const DAY = 24 * HOUR;
 
+/** Año real de ejecución, tomado antes de que las pruebas fijen `Date`. */
+const REAL_YEAR = new Date().getUTCFullYear();
+
 /** Instante fijo de las pruebas: martes 15 de diciembre de 2026 a mediodía UTC. */
 const NOW = Date.UTC(2026, 11, 15, 12);
 
@@ -54,7 +57,7 @@ afterEach(() => {
 describe("calendario único del plazo", () => {
   test("el catálogo cubre al menos el año siguiente", () => {
     const lastYear = Math.max(...CHILE_HOLIDAYS.map((holiday) => Number(holiday.slice(0, 4))));
-    expect(lastYear).toBeGreaterThanOrEqual(new Date().getUTCFullYear() + 1);
+    expect(lastYear).toBeGreaterThanOrEqual(REAL_YEAR + 1);
   });
 
   test("un feriado mueve el vencimiento y la entrega dentro del plazo se acepta", () => {
@@ -289,15 +292,17 @@ describe("barrido programado con reloj adelantado", () => {
 
   test("avanza por lotes con cursor y termina sin programar otra ejecución", async () => {
     const t = convexTest(schema, modules);
-    const deadlineAt = justificationDeadlineFor(ABSENCE_WITH_HOLIDAY).deadlineAt;
-    vi.setSystemTime(deadlineAt + HOUR);
+    // Las cinco inasistencias se siembran en orden creciente de fecha: los
+    // dos pending son las más antiguas y quedan al inicio del índice.
+    const newestStart = ABSENCE_WITH_HOLIDAY + 4 * DAY;
+    vi.setSystemTime(justificationDeadlineFor(newestStart).deadlineAt + HOUR);
 
     const ids: Id<"appointments">[] = [];
     for (let index = 0; index < 5; index += 1) {
       ids.push(
         await seedAbsence(t, {
           label: `batch-${index}`,
-          startsAt: ABSENCE_WITH_HOLIDAY - index * DAY,
+          startsAt: ABSENCE_WITH_HOLIDAY + index * DAY,
           ...(index < 2 ? { justificationSubmittedAt: Date.UTC(2026, 11, 14, 12) } : {}),
         }),
       );
@@ -308,12 +313,14 @@ describe("barrido programado con reloj adelantado", () => {
     let cursor: string | null = null;
     let totalExpired = 0;
     let runs = 0;
+    let first: { expired: number; cursor: string | null; isDone: boolean } | null = null;
     let last: { expired: number; cursor: string | null; isDone: boolean } | null = null;
     while (runs < 10) {
       const result: { expired: number; cursor: string | null; isDone: boolean } = await t.mutation(
         internal.operations.appointments.expireOverdueJustifications,
         { cursor, limit: 2 },
       );
+      if (first === null) first = result;
       totalExpired += result.expired;
       runs += 1;
       last = result;
@@ -321,8 +328,8 @@ describe("barrido programado con reloj adelantado", () => {
       cursor = result.cursor;
     }
 
+    expect(first?.expired).toBe(0);
     expect(last?.isDone).toBe(true);
-    expect(last?.expired).toBe(0);
     expect(runs).toBeLessThanOrEqual(4);
     expect(totalExpired).toBe(3);
     expect(await appointmentStatus(t, ids[0] as Id<"appointments">)).toBe("no_show");
