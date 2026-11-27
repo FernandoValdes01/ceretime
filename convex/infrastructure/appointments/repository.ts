@@ -736,6 +736,48 @@ export function appointmentChangeReader(ctx: DbReader) {
 }
 
 /**
+ * Lote acotado de inasistencias pendientes para el barrido de vencimiento
+ * (TI2-147). Pagina por `by_status_and_startsAt` con el cursor del índice, de
+ * la más antigua a la más reciente: las filas que no se pueden cerrar quedan
+ * atrás y no bloquean a las siguientes. `isDone` cierra la cadena de
+ * continuaciones sin programar continuaciones infinitas.
+ */
+export function pendingJustificationsReader(ctx: DbReader) {
+  return {
+    listPendingJustifications: async ({
+      cursor,
+      limit,
+    }: {
+      readonly cursor: string | null;
+      readonly limit: number;
+    }) => {
+      const page = await ctx.db
+        .query("appointments")
+        .withIndex("by_status_and_startsAt", (q) => q.eq("status", "no_show"))
+        .paginate({ numItems: limit, cursor });
+      const pending = [];
+      for (const row of page.page) {
+        const additionalProfessionalIds = await additionalProfessionalIdsOf(ctx, row);
+        pending.push({
+          id: row._id as string,
+          accompanimentId: row.accompanimentId as string,
+          studentId: row.studentId as string,
+          professionalId: row.professionalId as string,
+          status: row.status,
+          startAt: row.startsAt,
+          ...(row.originalStartsAt === undefined ? {} : { originalStartAt: row.originalStartsAt }),
+          ...(row.justificationSubmittedAt === undefined
+            ? {}
+            : { justificationSubmittedAt: row.justificationSubmittedAt }),
+          ...(additionalProfessionalIds.length === 0 ? {} : { additionalProfessionalIds }),
+        });
+      }
+      return { rows: pending, cursor: page.continueCursor, isDone: page.isDone };
+    },
+  };
+}
+
+/**
  * Profesionales de la atención distintos del responsable, en el orden del
  * índice. Una atención sin filas de participante (anterior a la migración) no
  * tiene adicionales.

@@ -1,6 +1,5 @@
 import {
   transitionAppointment,
-  decideJustificationTimeliness,
   isJustificationDecision,
   NO_SHOW_PENDING_STATE,
   type AppointmentAttendanceOutcome,
@@ -15,7 +14,10 @@ import {
   unauthorizedError,
   type ApiResult,
 } from "../../domain/errors/api_error";
-import { AGENDA_TIME_ZONE } from "../../domain/availability/availability";
+import {
+  justificationDeadlineFor,
+  justificationTimelinessFor,
+} from "../../domain/appointments/justification_deadline";
 import type { AppointmentCancellationTarget } from "../../domain/authorization/permissions";
 import {
   notificationEventsForJustificationSubmitted,
@@ -585,11 +587,7 @@ export async function submitAppointmentJustification(
   }
 
   const submittedAt = occurredNow(deps);
-  const timeliness = decideJustificationTimeliness({
-    missedAt: stored.startAt,
-    submittedAt,
-    timeZone: AGENDA_TIME_ZONE,
-  });
+  const timeliness = justificationTimelinessFor(stored.startAt, submittedAt);
   if (!timeliness.withinDeadline) return conflict();
 
   await deps.persister.persistAppointmentTransition(stored.id, {
@@ -653,11 +651,7 @@ export async function reviewAppointmentJustification(
   if (hasSubmission) {
     if (stored.justificationReview !== "pending") return conflict();
   } else {
-    const timeliness = decideJustificationTimeliness({
-      missedAt: stored.startAt,
-      submittedAt: reviewedAt,
-      timeZone: AGENDA_TIME_ZONE,
-    });
+    const timeliness = justificationTimelinessFor(stored.startAt, reviewedAt);
     if (input.review === "accepted" || timeliness.withinDeadline) return conflict();
   }
 
@@ -683,4 +677,105 @@ export async function reviewAppointmentJustification(
     notificationEventsForTransition(toNotificationSubject(stored), outcome.change),
   );
   return okResult({ appointmentId: stored.id });
+}
+
+/**
+ * Actor del cierre automático por vencimiento (TI2-147): CERETI, no el
+ * Estudiante ni el Profesional. La política de avisos excluye al actor, así
+ * que el Estudiante recibe el mismo aviso que en la revisión manual.
+ */
+export const AUTOMATIC_JUSTIFICATION_ACTOR = "cereti" as const;
+
+/** Fila mínima que el barrido necesita para decidir un vencimiento. */
+export interface PendingJustificationRow extends NotifiableAppointment {
+  readonly status: AppointmentStatus;
+  readonly startAt: number;
+  readonly originalStartAt?: number;
+  readonly justificationSubmittedAt?: number;
+}
+
+/** Lote acotado de inasistencias pendientes, de la más antigua a la más reciente. */
+export interface JustificationSweepPage {
+  readonly rows: readonly PendingJustificationRow[];
+  /** Posición del índice para continuar; `null` si no hay más filas. */
+  readonly cursor: string | null;
+  readonly isDone: boolean;
+}
+
+export interface PendingJustificationsReader {
+  listPendingJustifications(input: {
+    readonly cursor: string | null;
+    readonly limit: number;
+  }): Promise<JustificationSweepPage>;
+}
+
+export interface ExpireOverdueJustificationsDeps {
+  readonly appointments: PendingJustificationsReader;
+  readonly persister: AppointmentTransitionPersister;
+  readonly notifications: NotificationEventRecorder;
+  readonly now?: AppointmentChangeClock;
+}
+
+export interface ExpireOverdueJustificationsInput {
+  readonly cursor: string | null;
+  readonly limit: number;
+}
+
+export interface ExpireOverdueJustificationsResult {
+  readonly expired: number;
+  readonly cursor: string | null;
+  readonly isDone: boolean;
+}
+
+/**
+ * Cierre automático de inasistencias cuyo plazo ya venció (TI2-147).
+ *
+ * Vive en Aplicación, como la revisión manual: aplica la política de estados
+ * de Dominio con `transitionAppointment`, persiste por el puerto de TI2-107 y
+ * deja el mismo aviso `notificationEventsForTransition` que deja el
+ * Profesional al cerrar sin entrega. No inventa una revisión ni una sanción,
+ * no cierra entregas `pending` y avanza con el cursor del índice: las filas
+ * que no se pueden cerrar quedan atrás y no bloquean a las siguientes.
+ */
+export async function expireOverdueJustifications(
+  deps: ExpireOverdueJustificationsDeps,
+  input: ExpireOverdueJustificationsInput,
+): Promise<ExpireOverdueJustificationsResult> {
+  const page = await deps.appointments.listPendingJustifications({
+    cursor: input.cursor,
+    limit: input.limit,
+  });
+  const now = occurredNow(deps);
+  let expired = 0;
+
+  for (const row of page.rows) {
+    if (row.status !== NO_SHOW_PENDING_STATE) continue;
+    if (row.justificationSubmittedAt !== undefined) continue;
+
+    const deadline = justificationDeadlineFor(row.startAt);
+    if (now < deadline.deadlineAt) continue;
+
+    const outcome = transitionAppointment({
+      from: row.status,
+      to: "no_show_unjustified",
+      actorId: AUTOMATIC_JUSTIFICATION_ACTOR,
+      occurredAt: now,
+      currentStartAt: row.startAt,
+      ...(row.originalStartAt === undefined ? {} : { currentOriginalStartAt: row.originalStartAt }),
+    });
+    if (outcome.status === "rejected") continue;
+
+    await deps.persister.persistAppointmentTransition(row.id, {
+      status: outcome.change.to,
+      ...(outcome.originalStartAt === undefined
+        ? {}
+        : { originalStartsAt: outcome.originalStartAt }),
+    });
+    await deps.notifications.record(
+      notificationEventsForTransition(toNotificationSubject(row), outcome.change),
+    );
+    expired += 1;
+  }
+
+  return { expired, cursor: page.cursor, isDone: page.isDone };
 }
