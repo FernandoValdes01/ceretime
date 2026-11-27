@@ -143,7 +143,7 @@ function OwnAccompanimentDetailBody({
         {"accessNeeds" in accompaniment ? (
           <div className="py-2">
             <dt className="font-semibold text-on-surface">Necesidades de acceso</dt>
-            <dd className="m-0 text-on-surface">{accompaniment.accessNeeds}</dd>
+            <dd className="m-0 whitespace-pre-line text-on-surface">{accompaniment.accessNeeds}</dd>
           </div>
         ) : null}
       </dl>
