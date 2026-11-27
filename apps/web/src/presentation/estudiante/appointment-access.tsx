@@ -51,7 +51,7 @@ export function AppointmentAccess({
 
 function OnlineAccess({ appointmentId }: { appointmentId: string }) {
   const [attempt, setAttempt] = useState(0);
-  const access = useOnlineAccess(appointmentId, true, attempt);
+  const access = useOnlineAccess(appointmentId, attempt);
 
   return (
     <section aria-labelledby="appointment-online-title" className="mt-6 flex flex-col gap-3">

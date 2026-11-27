@@ -319,7 +319,8 @@ function AppointmentDetailBody({
   const nowMs = useNow();
 
   useEffect(() => {
-    // El formulario que tenía el foco desaparece tras el cambio: el aviso lo recibe.
+    // El formulario que tenía el foco desaparece tras el cambio: el aviso lo
+    // recibe y es su único anuncio, sin región viva que lo repita.
     if (notice !== null) {
       noticeRef.current?.focus();
     }
@@ -355,7 +356,6 @@ function AppointmentDetailBody({
         <p
           ref={noticeRef}
           tabIndex={-1}
-          role="status"
           className="rounded-lg border-t-4 border-primary bg-surface-container-low p-4"
         >
           {notice}
@@ -441,6 +441,7 @@ function AppointmentChangeActions({
             appointmentId={appointment.id}
             cancellation={changes.cancellation}
             triggerLabel="Cancelar la atención"
+            headingLevel="h3"
             onCancelled={onCancelled}
           />
         )}

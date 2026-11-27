@@ -30,13 +30,17 @@ export function CancelAppointmentForm({
   appointmentId,
   cancellation,
   triggerLabel,
+  headingLevel,
   onCancelled,
 }: {
   appointmentId: string;
   cancellation: StudentCancellation;
   triggerLabel: string;
+  /** Nivel de los títulos del formulario, según la sección que lo contiene. */
+  headingLevel: "h2" | "h3";
   onCancelled: () => void;
 }) {
+  const Heading = headingLevel;
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState("");
   const [showReasonError, setShowReasonError] = useState(false);
@@ -71,9 +75,9 @@ export function CancelAppointmentForm({
   if (failure?.status === "denied") {
     return (
       <section aria-labelledby={`${ids}-denied`} className="student-portal__error">
-        <h3 id={`${ids}-denied`} ref={deniedRef} tabIndex={-1} className="m-0! text-lg!">
+        <Heading id={`${ids}-denied`} ref={deniedRef} tabIndex={-1} className="m-0! text-lg!">
           No tienes acceso a esta reserva.
-        </h3>
+        </Heading>
       </section>
     );
   }
@@ -131,9 +135,9 @@ export function CancelAppointmentForm({
       noValidate
       className="flex flex-col gap-4 rounded-lg border border-border-low bg-surface-container-lowest p-5 text-left"
     >
-      <h3 id={titleId} ref={titleRef} tabIndex={-1} className="m-0! text-lg! font-semibold!">
+      <Heading id={titleId} ref={titleRef} tabIndex={-1} className="m-0! text-lg! font-semibold!">
         ¿Cancelar esta atención?
-      </h3>
+      </Heading>
       <p className="m-0">
         Se libera el horario para otra persona. Si después necesitas una atención, tendrás que
         reservar de nuevo.

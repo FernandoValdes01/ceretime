@@ -624,7 +624,7 @@ describe("cómo llegar, cambio, cancelación y justificación (TI2-163)", () => 
 
     fireEvent.click(await screen.findByRole("button", { name: "Cancelar la atención" }));
     expect(document.activeElement).toBe(
-      screen.getByRole("heading", { name: "¿Cancelar esta atención?" }),
+      screen.getByRole("heading", { level: 3, name: "¿Cancelar esta atención?" }),
     );
     fireEvent.click(screen.getByRole("button", { name: "Volver sin cancelar" }));
     await waitFor(() =>

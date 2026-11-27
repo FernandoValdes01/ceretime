@@ -93,21 +93,26 @@ export function useStudentAppointments(attempt: number): ListAppointmentsResult 
  *
  * `attempt` reintenta tras un error y vuelve a la carga; `revision` relee
  * después de un cambio propio conservando lo mostrado hasta que llega la
- * respuesta nueva, para no perder el foco ni la atención anterior.
+ * respuesta nueva, para no perder el foco ni la atención anterior. Sin
+ * identificador no consulta nada: la confirmación de reserva solo lee la
+ * atención cuando cambia su horario (TI2-163).
  */
 export function useStudentAppointment(
-  appointmentId: string,
+  appointmentId: string | undefined,
   attempt: number,
   revision = 0,
 ): AgendaAppointmentResult | undefined {
   // Igual que la lista, el resultado recuerda a qué lectura pertenece.
   const [entry, setEntry] = useState<{
-    appointmentId: string;
+    appointmentId: string | undefined;
     attempt: number;
     result?: AgendaAppointmentResult;
   }>({ appointmentId, attempt });
 
   useEffect(() => {
+    if (appointmentId === undefined) {
+      return;
+    }
     let cancelled = false;
     const apply = (next: AgendaAppointmentResult) => {
       if (!cancelled) {
@@ -148,12 +153,11 @@ export function useStudentAppointment(
 }
 
 /**
- * Acceso a la atención en línea (TI2-142). Solo se consulta cuando la
- * atención es en línea; el enlace privado nunca viaja en la agenda.
+ * Acceso a la atención en línea (TI2-142). Lo consulta solo la sección de una
+ * atención en línea; el enlace privado nunca viaja en la agenda.
  */
 export function useOnlineAccess(
   appointmentId: string,
-  enabled: boolean,
   attempt: number,
 ): OnlineAccessResult | undefined {
   const [entry, setEntry] = useState<{
@@ -163,9 +167,6 @@ export function useOnlineAccess(
   const key = `${appointmentId}:${attempt}`;
 
   useEffect(() => {
-    if (!enabled) {
-      return;
-    }
     let cancelled = false;
     getAgendaPort()
       .getOnlineAccess(appointmentId)
@@ -190,9 +191,9 @@ export function useOnlineAccess(
     return () => {
       cancelled = true;
     };
-  }, [appointmentId, enabled, key]);
+  }, [appointmentId, key]);
 
-  return enabled && entry?.key === key ? entry.result : undefined;
+  return entry?.key === key ? entry.result : undefined;
 }
 
 /** Catálogo de salas por identificador, con su estado de lectura y reintento. */

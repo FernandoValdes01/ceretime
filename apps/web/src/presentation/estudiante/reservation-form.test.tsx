@@ -550,6 +550,10 @@ describe("conflicto, denegación y cancelación visible (TI2-113)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cancelar esta reserva" }));
     // Cancelar pide confirmar; el motivo es opcional para el Estudiante.
     expect(await screen.findByRole("textbox", { name: "Motivo (opcional)" })).toBeDefined();
+    // En el comprobante el formulario cuelga del h1: sus títulos son h2.
+    expect(
+      screen.getByRole("heading", { level: 2, name: "¿Cancelar esta atención?" }),
+    ).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Confirmar cancelación" }));
 
     expect(await screen.findByRole("heading", { name: "Reserva cancelada" })).toBeDefined();
@@ -621,14 +625,17 @@ describe("cómo llegar y cambio de horario (TI2-163)", () => {
   const RUTA_CAMBIO =
     "/estudiante/reservar?slotId=cupo-1&accompanimentId=acompanamiento-1&modality=inPerson&rescheduleAppointmentId=atencion-1";
 
-  function atencionActual() {
+  /** Atención futura que todavía se puede cambiar; el reloj es el de la prueba. */
+  function atencionActual(overrides: Record<string, unknown> = {}) {
+    const startAt = Date.now() + 72 * 3_600_000;
     return {
       id: "atencion-1",
       accompanimentId: "acompanamiento-1",
       status: "scheduled",
       modality: "online",
-      startAt: 1760839200000,
-      endAt: 1760842800000,
+      startAt,
+      endAt: startAt + 3_600_000,
+      ...overrides,
     };
   }
 
@@ -706,6 +713,60 @@ describe("cómo llegar y cambio de horario (TI2-163)", () => {
       "/estudiante/horarios?accompanimentId=acompanamiento-1&modality=inPerson&rescheduleAppointmentId=atencion-1",
     );
     // El formulario sigue operativo para reintentar el mismo cambio.
+    expect(screen.getByRole("button", { name: "Confirmar cambio" })).toBeDefined();
+  });
+
+  test.each([
+    ["cancelada", { status: "cancelled_by_student" }],
+    ["realizada", { status: "completed" }],
+    ["ya iniciada", { startAt: Date.now() - 3_600_000, endAt: Date.now() + 3_600_000 }],
+  ])(
+    "una atención %s no ofrece confirmar el cambio y lleva a la atención",
+    async (_caso, overrides) => {
+      comoEstudiante();
+      getAppointmentMock.mockResolvedValue({
+        status: "ok",
+        appointment: atencionActual(overrides),
+      });
+      renderAt(RUTA_CAMBIO);
+
+      expect(
+        await screen.findByRole("heading", { name: "Esta atención ya no se puede cambiar" }),
+      ).toBeDefined();
+      expect(screen.getByRole("link", { name: "Ver la atención" }).getAttribute("href")).toBe(
+        "/estudiante/atenciones/atencion-1",
+      );
+      expect(screen.queryByRole("button", { name: "Confirmar cambio" })).toBeNull();
+      // Volver a horarios llevaría a esta misma confirmación.
+      expect(screen.queryByRole("link", { name: "Volver a horarios" })).toBeNull();
+      expect(rescheduleAppointmentMock).not.toHaveBeenCalled();
+    },
+  );
+
+  test("una atención ajena no ofrece el cambio ni revela si existe", async () => {
+    comoEstudiante();
+    getAppointmentMock.mockResolvedValue({ status: "denied" });
+    renderAt(RUTA_CAMBIO);
+
+    expect(
+      await screen.findByRole("heading", { name: "No tienes acceso a esta atención." }),
+    ).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Confirmar cambio" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Horario actual" })).toBeNull();
+  });
+
+  test("si falla la lectura de la atención permite reintentar sin ofrecer el cambio", async () => {
+    comoEstudiante();
+    getAppointmentMock
+      .mockResolvedValueOnce({ status: "error", message: "No pudimos cargar la atención." })
+      .mockResolvedValue({ status: "ok", appointment: atencionActual() });
+    renderAt(RUTA_CAMBIO);
+
+    expect(await screen.findByText("No pudimos cargar la atención.")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Confirmar cambio" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Reintentar cargar tu atención" }));
+
+    expect(await screen.findByRole("heading", { name: "Horario actual" })).toBeDefined();
     expect(screen.getByRole("button", { name: "Confirmar cambio" })).toBeDefined();
   });
 });

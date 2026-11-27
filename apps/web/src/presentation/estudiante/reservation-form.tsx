@@ -9,10 +9,14 @@ import {
   NO_AVAILABILITY_ERROR_MESSAGE,
 } from "../../../../../convex/domain/index.ts";
 import type {
+  AgendaAppointment,
+  AgendaAppointmentResult,
   AgendaSlot,
   SlotModalityFilter,
   SlotSearchContext,
 } from "../../application/agenda/agenda-port.ts";
+import { useNow } from "../shared/use-now.ts";
+import { ErrorState } from "../shared/view-states.tsx";
 import {
   appointmentStatusLabel,
   formatAppointmentDateTime,
@@ -23,7 +27,10 @@ import { CancelAppointmentForm } from "./cancel-appointment-form.tsx";
 import { useReservationSlot } from "./reservation-form-data.ts";
 import { getAgendaPort } from "./schedule-search-data.ts";
 import { SpaceAccessDetails } from "./space-access-details.tsx";
-import { studentCancellationFrom } from "./student-appointment-changes.ts";
+import {
+  studentAppointmentChanges,
+  studentCancellationFrom,
+} from "./student-appointment-changes.ts";
 import { useStudentAppointment } from "./student-appointments-page-data.ts";
 import { BookingContextGate } from "./student-booking-context.tsx";
 import { SECTION_TITLE_CLASS } from "./student-page-classes.ts";
@@ -84,6 +91,57 @@ type ScheduleSearch = {
 
 const KEEPS_CURRENT_SCHEDULE = "Tu atención conserva su horario actual.";
 
+/**
+ * Textos de la confirmación según lo que se confirma: una reserva nueva o el
+ * cambio de horario de una atención (TI2-163). El mismo formulario sirve a
+ * ambos; solo cambian sus palabras.
+ */
+const CONFIRMATION_COPY = {
+  booking: {
+    title: "Confirmar reserva",
+    confirmedTitle: "Reserva confirmada",
+    consent: "Confirmo que deseo reservar este cupo",
+    submit: "Confirmar reserva",
+    submitting: "Confirmando…",
+    failure: "No pudimos confirmar la reserva. Inténtalo de nuevo.",
+  },
+  reschedule: {
+    title: "Confirmar cambio de horario",
+    confirmedTitle: "Horario cambiado",
+    consent: "Confirmo que deseo cambiar mi atención a este horario",
+    submit: "Confirmar cambio",
+    submitting: "Cambiando…",
+    failure: "No pudimos cambiar el horario. Inténtalo de nuevo.",
+  },
+} as const;
+
+/**
+ * Atención cuyo horario se cambia, leída antes de ofrecer el cambio. Una
+ * atención que el dominio ya no permite reagendar (cancelada, resuelta o ya
+ * iniciada) no ofrece el formulario: el Backend la rechazaría igual.
+ */
+type RescheduleTarget =
+  | { readonly status: "loading" }
+  | { readonly status: "ready"; readonly appointment: AgendaAppointment }
+  | { readonly status: "unchangeable" }
+  | { readonly status: "denied" }
+  | { readonly status: "error"; readonly message: string };
+
+function rescheduleTargetOf(
+  current: AgendaAppointmentResult | undefined,
+  nowMs: number,
+): RescheduleTarget {
+  if (current === undefined) {
+    return { status: "loading" };
+  }
+  if (current.status !== "ok") {
+    return current;
+  }
+  return studentAppointmentChanges(current.appointment, nowMs).canReschedule
+    ? { status: "ready", appointment: current.appointment }
+    : { status: "unchangeable" };
+}
+
 export function ReservationFormPage() {
   const { slotId, accompanimentId, modality, rescheduleAppointmentId } =
     reservarRouteApi.useSearch();
@@ -123,6 +181,13 @@ function ReservationFormArea({
   const { state, retry } = useReservationSlot(slotId, context);
   const rescheduleAppointmentId = schedule.rescheduleAppointmentId;
   const rescheduling = rescheduleAppointmentId !== undefined;
+  const copy = rescheduling ? CONFIRMATION_COPY.reschedule : CONFIRMATION_COPY.booking;
+
+  // Sin `rescheduleAppointmentId` no se lee ninguna atención.
+  const [targetAttempt, setTargetAttempt] = useState(0);
+  const current = useStudentAppointment(rescheduleAppointmentId, targetAttempt);
+  const nowMs = useNow();
+  const target = rescheduling ? rescheduleTargetOf(current, nowMs) : null;
 
   const [confirmed, setConfirmed] = useState(false);
   const [pending, setPending] = useState(false);
@@ -166,7 +231,7 @@ function ReservationFormArea({
 
   async function handleConfirm(event: React.FormEvent) {
     event.preventDefault();
-    if (pending || state.status !== "ready") {
+    if (pending || state.status !== "ready" || (target !== null && target.status !== "ready")) {
       return;
     }
     const slot = state.slot;
@@ -195,12 +260,7 @@ function ReservationFormArea({
         setOutcome({ status: result.status });
       }
     } catch {
-      setOutcome({
-        status: "error",
-        message: rescheduling
-          ? "No pudimos cambiar el horario. Inténtalo de nuevo."
-          : "No pudimos confirmar la reserva. Inténtalo de nuevo.",
-      });
+      setOutcome({ status: "error", message: copy.failure });
     } finally {
       setPending(false);
     }
@@ -211,18 +271,19 @@ function ReservationFormArea({
    * cancelación y el formulario comparten la misma tarjeta y el título dice
    * siempre qué hay en pantalla.
    */
-  const pageTitle = rescheduling
-    ? reservationId !== null
-      ? "Horario cambiado"
-      : "Confirmar cambio de horario"
-    : cancelled
-      ? "Reserva cancelada"
-      : reservationId !== null
-        ? "Reserva confirmada"
-        : "Confirmar reserva";
+  const pageTitle = cancelled
+    ? "Reserva cancelada"
+    : reservationId !== null
+      ? copy.confirmedTitle
+      : copy.title;
 
   const slot = state.status === "ready" ? state.slot : null;
   const keepsCurrent = rescheduling ? ` ${KEEPS_CURRENT_SCHEDULE}` : "";
+  // Sin horario que se pueda cambiar, volver a horarios llevaría a esta misma
+  // confirmación: la salida es la atención.
+  const targetBlocked = target?.status === "unchangeable" || target?.status === "denied";
+  const showScheduleReturn =
+    outcome?.status !== "conflict" && !(rescheduling && reservationId !== null) && !targetBlocked;
 
   return (
     <section aria-labelledby="reservation-form-title" className="student-portal__res">
@@ -303,6 +364,14 @@ function ReservationFormArea({
                 {keepsCurrent}
               </p>
             </section>
+          ) : rescheduleAppointmentId !== undefined &&
+            target !== null &&
+            target.status !== "ready" ? (
+            <RescheduleTargetNotice
+              target={target}
+              appointmentId={rescheduleAppointmentId}
+              onRetry={() => setTargetAttempt((value) => value + 1)}
+            />
           ) : (
             <>
               {/* Conflicto y fallo técnico dejan el formulario operativo con
@@ -329,9 +398,9 @@ function ReservationFormArea({
                   {keepsCurrent}
                 </p>
               )}
-              {rescheduleAppointmentId === undefined ? null : (
-                <CurrentAppointmentSummary appointmentId={rescheduleAppointmentId} />
-              )}
+              {target?.status === "ready" ? (
+                <CurrentAppointmentSummary appointment={target.appointment} />
+              ) : null}
               <form onSubmit={handleConfirm}>
                 <SlotDetails slot={slot} title={rescheduling ? "Nuevo horario" : undefined} />
                 <div className="student-portal__res-confirm">
@@ -342,9 +411,7 @@ function ReservationFormArea({
                       onChange={(event) => setConfirmed(event.target.checked)}
                       disabled={pending}
                     />{" "}
-                    {rescheduling
-                      ? "Confirmo que deseo cambiar mi atención a este horario"
-                      : "Confirmo que deseo reservar este cupo"}
+                    {copy.consent}
                   </label>
                   <div className="student-portal__cta">
                     <button
@@ -353,13 +420,7 @@ function ReservationFormArea({
                       disabled={!confirmed || pending}
                       aria-busy={pending}
                     >
-                      {pending
-                        ? rescheduling
-                          ? "Cambiando…"
-                          : "Confirmando…"
-                        : rescheduling
-                          ? "Confirmar cambio"
-                          : "Confirmar reserva"}
+                      {pending ? copy.submitting : copy.submit}
                     </button>
                   </div>
                 </div>
@@ -372,7 +433,7 @@ function ReservationFormArea({
       {/* Una sola salida a horarios al final de la tarjeta; con conflicto la
           salida ya vive junto al mensaje como Elegir otro horario. Tras
           cambiar el horario, la salida es la propia atención. */}
-      {outcome?.status !== "conflict" && !(rescheduling && reservationId !== null) && (
+      {showScheduleReturn && (
         <p className="student-portal__res-return">
           <Link to="/estudiante/horarios" search={schedule}>
             Volver a horarios
@@ -421,38 +482,86 @@ function SlotDetails({ slot, title }: { slot: AgendaSlot; title?: string }) {
 }
 
 /**
- * Horario vigente de la atención que se cambia: se lee de la misma atención y
- * sigue visible si el cambio falla, porque el Backend no la modifica.
+ * Horario vigente de la atención que se cambia: sigue visible si el cambio
+ * falla, porque el Backend no la modifica.
  */
-function CurrentAppointmentSummary({ appointmentId }: { appointmentId: string }) {
-  const result = useStudentAppointment(appointmentId, 0);
+function CurrentAppointmentSummary({ appointment }: { appointment: AgendaAppointment }) {
   return (
     <section aria-labelledby="current-appointment-title" className="mb-4">
       <h2 id="current-appointment-title" className={SECTION_TITLE_CLASS}>
         Horario actual
       </h2>
-      {result === undefined ? (
-        <p role="status">Cargando tu atención…</p>
-      ) : result.status === "ok" ? (
-        <dl className="student-portal__res-dl">
-          <div>
-            <dt>Fecha y hora</dt>
-            <dd>
-              {formatAppointmentDateTime(result.appointment.startAt, result.appointment.endAt)}
-            </dd>
-          </div>
-          <div>
-            <dt>Modalidad</dt>
-            <dd>{modalityLabel(result.appointment.modality)}</dd>
-          </div>
-          <div>
-            <dt>Estado</dt>
-            <dd>{appointmentStatusLabel(result.appointment.status)}</dd>
-          </div>
-        </dl>
-      ) : (
-        <p>No pudimos mostrar tu horario actual. El cambio se revisa igual en el servidor.</p>
-      )}
+      <dl className="student-portal__res-dl">
+        <div>
+          <dt>Fecha y hora</dt>
+          <dd>{formatAppointmentDateTime(appointment.startAt, appointment.endAt)}</dd>
+        </div>
+        <div>
+          <dt>Modalidad</dt>
+          <dd>{modalityLabel(appointment.modality)}</dd>
+        </div>
+        <div>
+          <dt>Estado</dt>
+          <dd>{appointmentStatusLabel(appointment.status)}</dd>
+        </div>
+      </dl>
+    </section>
+  );
+}
+
+/**
+ * Lo que reemplaza al formulario mientras se lee la atención que se cambia o
+ * cuando ya no se puede cambiar. La denegación no revela si la atención existe.
+ */
+function RescheduleTargetNotice({
+  target,
+  appointmentId,
+  onRetry,
+}: {
+  target: Exclude<RescheduleTarget, { status: "ready" }>;
+  appointmentId: string;
+  onRetry: () => void;
+}) {
+  if (target.status === "loading") {
+    return (
+      <p role="status" className="student-portal__loading">
+        Cargando tu atención…
+      </p>
+    );
+  }
+  if (target.status === "error") {
+    return (
+      <ErrorState
+        message={target.message}
+        retryLabel="Reintentar cargar tu atención"
+        onRetry={onRetry}
+      />
+    );
+  }
+  if (target.status === "denied") {
+    return (
+      <section
+        aria-labelledby="reschedule-denied-title"
+        className="student-portal__error student-portal__res-state"
+      >
+        <h2 id="reschedule-denied-title">No tienes acceso a esta atención.</h2>
+      </section>
+    );
+  }
+  return (
+    <section aria-labelledby="reschedule-unchangeable-title" className="student-portal__res-state">
+      <h2 id="reschedule-unchangeable-title" className={SECTION_TITLE_CLASS}>
+        Esta atención ya no se puede cambiar
+      </h2>
+      <p className="student-portal__res-state-note">
+        Solo se puede cambiar el horario de una atención programada o reagendada, antes de su
+        inicio.
+      </p>
+      <p className="student-portal__res-state-actions">
+        <Link to="/estudiante/atenciones/$appointmentId" params={{ appointmentId }}>
+          Ver la atención
+        </Link>
+      </p>
     </section>
   );
 }
@@ -527,6 +636,7 @@ function ReservationReceiptBody({
           appointmentId={reservationId}
           cancellation={cancellation}
           triggerLabel="Cancelar esta reserva"
+          headingLevel="h2"
           onCancelled={onCancelled}
         />
       )}
