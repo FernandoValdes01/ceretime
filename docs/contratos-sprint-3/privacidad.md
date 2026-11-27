@@ -48,6 +48,7 @@ La vista `own` es la del titular y no incluye identificadores de personal. La vi
 ## Reglas
 
 - Versión del contrato: `"v1"` (`PRIVACY_REQUEST_CONTRACT_VERSION`), obligatoria en las ocho operaciones.
+- Los derechos que se presentan por la aplicación son `SUBMITTABLE_PRIVACY_REQUEST_KINDS` del dominio (acceso, rectificación, supresión y portabilidad). Es la única lista: el caso de uso rechaza los demás y la Web ofrece solo esos.
 - Solo el Estudiante presenta por la aplicación. El Profesional, el Practicante y el Administrador son titulares de sus propios datos, pero usan el canal institucional que definirá la UCT; no existe un segundo formulario en la aplicación.
 - El servidor fija `receivedAt`, `receivedDate`, `requesterRole`, `channel`, `initialDueAt` y `dueAt`. El cliente solo envía el derecho. Un campo de más, otra versión o un valor fuera de las listas falla en el validador de Convex antes de llegar al caso de uso.
 - El plazo general es de 30 días corridos: la fecha civil de recepción es el día 0 y el vencimiento es exclusivo al inicio del día siguiente al último día cubierto. Una solicitud de bloqueo usaría 2 días hábiles, pero el bloqueo y la oposición quedan para la siguiente tarea del módulo y hoy no se presentan.
@@ -137,7 +138,7 @@ function mensajeDeError(error: unknown): string {
 
 - Bloqueo temporal y oposición: siguiente tarea del módulo.
 - Exportación de datos y ejecución material de la supresión, la rectificación y la portabilidad: la autorización registrada (`effect: "authorized"`) es la que usan TI2-168 (rectificación), TI2-173 (exportación) y TI2-174 (eliminación o anonimización manual) para aplicar el efecto sobre datos ficticios. La ejecución sobre datos reales queda pendiente de decisión institucional.
-- Pantallas del Estudiante y del Administrador: issues posteriores.
+- Pantallas: TI2-171 publica el aviso en `/privacidad`, sin sesión; el Estudiante presenta y consulta en `/estudiante/privacidad`, y el Administrador revisa y resuelve en `/administrador/privacidad`.
 - Correo, push y otros canales de notificación: TI2-159 y TI2-160.
 - Registro en la bitácora de auditoría de cada lectura o escritura: TI2-176.
 
