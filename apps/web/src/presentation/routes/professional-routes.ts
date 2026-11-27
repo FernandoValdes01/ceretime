@@ -8,6 +8,7 @@ import {
   ProfessionalIndexRouteComponent,
   ProfessionalLayoutRouteComponent,
   ProfessionalOfficialRequestRouteComponent,
+  ProfessionalPracticantesRouteComponent,
   ProfessionalRequestDetailRouteComponent,
   ProfessionalRequestsRouteComponent,
 } from "./route-components.tsx";
@@ -85,6 +86,12 @@ const professionalAgendaDetailRoute = createRoute({
   component: ProfessionalAgendaDetailRouteComponent,
 });
 
+const professionalPracticantesRoute = createRoute({
+  getParentRoute: () => professionalLayoutRoute,
+  path: "practicantes",
+  component: ProfessionalPracticantesRouteComponent,
+});
+
 export const professionalRoutes = [
   professionalLayoutRoute.addChildren([
     professionalIndexRoute,
@@ -96,5 +103,6 @@ export const professionalRoutes = [
     professionalAvailabilityRoute,
     professionalAgendaRoute,
     professionalAgendaDetailRoute,
+    professionalPracticantesRoute,
   ]),
 ] as const;

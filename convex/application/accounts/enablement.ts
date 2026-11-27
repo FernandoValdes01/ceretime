@@ -6,6 +6,7 @@ import {
   checkEnablement,
   checkInternEnablement,
   checkTestProfessionalEnablement,
+  isPersonalProfessionalActive,
   validateBootstrapCandidate,
   validateStaffEnablementTarget,
   validateStaffRevocationTarget,
@@ -34,6 +35,7 @@ import {
   findUserByEmail,
   getUserById,
   insertBootstrapAdmin,
+  paginateInternAccounts,
   paginateStaffAccounts,
   patchEnablement,
   patchRevocation,
@@ -151,6 +153,40 @@ export async function listAccountsUseCase(
     throw new Error("El límite del listado debe ser un entero entre 1 y 100.");
   }
   const result = await paginateStaffAccounts(ctx, args.role, args.paginationOpts);
+  return okResult({ ...result, page: result.page.map(toAccountSummary) });
+}
+
+/**
+ * Lista paginada de cuentas practicantes para la gestión del Profesional
+ * (TI2-170).
+ *
+ * La llama el profesional de personal con cuenta habilitada y vigente o el
+ * administrador vigente. Devuelve el detalle mínimo, sin `tokenIdentifier`,
+ * acompañamientos ni notas. La habilitación y la asignación siguen siendo
+ * decisiones distintas: listar no concede accesos. Toda denegación responde
+ * `unauthorized` genérico, sin revelar existencia.
+ */
+export async function listInternAccountsUseCase(
+  ctx: QueryCtx,
+  identity: UserIdentity | null,
+  args: { readonly paginationOpts: PaginationOptions },
+): Promise<ApiResult<{ page: AccountSummary[]; isDone: boolean; continueCursor: string }>> {
+  const caller = await findCallerProfile(ctx, identity);
+  if (caller === null) return unauthorized();
+  const isAdminActive =
+    caller.role === "admin" &&
+    caller.institutionalStatus === "enabled" &&
+    caller.accountStatus === "active";
+  const canList = isAdminActive || isPersonalProfessionalActive(caller);
+  if (!canList) return unauthorized();
+  if (
+    !Number.isInteger(args.paginationOpts.numItems) ||
+    args.paginationOpts.numItems < 1 ||
+    args.paginationOpts.numItems > 100
+  ) {
+    throw new Error("El límite del listado debe ser un entero entre 1 y 100.");
+  }
+  const result = await paginateInternAccounts(ctx, args.paginationOpts);
   return okResult({ ...result, page: result.page.map(toAccountSummary) });
 }
 
