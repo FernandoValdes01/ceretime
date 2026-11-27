@@ -40,17 +40,18 @@ Los validadores de salida fijan estas claves: si una proyección trajera otra cl
 
 | Vista          | Quién la recibe                     | Claves                                                                                                                                                           |
 | -------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `professional` | Profesional con asignación activa   | `appointmentId`, `accompanimentId`, `appointmentStatus`, `agreements`, `tasks`, `nextSteps`, `suggestedNextAppointmentDate?`, `internalNote?`, `version`, `view` |
+| `professional` | Profesional con asignación activa   | `appointmentId`, `accompanimentId`, `appointmentStatus`, `appointmentStartsAt`, `agreements`, `tasks`, `nextSteps`, `suggestedNextAppointmentDate?`, `internalNote?`, `version`, `view` |
 | `shared`       | Estudiante dueño del acompañamiento | Las mismas sin `internalNote`                                                                                                                                    |
-| `minimized`    | Practicante con asignación activa   | `appointmentId`, `appointmentStatus`, `agreements`, `tasks`, `nextSteps`, `suggestedNextAppointmentDate?`, `version`, `view`                                       |
+| `minimized`    | Practicante con asignación activa   | `appointmentId`, `appointmentStatus`, `appointmentStartsAt`, `agreements`, `tasks`, `nextSteps`, `suggestedNextAppointmentDate?`, `version`, `view`                                       |
 
-`appointmentStatus` es el estado vigente de la atención, leído al responder. Decisión del 2026-11-15 (TI2-186): gana el diagrama, así que la vista `minimized` incluye acuerdos, tareas y próximos pasos con la misma forma que la vista `shared`. Esto reemplaza, solo para el seguimiento, la minimización de TI2-127, que los omitía porque esos textos pueden mencionar necesidades de acceso. La vista `minimized` mantiene fuera la nota interna y el vínculo con el acompañamiento, que el diagrama no asigna al practicante.
+`appointmentStatus` es el estado vigente de la atención y `appointmentStartsAt`, su inicio en milisegundos desde la época (el atributo `inicio` de ATENCIONES en el MER), ambos leídos de la atención al responder; el seguimiento no guarda una copia. `appointmentStartsAt` se agregó en TI2-166 para que los clientes distingan cada registro del historial por la fecha de su atención; es obligatorio en las tres vistas, y un cliente que no lo use puede ignorarlo. Decisión del 2026-11-15 (TI2-186): gana el diagrama, así que la vista `minimized` incluye acuerdos, tareas y próximos pasos con la misma forma que la vista `shared`. Esto reemplaza, solo para el seguimiento, la minimización de TI2-127, que los omitía porque esos textos pueden mencionar necesidades de acceso. La vista `minimized` mantiene fuera la nota interna y el vínculo con el acompañamiento, que el diagrama no asigna al practicante.
 
 ```json
 {
   "appointmentId": "k57abc...",
   "accompanimentId": "j97def...",
   "appointmentStatus": "completed",
+  "appointmentStartsAt": 1794841200000,
   "agreements": [{ "description": "Recibir los apuntes en formato digital" }],
   "tasks": [
     {
