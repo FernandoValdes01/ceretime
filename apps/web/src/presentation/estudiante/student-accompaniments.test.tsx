@@ -48,6 +48,7 @@ let downloadedFiles: DownloadableCalendarFile[] = [];
 let linkSocialCalls: Array<Record<string, unknown>> = [];
 let needsCalls: Array<{ accompanimentId: string; accessNeeds: string }> = [];
 let needsResult: Error | null = null;
+let confirmCalls = 0;
 
 let mockedPortalAccompaniments:
   | { page: OwnAccompanimentDetail[]; isDone: boolean; continueCursor: string }
@@ -83,6 +84,14 @@ vi.mock("./student-accompaniments-data.ts", () => ({
       if (needsResult instanceof Error) throw needsResult;
       return null;
     },
+}));
+
+// El vínculo se confirma al volver de Google (TI2-172); el Backend lo cubren sus pruebas.
+vi.mock("../avisos/notifications-data.ts", () => ({
+  useConfirmCalendarLink: () => async () => {
+    confirmCalls += 1;
+    return { connected: true, linkedAt: 1, status: "linked" };
+  },
 }));
 
 vi.mock("./calendar-download.ts", () => ({
@@ -195,6 +204,7 @@ function renderAt(path: string) {
 }
 
 beforeEach(() => {
+  confirmCalls = 0;
   mockedSession = SESION_ESTUDIANTE;
   mockedPair = PAR_ESTUDIANTE;
   mockedBackendConfigured = true;
@@ -549,6 +559,53 @@ describe("calendario por atención (TI2-122)", () => {
 
     expect(await screen.findByText(/google calendar quedó conectado/i)).toBeDefined();
     expect(screen.getByText("Google Calendar está conectado.")).toBeDefined();
+  });
+
+  test("al volver de Google confirma el vínculo una sola vez (TI2-172)", async () => {
+    mockedDetail = detallePropio();
+    mockedConnection = { connected: true };
+    mockedAppointments = [atencion()];
+    renderAt("/estudiante/acompanamientos/acc-1?calendar=connected");
+
+    expect(await screen.findByText(/google calendar quedó conectado/i)).toBeDefined();
+    expect(confirmCalls).toBe(1);
+  });
+
+  test("muestra la sincronización de cada atención sin dar la reserva por fallida (TI2-172)", async () => {
+    mockedDetail = detallePropio();
+    mockedConnection = { connected: true };
+    mockedAppointments = [
+      atencion({ appointmentId: "apt-1", calendarSyncStatus: "pending" }),
+      atencion({ appointmentId: "apt-2", calendarSyncStatus: "synced" }),
+      atencion({
+        appointmentId: "apt-3",
+        calendarSyncStatus: "error",
+        calendarSyncErrorCode: "unavailable",
+      }),
+    ];
+    renderAt("/estudiante/acompanamientos/acc-1");
+
+    expect(await screen.findByText("Sincronizando con Google Calendar.")).toBeDefined();
+    expect(screen.getByText("Sincronizada con Google Calendar.")).toBeDefined();
+    expect(
+      screen.getByText(
+        /Sin sincronizar por ahora: se volverá a intentar. Tu atención sigue reservada/,
+      ),
+    ).toBeDefined();
+    expect(screen.queryByText("Google Calendar perdió el acceso.")).toBeNull();
+  });
+
+  test("si la sincronización perdió el permiso, pide volver a vincular (TI2-172)", async () => {
+    mockedDetail = detallePropio();
+    mockedConnection = { connected: true };
+    mockedAppointments = [
+      atencion({ calendarSyncStatus: "error", calendarSyncErrorCode: "not_connected" }),
+    ];
+    renderAt("/estudiante/acompanamientos/acc-1");
+
+    expect(await screen.findByText("Google Calendar perdió el acceso.")).toBeDefined();
+    expect(screen.getByRole("button", { name: "Volver a conectar Google Calendar" })).toBeDefined();
+    expect(screen.getByRole("button", { name: /descargar el archivo .ics/i })).toBeDefined();
   });
 
   test("un consentimiento fallido no bloquea el .ics", async () => {

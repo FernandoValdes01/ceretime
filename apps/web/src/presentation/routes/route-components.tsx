@@ -50,6 +50,7 @@ import { toRequestListSearch } from "../gestion/paged-requests.ts";
 import { ScheduleSearchPage } from "../estudiante/schedule-search.tsx";
 import { ReservationFormPage } from "../estudiante/reservation-form.tsx";
 import { PrivacyNoticePage } from "../privacidad/privacy-notice-page.tsx";
+import { NotificationsPage } from "../avisos/notifications-page.tsx";
 import {
   StudentPrivacyPage,
   StudentPrivacyRequestDetailPage,
@@ -204,6 +205,14 @@ export function StudentAccompanimentDetailRouteComponent() {
   );
 }
 
+const studentNotificationsApi = getRouteApi("/estudiante/avisos");
+
+export function StudentNotificationsRouteComponent() {
+  useDocumentTitle("Avisos");
+  const { calendar } = studentNotificationsApi.useSearch();
+  return <NotificationsPage audience="student" calendarStatus={calendar} />;
+}
+
 const studentPrivacyDetailApi = getRouteApi("/estudiante/privacidad/$requestId");
 
 export function StudentPrivacyRouteComponent() {
@@ -227,6 +236,14 @@ export function ProfessionalLayoutRouteComponent() {
       <ProfessionalLayout />
     </RequireStaffRole>
   );
+}
+
+const professionalNotificationsApi = getRouteApi("/profesional/avisos");
+
+export function ProfessionalNotificationsRouteComponent() {
+  useDocumentTitle("Avisos");
+  const { calendar } = professionalNotificationsApi.useSearch();
+  return <NotificationsPage audience="professional" calendarStatus={calendar} />;
 }
 
 export function ProfessionalIndexRouteComponent() {
