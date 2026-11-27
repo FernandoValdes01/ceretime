@@ -32,7 +32,7 @@ export type InternProfile<UserId extends string = string> = AccountEnabler & {
   readonly fullName: string;
 };
 
-/** Asignación practicante activa y vigente. */
+/** Asignación practicante activa, con su vigencia acordada. */
 export type InternAssignmentRow<UserId extends string = string> = {
   readonly userId: UserId;
   /** `asignadoEn`; falta en filas anteriores a TI2-140. */
@@ -48,7 +48,7 @@ export interface AccompanimentInternsReader<UserId extends string = string> {
   /** Estado del acompañamiento, o `null` si no existe. */
   getAccompanimentStatus(accompanimentId: string): Promise<string | null>;
   hasActiveProfessionalAssignment(accompanimentId: string, userId: UserId): Promise<boolean>;
-  /** Asignaciones practicantes vigentes, o `null` si el acompañamiento supera el tope. */
+  /** Asignaciones practicantes activas, o `null` si el acompañamiento supera el tope. */
   listActiveInternAssignments(
     accompanimentId: string,
   ): Promise<ReadonlyArray<InternAssignmentRow<UserId>> | null>;
@@ -89,12 +89,15 @@ function isEnabledIntern(profile: InternProfile<string>): boolean {
  *
  * Solo un profesional de personal, habilitado y vigente, con asignación
  * profesional activa sobre ese acompañamiento: la misma regla que exige
- * `assignAccompanimentAccess` para conceder. Los asignables son practicantes
- * habilitados y vigentes que todavía no están asignados. Solo se entregan el
- * identificador y el nombre, más la vigencia de los asignados. Sin permiso,
- * o con un acompañamiento inexistente, responde `unauthorized` genérico; si
- * el acompañamiento supera el tope de asignaciones leídas, `conflict` en vez
- * de una lista incompleta.
+ * `assignAccompanimentAccess` para conceder. Los asignados son los
+ * practicantes con fila activa, con cualquier vigencia: la Web muestra cada
+ * uno con su estado (vigente, programada o vencida) a partir de su ventana
+ * acordada. Los asignables son practicantes habilitados y vigentes que
+ * todavía no tienen fila activa, así no se ofrece un alta duplicada. Solo
+ * se entregan el identificador y el nombre, más la vigencia de los
+ * asignados. Sin permiso, o con un acompañamiento inexistente, responde
+ * `unauthorized` genérico; si el acompañamiento supera el tope de
+ * asignaciones leídas, `conflict` en vez de una lista incompleta.
  */
 export async function listAccompanimentInterns<UserId extends string>(
   reader: AccompanimentInternsReader<UserId>,

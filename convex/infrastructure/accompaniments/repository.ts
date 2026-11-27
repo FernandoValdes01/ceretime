@@ -718,14 +718,19 @@ export function accompanimentNeedsAtDateReader(ctx: DbReader) {
 }
 
 /**
- * Asignaciones practicantes activas y vigentes de un acompañamiento (TI2-170),
- * o `null` si el acompañamiento supera el tope de filas leídas: así la lista
- * nunca se recorta en silencio.
+ * Asignaciones practicantes activas de un acompañamiento (TI2-170), o `null`
+ * si el acompañamiento supera el tope de filas leídas: así la lista nunca se
+ * recorta en silencio.
+ *
+ * No filtra por vigencia: la Web muestra cada fila con su estado (vigente,
+ * programada o vencida) a partir de `validFrom`/`validUntil`, y una fila
+ * programada o vencida sigue excluyendo a su practicante de los asignables
+ * para no ofrecer un alta duplicada que el Backend rechazaría. La lectura
+ * efectiva (`findActiveAssignmentsForUser`) sí exige ventana vigente.
  */
 export async function listActiveInternAssignments(
   ctx: DbReader,
   accompanimentId: Id<"accompaniments">,
-  now: number = Date.now(),
 ): Promise<Doc<"accompanimentAssignments">[] | null> {
   const rows = await ctx.db
     .query("accompanimentAssignments")
@@ -734,12 +739,7 @@ export async function listActiveInternAssignments(
     )
     .take(MAX_ASSIGNMENTS_PER_ACCOMPANIMENT + 1);
   if (rows.length > MAX_ASSIGNMENTS_PER_ACCOMPANIMENT) return null;
-  return rows.filter(
-    (row) =>
-      row.status === "active" &&
-      row.assignedRole === "intern" &&
-      isAssignmentWithinValidity(row, now),
-  );
+  return rows.filter((row) => row.status === "active" && row.assignedRole === "intern");
 }
 
 /**

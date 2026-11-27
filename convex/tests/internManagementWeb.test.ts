@@ -196,6 +196,55 @@ test("acompañamiento expone asignados y asignables; retiro corta la lectura con
     }),
   ).rejects.toThrow("No autorizado");
 
+  // Una asignación futura se ve como programada y se puede gestionar,
+  // aunque todavía no autoriza al practicante.
+  const futureFrom = Date.UTC(2027, 0, 15);
+  const futureUntil = Date.UTC(2027, 5, 15);
+  await asPro.mutation(api.presentation.accompaniments.assignAccompanimentAccess, {
+    accompanimentId,
+    userId: otherIntern.id,
+    assignedRole: "intern",
+    validFrom: futureFrom,
+    validUntil: futureUntil,
+  });
+  const asOtherIntern = t.withIdentity(identityFor("ti170-int-4", "ti170-int-4@alu.uct.cl"));
+  const scheduled = await asPro.query(api.presentation.accompaniments.listAccompanimentInterns, {
+    accompanimentId,
+  });
+  expect(scheduled.assigned).toHaveLength(1);
+  expect(scheduled.assigned[0]?.userId).toEqual(otherIntern.id);
+  expect(scheduled.assignable.map((item) => item.userId)).toEqual([intern.id]);
+  expect(
+    await asOtherIntern.query(api.presentation.accompaniments.listAssignedAccompaniments, {
+      limit: 10,
+    }),
+  ).toEqual({ items: [], hasMore: false, lastId: null });
+  await expect(
+    asOtherIntern.query(api.presentation.accompaniments.getAccompaniment, { accompanimentId }),
+  ).rejects.toThrow("No autorizado");
+  // La programada también se modifica y se retira desde la Web.
+  await asPro.mutation(api.presentation.accompaniments.updateAccompanimentAccess, {
+    accompanimentId,
+    userId: otherIntern.id,
+    assignedRole: "intern",
+    validUntil: null,
+  });
+  const rescheduled = await asPro.query(api.presentation.accompaniments.listAccompanimentInterns, {
+    accompanimentId,
+  });
+  expect(rescheduled.assigned[0]?.validUntil).toBeUndefined();
+  await asPro.mutation(api.presentation.accompaniments.revokeAccompanimentAccess, {
+    accompanimentId,
+    userId: otherIntern.id,
+    assignedRole: "intern",
+  });
+  const rescheduledAfter = await asPro.query(
+    api.presentation.accompaniments.listAccompanimentInterns,
+    { accompanimentId },
+  );
+  expect(rescheduledAfter.assigned).toEqual([]);
+  expect(rescheduledAfter.assignable.map((item) => item.userId)).toContain(otherIntern.id);
+
   // Asigna con vigencia acordada.
   const validFrom = Date.UTC(2026, 10, 1);
   const validUntil = Date.UTC(2026, 11, 31);

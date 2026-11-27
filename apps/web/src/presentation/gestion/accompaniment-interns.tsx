@@ -1,18 +1,23 @@
 import { useState } from "react";
 import {
+  addCivilDays,
+  AGENDA_TIME_ZONE,
   ASSIGNMENT_FIELDS_INVALID_ERROR_CODE,
+  civilDateOfInstant,
   CONFLICT_ERROR_CODE,
+  midnightToEpochMs,
   UNAUTHORIZED_ERROR_CODE,
   type AccompanimentStatus,
 } from "../../../../../convex/domain/index.ts";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { publicErrorOf } from "../../infrastructure/convex/public-error.ts";
-import { civilDateToUtc, isValidCivilDate } from "../shared/date-format.ts";
+import { isValidCivilDate } from "../shared/date-format.ts";
 import { formatPanelDate } from "../routes/student-panel-labels.ts";
 import { ACCESS_DENIED_MESSAGE, DeniedState, LoadingState } from "../shared/view-states.tsx";
 import { GESTION_FOCUS_VISIBLE } from "./assigned-accompaniments-list.tsx";
 import { isAuthorizationDenial } from "../shared/authorization-denial.ts";
 import {
+  internValidityState,
   useAccompanimentInterns,
   useAssignInternAccess,
   useRevokeInternAccess,
@@ -53,7 +58,23 @@ function changeErrorMessage(error: unknown): string {
 
 function toDateInput(value: number | undefined): string {
   if (value === undefined) return "";
-  return new Date(value).toISOString().slice(0, 10);
+  return civilDateOfInstant(value, AGENDA_TIME_ZONE);
+}
+
+/**
+ * Extremo de la vigencia en la zona de la agenda (TI2-170).
+ *
+ * El inicio es la medianoche del día elegido en Santiago y el fin, el último
+ * instante de ese día (la medianoche del día siguiente menos 1 ms): así la
+ * fecha que se elige es la que rige, sin correrse un día al mostrarla.
+ */
+function parseOptionalDate(value: string, kind: "from" | "until"): number | undefined | null {
+  const trimmed = value.trim();
+  if (trimmed === "") return undefined;
+  if (!isValidCivilDate(trimmed)) return null;
+  return kind === "from"
+    ? midnightToEpochMs(trimmed, AGENDA_TIME_ZONE)
+    : midnightToEpochMs(addCivilDays(trimmed, 1), AGENDA_TIME_ZONE) - 1;
 }
 
 export function AccompanimentInternsSection({
@@ -144,13 +165,6 @@ function InternsEditor({
   const chosen = interns.assignable.find((item) => item.userId === selected);
   const closed = status === "closed";
 
-  function parseOptionalDate(value: string): number | undefined | null {
-    const trimmed = value.trim();
-    if (trimmed === "") return undefined;
-    if (!isValidCivilDate(trimmed)) return null;
-    return civilDateToUtc(trimmed);
-  }
-
   return (
     <div className="flex flex-col gap-4 wrap-anywhere">
       {notice !== null ? <p role="status">{notice}</p> : null}
@@ -175,7 +189,7 @@ function InternsEditor({
                 </p>
               )}
               <p className="m-0 text-sm text-on-surface-variant">
-                Vigencia:{" "}
+                Vigencia: {internValidityState(intern)} ·{" "}
                 {intern.validFrom === undefined && intern.validUntil === undefined
                   ? "sin límites acordados"
                   : `${intern.validFrom === undefined ? "sin inicio" : formatPanelDate(intern.validFrom)} al ${intern.validUntil === undefined ? "sin fin" : formatPanelDate(intern.validUntil)}`}
@@ -222,8 +236,8 @@ function InternsEditor({
                   className="flex flex-col gap-3"
                   onSubmit={(event) => {
                     event.preventDefault();
-                    const from = parseOptionalDate(editFrom);
-                    const until = parseOptionalDate(editUntil);
+                    const from = parseOptionalDate(editFrom, "from");
+                    const until = parseOptionalDate(editUntil, "until");
                     if (from === null || until === null) {
                       setError("Las fechas deben tener el formato AAAA-MM-DD y existir.");
                       return;
@@ -340,8 +354,8 @@ function InternsEditor({
           onSubmit={(event) => {
             event.preventDefault();
             if (chosen === undefined) return;
-            const from = parseOptionalDate(validFrom);
-            const until = parseOptionalDate(validUntil);
+            const from = parseOptionalDate(validFrom, "from");
+            const until = parseOptionalDate(validUntil, "until");
             if (from === null || until === null) {
               setError("Las fechas deben tener el formato AAAA-MM-DD y existir.");
               return;

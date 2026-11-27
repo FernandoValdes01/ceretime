@@ -64,6 +64,25 @@ export type InternAccountItem = InternAccountsPage["page"][number];
 /** Practicantes del acompañamiento, derivados del contrato generado. */
 export type AccompanimentInterns = NonNullable<ReturnType<typeof useAccompanimentInterns>>;
 
+/** Estado de la vigencia acordada para mostrar en la gestión (TI2-170). */
+export type InternValidityState = "vigente" | "programada" | "vencida";
+
+/**
+ * Estado de una asignación a partir de su ventana acordada.
+ *
+ * Programada cuando aún no empieza, vencida cuando ya terminó y vigente en
+ * cualquier otro caso (incluida la fila sin límites). Es solo presentación:
+ * la autorización efectiva la decide el Backend en cada lectura.
+ */
+export function internValidityState(
+  validity: { readonly validFrom?: number; readonly validUntil?: number },
+  now: number = Date.now(),
+): InternValidityState {
+  if (validity.validFrom !== undefined && now < validity.validFrom) return "programada";
+  if (validity.validUntil !== undefined && now > validity.validUntil) return "vencida";
+  return "vigente";
+}
+
 /** Verdadero cuando la cuenta admite habilitación (no está habilitada). */
 export function canEnableIntern(status: string): boolean {
   return status !== "enabled";

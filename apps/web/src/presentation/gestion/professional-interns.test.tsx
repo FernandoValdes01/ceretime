@@ -3,7 +3,12 @@ import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/re
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { UNAUTHORIZED_ERROR_MESSAGE } from "../../../../../convex/domain/index.ts";
+import {
+  AGENDA_TIME_ZONE,
+  addCivilDays,
+  midnightToEpochMs,
+  UNAUTHORIZED_ERROR_MESSAGE,
+} from "../../../../../convex/domain/index.ts";
 import type { Id } from "../../../../../convex/_generated/dataModel";
 import { createAppRouter } from "../routes/router.tsx";
 import type { WebSessionRole, WebSessionState } from "../session/session-state.ts";
@@ -212,22 +217,60 @@ describe("asignación por acompañamiento (TI2-170)", () => {
         accompanimentId: "acc-1",
         userId: "intern-1",
         assignedRole: "intern",
-        validFrom: Date.UTC(2026, 11, 1),
-        validUntil: Date.UTC(2026, 11, 31),
+        validFrom: midnightToEpochMs("2026-12-01", AGENDA_TIME_ZONE),
+        validUntil: midnightToEpochMs(addCivilDays("2026-12-31", 1), AGENDA_TIME_ZONE) - 1,
       }),
     );
     expect(await screen.findByRole("status")).toBeDefined();
   });
 
-  test("modificar la vigencia con fin vacío quita ese límite con null", async () => {
+  test("las asignaciones fuera de vigencia se muestran como programadas y se gestionan", async () => {
     const { AccompanimentInternsSection } = await import("./accompaniment-interns.tsx");
     internsDetail = {
       assigned: [
         {
           userId: "intern-1",
           fullName: "Practicante Uno Ficticio",
-          validFrom: Date.UTC(2026, 11, 1),
-          validUntil: Date.UTC(2026, 11, 31),
+          validFrom: midnightToEpochMs("2030-01-01", AGENDA_TIME_ZONE),
+        },
+        {
+          userId: "intern-2",
+          fullName: "Practicante Dos Ficticio",
+          validUntil: midnightToEpochMs("2020-01-02", AGENDA_TIME_ZONE) - 1,
+        },
+      ],
+      assignable: [],
+      assignableComplete: true,
+    };
+    const { render: renderComponent } = await import("@testing-library/react");
+    renderComponent(
+      <AccompanimentInternsSection
+        accompanimentId={"acc-1" as Id<"accompaniments">}
+        status="active"
+      />,
+    );
+
+    await screen.findByText("Practicante Uno Ficticio");
+    expect(screen.getByText(/programada/)).toBeDefined();
+    expect(screen.getByText(/vencida/)).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: "Retirar a Practicante Uno Ficticio" }),
+    ).toBeDefined();
+    expect(
+      screen.getByRole("button", { name: "Retirar a Practicante Dos Ficticio" }),
+    ).toBeDefined();
+  });
+
+  test("modificar la vigencia con fin vacío quita ese límite con null", async () => {
+    const { AccompanimentInternsSection } = await import("./accompaniment-interns.tsx");
+    const start = midnightToEpochMs("2026-12-01", AGENDA_TIME_ZONE);
+    internsDetail = {
+      assigned: [
+        {
+          userId: "intern-1",
+          fullName: "Practicante Uno Ficticio",
+          validFrom: start,
+          validUntil: midnightToEpochMs(addCivilDays("2026-12-31", 1), AGENDA_TIME_ZONE) - 1,
         },
       ],
       assignable: [],
@@ -251,7 +294,7 @@ describe("asignación por acompañamiento (TI2-170)", () => {
         accompanimentId: "acc-1",
         userId: "intern-1",
         assignedRole: "intern",
-        validFrom: Date.UTC(2026, 11, 1),
+        validFrom: start,
         validUntil: null,
       }),
     );
@@ -308,6 +351,20 @@ describe("asignación por acompañamiento (TI2-170)", () => {
     expect(
       screen.getByRole("button", { name: "Retirar a Practicante Uno Ficticio" }),
     ).toBeDefined();
+  });
+});
+
+describe("estado de vigencia del practicante (TI2-170)", () => {
+  test("programada antes del inicio, vencida tras el fin y vigente en el resto", async () => {
+    const actual = await vi.importActual<typeof import("./professional-interns-data.ts")>(
+      "./professional-interns-data.ts",
+    );
+    const now = Date.UTC(2026, 10, 27);
+    expect(actual.internValidityState({}, now)).toBe("vigente");
+    expect(actual.internValidityState({ validFrom: now }, now)).toBe("vigente");
+    expect(actual.internValidityState({ validFrom: now + 1 }, now)).toBe("programada");
+    expect(actual.internValidityState({ validUntil: now - 1 }, now)).toBe("vencida");
+    expect(actual.internValidityState({ validUntil: now }, now)).toBe("vigente");
   });
 });
 

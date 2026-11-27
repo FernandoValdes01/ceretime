@@ -133,7 +133,7 @@ export {
   AVAILABILITY_EXCEPTION_KIND_VALUES,
 } from "./availability/availability";
 // Fecha civil de un instante en una zona horaria, para comparar con lo que escribe la persona.
-export { civilDateOfInstant } from "./calendar/civil_days";
+export { addCivilDays, civilDateOfInstant, midnightToEpochMs } from "./calendar/civil_days";
 export type {
   AvailabilityBlock,
   AvailabilityContractVersion,
