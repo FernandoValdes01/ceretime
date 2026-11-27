@@ -17,7 +17,8 @@ import type { PrivacyRequestView } from "./privacy-data.ts";
  * Muestra solo lo que entrega el Backend: recepción, plazo vigente con su
  * prórroga, respuesta fundada, constancia de envío y plazo para reclamar ante
  * la Agencia. Las fechas civiles son el último día que cubre cada plazo; la
- * Web no las calcula.
+ * Web no las calcula. El derecho a reclamar se explica desde que el titular
+ * ve una respuesta que rechaza; la fecha límite aparece con la constancia.
  */
 export function PrivacyRequestSummary({ request }: { request: PrivacyRequestView }) {
   const dueDate = request.extension?.extendedUntilDate ?? request.initialDueDate;
@@ -59,7 +60,16 @@ export function PrivacyRequestSummary({ request }: { request: PrivacyRequestView
             <Row term="Fundamento">{response.reasons}</Row>
             <Row term="Respondida">{formatAgendaInstant(response.respondedAt)}</Row>
             {receipt === undefined ? (
-              <Row term="Envío de la respuesta">Pendiente de registrar.</Row>
+              <>
+                {request.view === "review" ? (
+                  <Row term="Envío de la respuesta">Pendiente de registrar.</Row>
+                ) : null}
+                {claimApplies ? (
+                  <Row term="Reclamo ante la Agencia">
+                    {`Puedes reclamar ante la Agencia de Protección de Datos Personales dentro de los ${PRIVACY_AGENCY_CLAIM_BUSINESS_DAYS} días hábiles siguientes a la notificación de esta respuesta.`}
+                  </Row>
+                ) : null}
+              </>
             ) : (
               <>
                 <Row term="Enviada">

@@ -7,8 +7,10 @@
  * la Web sin tocar código. Solo cubre el Markdown que usa ese documento:
  * títulos, párrafos, listas, tablas, negrita, código y enlaces.
  *
- * Los enlaces a otros documentos del repositorio no existen en la Web, así
- * que se muestran como texto; solo los enlaces `https:` se conservan.
+ * Los enlaces `https:` se conservan. Los enlaces relativos apuntan a otros
+ * documentos del repositorio, que la Web no publica: con `documentsBaseUrl`
+ * se resuelven contra esa dirección y, sin ella, se muestran como texto.
+ * Cualquier otro esquema queda como texto.
  */
 
 export type NoticeInline =
@@ -29,8 +31,16 @@ export type NoticeBlock =
 
 const INLINE_PATTERN = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)\s]+\))/;
 
+/** Dirección segura de un enlace, o `null` si debe quedar como texto. */
+function resolveNoticeHref(href: string, documentsBaseUrl: string | undefined): string | null {
+  if (href.startsWith("https://")) return href;
+  const relative = !href.includes(":") && !href.startsWith("/") && !href.startsWith("#");
+  if (!relative || documentsBaseUrl === undefined) return null;
+  return new URL(href, documentsBaseUrl).href;
+}
+
 /** Convierte el texto de una línea en fragmentos con su formato. */
-export function parseNoticeInline(text: string): NoticeInline[] {
+export function parseNoticeInline(text: string, documentsBaseUrl?: string): NoticeInline[] {
   const parts: NoticeInline[] = [];
   for (const piece of text.split(INLINE_PATTERN)) {
     if (piece === "") continue;
@@ -45,10 +55,11 @@ export function parseNoticeInline(text: string): NoticeInline[] {
     const link = /^\[([^\]]+)\]\(([^)\s]+)\)$/.exec(piece);
     if (link !== null) {
       const [, label, href] = link;
+      const resolved = resolveNoticeHref(href, documentsBaseUrl);
       parts.push(
-        href.startsWith("https://")
-          ? { kind: "link", text: label, href }
-          : { kind: "text", text: label },
+        resolved === null
+          ? { kind: "text", text: label }
+          : { kind: "link", text: label, href: resolved },
       );
       continue;
     }
@@ -80,7 +91,8 @@ function tableCells(line: string): string[] {
 const TABLE_SEPARATOR = /^\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)*\|?$/;
 
 /** Convierte el documento en bloques, en el mismo orden. */
-export function parseNoticeDocument(markdown: string): NoticeBlock[] {
+export function parseNoticeDocument(markdown: string, documentsBaseUrl?: string): NoticeBlock[] {
+  const inline = (text: string) => parseNoticeInline(text, documentsBaseUrl);
   const lines = stripFrontmatter(markdown.replace(/\r\n/g, "\n").split("\n"));
   const blocks: NoticeBlock[] = [];
   let index = 0;
@@ -95,17 +107,17 @@ export function parseNoticeDocument(markdown: string): NoticeBlock[] {
     const heading = /^(#{1,3})\s+(.*)$/.exec(line);
     if (heading !== null) {
       const level = heading[1].length as 1 | 2 | 3;
-      blocks.push({ kind: "heading", level, content: parseNoticeInline(heading[2]) });
+      blocks.push({ kind: "heading", level, content: inline(heading[2]) });
       index += 1;
       continue;
     }
 
     if (line.startsWith("|") && TABLE_SEPARATOR.test(lines[index + 1]?.trim() ?? "")) {
-      const header = tableCells(line).map(parseNoticeInline);
+      const header = tableCells(line).map(inline);
       const rows: NoticeInline[][][] = [];
       index += 2;
       while (index < lines.length && lines[index].trim().startsWith("|")) {
-        rows.push(tableCells(lines[index]).map(parseNoticeInline));
+        rows.push(tableCells(lines[index]).map(inline));
         index += 1;
       }
       blocks.push({ kind: "table", header, rows });
@@ -115,7 +127,7 @@ export function parseNoticeDocument(markdown: string): NoticeBlock[] {
     if (line.startsWith("- ")) {
       const items: NoticeInline[][] = [];
       while (index < lines.length && lines[index].trim().startsWith("- ")) {
-        items.push(parseNoticeInline(lines[index].trim().slice(2)));
+        items.push(inline(lines[index].trim().slice(2)));
         index += 1;
       }
       blocks.push({ kind: "list", items });
@@ -130,7 +142,7 @@ export function parseNoticeDocument(markdown: string): NoticeBlock[] {
       paragraph.push(current);
       index += 1;
     }
-    blocks.push({ kind: "paragraph", content: parseNoticeInline(paragraph.join(" ")) });
+    blocks.push({ kind: "paragraph", content: inline(paragraph.join(" ")) });
   }
 
   return blocks;

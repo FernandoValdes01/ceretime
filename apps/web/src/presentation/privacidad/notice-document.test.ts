@@ -29,6 +29,15 @@ describe("parseNoticeInline", () => {
       { kind: "link", text: "Agencia", href: "https://example.cl" },
     ]);
   });
+
+  test("con dirección base, un enlace relativo lleva al documento publicado", () => {
+    const base = "https://example.cl/repo/docs/";
+    expect(parseNoticeInline("[ley](producto/ley-21719.md)", base)).toEqual([
+      { kind: "link", text: "ley", href: "https://example.cl/repo/docs/producto/ley-21719.md" },
+    ]);
+    expect(parseNoticeInline("[x](javascript:void)", base)).toEqual([{ kind: "text", text: "x" }]);
+    expect(parseNoticeInline("[raíz](/otro.md)", base)).toEqual([{ kind: "text", text: "raíz" }]);
+  });
 });
 
 describe("parseNoticeDocument", () => {

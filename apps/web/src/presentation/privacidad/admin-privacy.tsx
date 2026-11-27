@@ -331,13 +331,23 @@ function ActionPanel({ title, children }: { title: string; children: ReactNode }
   );
 }
 
+/** Error de un campo: se anuncia al aparecer y el campo lo referencia. */
 function FieldError({ id, message }: { id: string; message: string | null }) {
   if (message === null) return null;
   return (
-    <p id={id} className="m-0 font-semibold text-error">
+    <p id={id} role="alert" className="m-0 font-semibold text-error">
       {message}
     </p>
   );
+}
+
+/** Error de validación con el campo que lo causa, para asociarlo y llevarle el foco. */
+type FieldIssue<Field extends string> = { readonly field: Field; readonly message: string };
+
+/** `aria-describedby` con la pista del campo y su error, si lo hay. */
+function describedBy(...ids: ReadonlyArray<string | false>): string | undefined {
+  const present = ids.filter((id): id is string => id !== false);
+  return present.length === 0 ? undefined : present.join(" ");
 }
 
 function ResolveForm({
@@ -350,7 +360,11 @@ function ResolveForm({
   const resolve = useResolvePrivacyRequest();
   const [outcome, setOutcome] = useState<PrivacyResponseOutcome | null>(null);
   const [reasons, setReasons] = useState("");
-  const [fieldError, setFieldError] = useState<string | null>(null);
+  const [issue, setIssue] = useState<FieldIssue<"outcome" | "reasons"> | null>(null);
+  const firstOutcomeRef = useRef<HTMLInputElement>(null);
+  const reasonsRef = useRef<HTMLTextAreaElement>(null);
+  const outcomeError = issue?.field === "outcome" ? issue.message : null;
+  const reasonsError = issue?.field === "reasons" ? issue.message : null;
 
   return (
     <ActionPanel title="Resolver">
@@ -364,25 +378,31 @@ function ResolveForm({
         onSubmit={(event) => {
           event.preventDefault();
           if (outcome === null) {
-            setFieldError("Elige el resultado de la respuesta.");
+            setIssue({ field: "outcome", message: "Elige el resultado de la respuesta." });
+            firstOutcomeRef.current?.focus();
             return;
           }
           if (reasons.trim() === "") {
-            setFieldError("Escribe el fundamento de la respuesta.");
+            setIssue({ field: "reasons", message: "Escribe el fundamento de la respuesta." });
+            reasonsRef.current?.focus();
             return;
           }
-          setFieldError(null);
+          setIssue(null);
           void action.run(
             () => resolve({ requestId, outcome, reasons: reasons.trim() }),
             "La solicitud quedó resuelta. Registra el envío de la respuesta.",
           );
         }}
       >
-        <fieldset className="m-0 flex flex-col gap-2 border-0 p-0">
+        <fieldset
+          className="m-0 flex flex-col gap-2 border-0 p-0"
+          aria-describedby={describedBy(outcomeError !== null && "privacy-outcome-error")}
+        >
           <legend className="mb-1 p-0 text-base font-semibold text-on-surface">Resultado</legend>
-          {PRIVACY_RESPONSE_OUTCOME_VALUES.map((value) => (
+          {PRIVACY_RESPONSE_OUTCOME_VALUES.map((value, index) => (
             <label key={value} className="flex min-h-[44px] items-center gap-3">
               <input
+                ref={index === 0 ? firstOutcomeRef : undefined}
                 type="radio"
                 name="privacy-outcome"
                 value={value}
@@ -393,21 +413,24 @@ function ResolveForm({
               {PRIVACY_RESPONSE_OUTCOME_LABELS[value]}
             </label>
           ))}
+          <FieldError id="privacy-outcome-error" message={outcomeError} />
         </fieldset>
         <div className="flex flex-col gap-2">
           <label htmlFor="privacy-reasons" className="text-base font-semibold text-on-surface">
             Fundamento
           </label>
           <textarea
+            ref={reasonsRef}
             id="privacy-reasons"
-            className={`${fieldClass(false)} min-h-32`}
+            className={`${fieldClass(reasonsError !== null)} min-h-32`}
             maxLength={PRIVACY_REQUEST_REASON_MAX_LENGTH}
             value={reasons}
             onChange={(event) => setReasons(event.target.value)}
-            aria-describedby={fieldError === null ? undefined : "privacy-resolve-error"}
+            aria-invalid={reasonsError !== null}
+            aria-describedby={describedBy(reasonsError !== null && "privacy-reasons-error")}
           />
+          <FieldError id="privacy-reasons-error" message={reasonsError} />
         </div>
-        <FieldError id="privacy-resolve-error" message={fieldError} />
         <button
           type="submit"
           className={`${PRIMARY_BUTTON_CLASS} w-fit`}
@@ -431,7 +454,11 @@ function ExtendForm({
   const extend = useExtendPrivacyRequestDeadline();
   const [days, setDays] = useState("");
   const [reason, setReason] = useState("");
-  const [fieldError, setFieldError] = useState<string | null>(null);
+  const [issue, setIssue] = useState<FieldIssue<"days" | "reason"> | null>(null);
+  const daysRef = useRef<HTMLInputElement>(null);
+  const reasonRef = useRef<HTMLTextAreaElement>(null);
+  const daysError = issue?.field === "days" ? issue.message : null;
+  const reasonError = issue?.field === "reason" ? issue.message : null;
 
   return (
     <ActionPanel title="Prorrogar el plazo">
@@ -445,14 +472,19 @@ function ExtendForm({
           event.preventDefault();
           const value = Number(days);
           if (days.trim() === "" || !Number.isInteger(value)) {
-            setFieldError("Indica los días de prórroga como un número entero.");
+            setIssue({
+              field: "days",
+              message: "Indica los días de prórroga como un número entero.",
+            });
+            daysRef.current?.focus();
             return;
           }
           if (reason.trim() === "") {
-            setFieldError("Escribe el motivo de la prórroga.");
+            setIssue({ field: "reason", message: "Escribe el motivo de la prórroga." });
+            reasonRef.current?.focus();
             return;
           }
-          setFieldError(null);
+          setIssue(null);
           void action.run(
             () => extend({ requestId, days: value, reason: reason.trim() }),
             "Se aplicó la prórroga y se actualizó el plazo.",
@@ -464,30 +496,36 @@ function ExtendForm({
             Días de prórroga
           </label>
           <input
+            ref={daysRef}
             id="privacy-extension-days"
             type="number"
             inputMode="numeric"
             min={1}
             max={PRIVACY_RESPONSE_EXTENSION_CALENDAR_DAYS}
-            className={`${fieldClass(false)} max-w-40`}
+            className={`${fieldClass(daysError !== null)} max-w-40`}
             value={days}
             onChange={(event) => setDays(event.target.value)}
+            aria-invalid={daysError !== null}
+            aria-describedby={describedBy(daysError !== null && "privacy-extension-days-error")}
           />
+          <FieldError id="privacy-extension-days-error" message={daysError} />
         </div>
         <div className="flex flex-col gap-2">
           <label htmlFor="privacy-extension-reason" className="text-base font-semibold">
             Motivo
           </label>
           <textarea
+            ref={reasonRef}
             id="privacy-extension-reason"
-            className={`${fieldClass(false)} min-h-24`}
+            className={`${fieldClass(reasonError !== null)} min-h-24`}
             maxLength={PRIVACY_REQUEST_REASON_MAX_LENGTH}
             value={reason}
             onChange={(event) => setReason(event.target.value)}
-            aria-describedby={fieldError === null ? undefined : "privacy-extend-error"}
+            aria-invalid={reasonError !== null}
+            aria-describedby={describedBy(reasonError !== null && "privacy-extension-reason-error")}
           />
+          <FieldError id="privacy-extension-reason-error" message={reasonError} />
         </div>
-        <FieldError id="privacy-extend-error" message={fieldError} />
         <button
           type="submit"
           className={`${SECONDARY_BUTTON_CLASS} w-fit`}
@@ -511,7 +549,8 @@ function DeliveryForm({
   const record = useRecordPrivacyResponseDelivery();
   const [channel, setChannel] = useState<PrivacyResponseDeliveryChannel>("student_app");
   const [reference, setReference] = useState("");
-  const [fieldError, setFieldError] = useState<string | null>(null);
+  const [referenceError, setReferenceError] = useState<string | null>(null);
+  const referenceRef = useRef<HTMLInputElement>(null);
 
   return (
     <ActionPanel title="Registrar el envío de la respuesta">
@@ -525,10 +564,11 @@ function DeliveryForm({
         onSubmit={(event) => {
           event.preventDefault();
           if (reference.trim() === "") {
-            setFieldError("Escribe el folio o la referencia del envío.");
+            setReferenceError("Escribe el folio o la referencia del envío.");
+            referenceRef.current?.focus();
             return;
           }
-          setFieldError(null);
+          setReferenceError(null);
           void action.run(
             () => record({ requestId, channel, reference: reference.trim() }),
             "Quedó registrada la constancia de envío.",
@@ -562,18 +602,23 @@ function DeliveryForm({
             Folio o referencia
           </label>
           <input
+            ref={referenceRef}
             id="privacy-delivery-reference"
-            className={fieldClass(false)}
+            className={fieldClass(referenceError !== null)}
             maxLength={PRIVACY_CONTROL_REFERENCE_MAX_LENGTH}
             value={reference}
             onChange={(event) => setReference(event.target.value)}
-            aria-describedby="privacy-delivery-hint"
+            aria-invalid={referenceError !== null}
+            aria-describedby={describedBy(
+              "privacy-delivery-hint",
+              referenceError !== null && "privacy-delivery-error",
+            )}
           />
           <p id="privacy-delivery-hint" className="m-0 text-sm text-on-surface-variant">
             Un identificador opaco, sin datos personales ni contenido sensible.
           </p>
+          <FieldError id="privacy-delivery-error" message={referenceError} />
         </div>
-        <FieldError id="privacy-delivery-error" message={fieldError} />
         <button
           type="submit"
           className={`${PRIMARY_BUTTON_CLASS} w-fit`}

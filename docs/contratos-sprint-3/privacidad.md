@@ -138,7 +138,7 @@ function mensajeDeError(error: unknown): string {
 
 - Bloqueo temporal y oposición: siguiente tarea del módulo.
 - Exportación de datos y ejecución material de la supresión, la rectificación y la portabilidad: la autorización registrada (`effect: "authorized"`) es la que usan TI2-168 (rectificación), TI2-173 (exportación) y TI2-174 (eliminación o anonimización manual) para aplicar el efecto sobre datos ficticios. La ejecución sobre datos reales queda pendiente de decisión institucional.
-- Pantallas: TI2-171 publica el aviso en `/privacidad`, sin sesión; el Estudiante presenta y consulta en `/estudiante/privacidad`, y el Administrador revisa y resuelve en `/administrador/privacidad`.
+- Pantallas: TI2-171 publica el aviso en `/privacidad`, sin sesión; el Estudiante presenta y consulta en `/estudiante/privacidad`, y el Administrador revisa y resuelve en `/administrador/privacidad`. El formulario del Estudiante ofrece solo `SUBMITTABLE_PRIVACY_REQUEST_KINDS` y dice qué derechos del aviso todavía no se presentan. Una respuesta que rechaza informa al titular que puede reclamar ante la Agencia desde que la ve; la fecha límite aparece con la constancia de envío, y «Pendiente de registrar» solo se muestra en la vista `review`. Los enlaces del aviso a otros documentos llevan a la carpeta `docs/` del repositorio público.
 - Correo, push y otros canales de notificación: TI2-159 y TI2-160.
 - Registro en la bitácora de auditoría de cada lectura o escritura: TI2-176.
 
