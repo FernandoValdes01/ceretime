@@ -1965,6 +1965,7 @@ async function bookTi98(
       auth: authorizationReader(ctx),
       audit: appointmentAuditRecorder(ctx),
       notifications: notificationEventRecorder(ctx),
+      calendarSync: { scheduleSync: async () => undefined },
       availability: availabilityReader(ctx),
       needs: {
         findAccompanimentNeeds: async (accompanimentId) =>
@@ -2392,6 +2393,7 @@ async function cancelTi109(
       auth: authorizationReader(ctx),
       audit: appointmentAuditRecorder(ctx),
       notifications: notificationEventRecorder(ctx),
+      calendarSync: { scheduleSync: async () => undefined },
       appointments: appointmentChangeReader(ctx),
       persister: appointmentTransitionPersister(ctx, input.transitions),
       now: () => TI109_NOW,
@@ -2421,6 +2423,7 @@ async function rescheduleTi109(
       auth: authorizationReader(ctx),
       audit: appointmentAuditRecorder(ctx),
       notifications: notificationEventRecorder(ctx),
+      calendarSync: { scheduleSync: async () => undefined },
       appointments: appointmentChangeReader(ctx),
       persister: appointmentTransitionPersister(ctx, input.transitions),
       occupier: {

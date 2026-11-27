@@ -37,6 +37,7 @@ import {
 import { availabilityReader } from "../infrastructure/availability/repository";
 import { notificationEventRecorder } from "../infrastructure/notifications/repository";
 import { appointmentAuditRecorder } from "../infrastructure/audit/repository";
+import { calendarSyncScheduler } from "../infrastructure/calendar/sync_scheduler";
 import { compatibilitySpaceSource } from "../infrastructure/spaces/repository";
 import { accompanimentStatusUnion, assignmentRoleUnion } from "../infrastructure/validators";
 import { unwrapApiResult } from "./session";
@@ -408,6 +409,7 @@ export const closeAccompaniment = mutation({
           persister: appointmentTransitionRepository(ctx).persister,
           audit: appointmentAuditRecorder(ctx),
           notifications: notificationEventRecorder(ctx),
+          calendarSync: calendarSyncScheduler(ctx),
         },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,

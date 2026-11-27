@@ -20,6 +20,7 @@ import type {
   StoredAvailabilityException,
 } from "../availability/ports";
 import type { NotificationEventRecorder } from "../notifications/ports";
+import type { CalendarSyncScheduler } from "../calendar/sync";
 import type { AppointmentAuditRecorder } from "./audit";
 import type { AppointmentOccupier, OccupySlotInput, OccupySlotResult } from "./occupancy";
 import { bookAppointment, type BookAppointmentDeps, type BookAppointmentInput } from "./booking";
@@ -240,8 +241,19 @@ function bookingDeps(
     occupier: fakeOccupier(),
     audit: fakeAudit(),
     notifications: fakeNotifications(),
+    calendarSync: fakeCalendarSync(),
     now: () => BOOKED_AT,
     ...overrides,
+  };
+}
+
+function fakeCalendarSync(): CalendarSyncScheduler & { readonly scheduled: string[] } {
+  const scheduled: string[] = [];
+  return {
+    scheduled,
+    scheduleSync: async (appointmentId) => {
+      scheduled.push(appointmentId);
+    },
   };
 }
 

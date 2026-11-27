@@ -51,11 +51,14 @@ import {
   googleCalendarGateway,
 } from "../infrastructure/calendar/google_calendar";
 import { calendarLinkReader } from "../infrastructure/calendar/repository";
+import { calendarSyncScheduler } from "../infrastructure/calendar/sync_scheduler";
 import { notificationEventRecorder } from "../infrastructure/notifications/repository";
 import { compatibilitySpaceSource } from "../infrastructure/spaces/repository";
 import {
   appointmentAttendanceOutcomeUnion,
   appointmentStatusUnion,
+  calendarSyncErrorCodeUnion,
+  calendarSyncStatusUnion,
   justificationDecisionUnion,
   justificationReviewUnion,
   modalityUnion,
@@ -134,6 +137,7 @@ export const bookAppointment = mutation({
           occupier: appointmentOccupier(ctx),
           audit: appointmentAuditRecorder(ctx),
           notifications: notificationEventRecorder(ctx),
+          calendarSync: calendarSyncScheduler(ctx),
         },
         { ...slot, timeZone: AGENDA_TIME_ZONE, tokenIdentifier: identity?.tokenIdentifier ?? null },
       ),
@@ -163,6 +167,7 @@ export const cancelAppointment = mutation({
           persister: appointmentTransitionRepository(ctx).persister,
           audit: appointmentAuditRecorder(ctx),
           notifications: notificationEventRecorder(ctx),
+          calendarSync: calendarSyncScheduler(ctx),
         },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,
@@ -201,6 +206,7 @@ export const rescheduleAppointment = mutation({
           persister: appointmentTransitionRepository(ctx).persister,
           audit: appointmentAuditRecorder(ctx),
           notifications: notificationEventRecorder(ctx),
+          calendarSync: calendarSyncScheduler(ctx),
           occupier: appointmentOccupier(ctx),
           availability: availabilityReader(ctx),
           needs: accompanimentNeedsReader(ctx),
@@ -488,6 +494,8 @@ const appointmentCalendarSummaryValidator = v.object({
   modality: modalityUnion,
   calendarAdded: v.boolean(),
   calendarNeedsUpdate: v.boolean(),
+  calendarSyncStatus: v.optional(calendarSyncStatusUnion),
+  calendarSyncErrorCode: v.optional(calendarSyncErrorCodeUnion),
 });
 
 /**
