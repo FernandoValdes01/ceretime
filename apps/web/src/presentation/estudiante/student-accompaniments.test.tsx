@@ -171,6 +171,10 @@ function detallePropio(
 
 const INICIO_ATENCION = Date.UTC(2026, 2, 10, 16, 0, 0);
 const FIN_ATENCION = Date.UTC(2026, 2, 10, 17, 0, 0);
+// La sincronización solo cuenta para atenciones futuras: una fecha lejana no
+// depende del día en que corran las pruebas.
+const INICIO_FUTURO = Date.UTC(2099, 2, 10, 16, 0, 0);
+const FIN_FUTURO = Date.UTC(2099, 2, 10, 17, 0, 0);
 
 const ARCHIVO_ICS: AppointmentCalendarFile = {
   fileName: "atencion-programada.ics",
@@ -579,6 +583,8 @@ describe("calendario por atención (TI2-122)", () => {
       atencion({ appointmentId: "apt-2", calendarSyncStatus: "synced" }),
       atencion({
         appointmentId: "apt-3",
+        startAt: INICIO_FUTURO,
+        endAt: FIN_FUTURO,
         calendarSyncStatus: "error",
         calendarSyncErrorCode: "unavailable",
       }),
@@ -599,13 +605,53 @@ describe("calendario por atención (TI2-122)", () => {
     mockedDetail = detallePropio();
     mockedConnection = { connected: true };
     mockedAppointments = [
-      atencion({ calendarSyncStatus: "error", calendarSyncErrorCode: "not_connected" }),
+      atencion({
+        startAt: INICIO_FUTURO,
+        endAt: FIN_FUTURO,
+        calendarSyncStatus: "error",
+        calendarSyncErrorCode: "not_connected",
+      }),
     ];
     renderAt("/estudiante/acompanamientos/acc-1");
 
     expect(await screen.findByText("Google Calendar perdió el acceso.")).toBeDefined();
     expect(screen.getByRole("button", { name: "Volver a conectar Google Calendar" })).toBeDefined();
     expect(screen.getByRole("button", { name: /descargar el archivo .ics/i })).toBeDefined();
+  });
+
+  test("un error de una atención pasada o cancelada no pide volver a vincular (TI2-172)", async () => {
+    mockedDetail = detallePropio();
+    mockedConnection = { connected: true };
+    mockedAppointments = [
+      atencion({
+        appointmentId: "apt-1",
+        status: "completed",
+        calendarSyncStatus: "error",
+        calendarSyncErrorCode: "not_connected",
+      }),
+      atencion({
+        appointmentId: "apt-2",
+        status: "cancelled_by_cereti",
+        startAt: INICIO_FUTURO,
+        endAt: FIN_FUTURO,
+        calendarSyncStatus: "error",
+        calendarSyncErrorCode: "not_connected",
+      }),
+      atencion({
+        appointmentId: "apt-3",
+        startAt: INICIO_FUTURO,
+        endAt: FIN_FUTURO,
+        calendarSyncStatus: "synced",
+      }),
+    ];
+    renderAt("/estudiante/acompanamientos/acc-1");
+
+    expect(await screen.findByText("Google Calendar está conectado.")).toBeDefined();
+    expect(screen.queryByText("Google Calendar perdió el acceso.")).toBeNull();
+    expect(screen.queryByText(/perdió el permiso/)).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /agregar a google calendar la atención/i }),
+    ).toBeDefined();
   });
 
   test("un consentimiento fallido no bloquea el .ics", async () => {

@@ -51,7 +51,7 @@ TI2-162: `convex/application/calendar/sync.test.ts` cubre con dobles crear al re
 
 ## Web (TI2-172)
 
-La bandeja de avisos del Estudiante y del Profesional vincula con `linkSocial` y, al volver con `?calendar=connected`, llama a `confirmCalendarLink`; el detalle del acompañamiento del Estudiante hace lo mismo al volver de su propio botón. Desconectar pide confirmación, llama a `disconnectCalendarLink` y, con `staleEventsMayRemain`, avisa que los eventos anteriores pueden quedar sin actualizar. Cada atención del detalle del acompañamiento muestra `calendarSyncStatus`: `pending` y `synced` como texto, `error` sin dar la reserva por fallida, y `error/not_connected` pide volver a vincular. El `.ics` por atención se mantiene.
+La bandeja de avisos del Estudiante y del Profesional vincula con `linkSocial` y, al volver con `?calendar=connected`, llama a `confirmCalendarLink` y quita el marcador de la URL, para que recargar o volver con el historial no confirme de nuevo; el detalle del acompañamiento del Estudiante hace lo mismo al volver de su propio botón. Desconectar pide confirmación, llama a `disconnectCalendarLink` y, con `staleEventsMayRemain`, avisa que los eventos anteriores pueden quedar sin actualizar. Cada atención del detalle del acompañamiento muestra `calendarSyncStatus`: `pending` y `synced` como texto, `error` sin dar la reserva por fallida, y `error/not_connected` pide volver a vincular solo en atenciones vigentes y futuras, que son las que la confirmación del vínculo vuelve a sincronizar; el error de una atención cancelada o pasada no se muestra ni pide volver a vincular. El `.ics` por atención se mantiene.
 
 ## Pendientes
 

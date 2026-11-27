@@ -88,8 +88,20 @@ function ConnectionCard({
   );
 }
 
+/**
+ * Atención que todavía se sincroniza: vigente y futura. Al volver a vincular,
+ * el Backend solo recorre estas, así que un error de una cancelada o pasada
+ * no se corrige y no debe pedir volver a conectar.
+ */
+function isCalendarSyncCurrent(appointment: OwnAppointmentSummary, now: number): boolean {
+  return isCalendarActionableStatus(appointment.status) && appointment.startAt > now;
+}
+
 /** Estado de la sincronización automática de una atención, en texto. */
-function calendarSyncText(appointment: OwnAppointmentSummary): string | null {
+function calendarSyncText(appointment: OwnAppointmentSummary, now: number): string | null {
+  if (appointment.calendarSyncStatus === "error" && !isCalendarSyncCurrent(appointment, now)) {
+    return null;
+  }
   switch (appointment.calendarSyncStatus) {
     case "pending":
       return "Sincronizando con Google Calendar";
@@ -132,10 +144,14 @@ export function StudentAppointmentsSection({
     callbackDismissed || returnNotice === null
       ? null
       : { kind: returnNotice.tone === "alert" ? "error" : "success", text: returnNotice.text };
-  // La sincronización automática también detecta que Google perdió el permiso.
+  // La sincronización automática también detecta que Google perdió el permiso,
+  // aunque el vínculo guardado siga conectado (Google lo revocó por fuera).
+  // Solo cuentan las atenciones que volver a vincular vuelve a sincronizar.
+  const [now] = useState(() => Date.now());
   const syncLostAccess =
     appointments?.some(
       (appointment) =>
+        isCalendarSyncCurrent(appointment, now) &&
         appointment.calendarSyncStatus === "error" &&
         appointment.calendarSyncErrorCode === "not_connected",
     ) === true;
@@ -283,6 +299,7 @@ export function StudentAppointmentsSection({
               appointment={appointment}
               connected={connection?.connected === true && !needsReconnect && !syncLostAccess}
               readOnly={readOnly}
+              syncText={readOnly ? null : calendarSyncText(appointment, now)}
               pending={pendingId === appointment.appointmentId}
               downloading={downloadingId === appointment.appointmentId}
               notice={notices[appointment.appointmentId]}
@@ -309,6 +326,7 @@ function AppointmentItem({
   appointment,
   connected,
   readOnly,
+  syncText,
   pending,
   downloading,
   notice,
@@ -319,6 +337,7 @@ function AppointmentItem({
   appointment: OwnAppointmentSummary;
   connected: boolean;
   readOnly: boolean;
+  syncText: string | null;
   pending: boolean;
   downloading: boolean;
   notice?: Notice;
@@ -328,7 +347,6 @@ function AppointmentItem({
 }) {
   const actionable = isCalendarActionableStatus(appointment.status);
   const dateLabel = formatAppointmentDateTime(appointment.startAt, appointment.endAt);
-  const syncText = readOnly ? null : calendarSyncText(appointment);
 
   return (
     <li className="rounded-lg border border-border-low bg-surface-container-lowest p-6">

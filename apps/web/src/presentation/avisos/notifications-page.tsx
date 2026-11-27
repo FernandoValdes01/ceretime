@@ -127,7 +127,8 @@ function NotificationList({
     setNotice(null);
     try {
       const opened = await open(notification.id);
-      if (opened.readStatus === "pending") await markRead(opened.id);
+      // Si marcarlo falla, el aviso igual se abre y queda pendiente en la bandeja.
+      if (opened.readStatus === "pending") await markRead(opened.id).catch(() => undefined);
       goTo(opened);
     } catch (error) {
       setNotice(

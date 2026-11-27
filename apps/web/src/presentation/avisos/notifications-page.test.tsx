@@ -94,6 +94,7 @@ function aviso(overrides: Partial<Record<string, unknown>> = {}): OwnNotificatio
 async function renderPage(
   audience: "student" | "professional" = "student",
   calendarStatus?: "connected" | "error",
+  initialPath = "/",
 ) {
   const rootRoute = createRootRoute();
   const page = createRoute({
@@ -115,7 +116,7 @@ async function renderPage(
   );
   const router = createRouter({
     routeTree: rootRoute.addChildren([page, ...targets]),
-    history: createMemoryHistory({ initialEntries: ["/"] }),
+    history: createMemoryHistory({ initialEntries: [initialPath] }),
   });
   render(<RouterProvider router={router} />);
   await router.load();
@@ -189,6 +190,19 @@ describe("bandeja de avisos", () => {
     await waitFor(() => expect(router.state.location.pathname).toBe("/profesional/agenda/apt-1"));
   });
 
+  test("si marcarlo falla, el aviso igual se abre y queda pendiente", async () => {
+    store.page = { results: [aviso()], status: "Exhausted" };
+    store.open.mockResolvedValue(aviso());
+    store.markRead.mockRejectedValue(new Error("fallo temporal"));
+    const router = await renderPage("student");
+
+    fireEvent.click(screen.getByRole("button", { name: /Ver el detalle/ }));
+    await waitFor(() =>
+      expect(router.state.location.pathname).toBe("/estudiante/atenciones/apt-1"),
+    );
+    expect(screen.queryByText(/No pudimos abrir el aviso/)).toBeNull();
+  });
+
   test("un aviso de solicitud del Estudiante lleva a su solicitud", async () => {
     const solicitud = aviso({ kind: "request_accepted", requestId: "req-9", readStatus: "read" });
     delete (solicitud as Record<string, unknown>).appointmentId;
@@ -255,6 +269,7 @@ describe("avisos push", () => {
 
   test("desactivar borra la suscripción de este navegador", async () => {
     store.browser.endpoint = "https://push.example/1";
+    store.push = { enabled: true, subscriptionCount: 1, vapidPublicKey: "clave-publica-ficticia" };
     store.browser.unsubscribe.mockResolvedValue("https://push.example/1");
     store.deactivate.mockResolvedValue({ deleted: true });
     await renderPage();
@@ -264,6 +279,17 @@ describe("avisos push", () => {
     await waitFor(() =>
       expect(store.deactivate).toHaveBeenCalledWith({ endpoint: "https://push.example/1" }),
     );
+  });
+
+  test("con el navegador suscrito pero sin registro en el Backend, ofrece activar", async () => {
+    store.browser.endpoint = "https://push.example/1";
+    await renderPage();
+    expect(
+      await screen.findByRole("button", { name: "Activar avisos en este navegador" }),
+    ).toBeDefined();
+    expect(
+      screen.queryByRole("button", { name: "Desactivar avisos en este navegador" }),
+    ).toBeNull();
   });
 
   test("sin soporte o sin clave del servidor, la bandeja sigue disponible", async () => {
@@ -295,6 +321,16 @@ describe("Google Calendar", () => {
     store.confirm.mockResolvedValue({ connected: true, linkedAt: 1, status: "linked" });
     await renderPage("student", "connected");
     expect(await screen.findByText(/Google Calendar quedó conectado/)).toBeDefined();
+    expect(store.confirm).toHaveBeenCalledTimes(1);
+  });
+
+  test("al volver de Google quita el marcador de la URL para no confirmar de nuevo", async () => {
+    store.confirm.mockResolvedValue({ connected: true, linkedAt: 1, status: "linked" });
+    const router = await renderPage("student", "connected", "/?calendar=connected");
+    expect(await screen.findByText(/Google Calendar quedó conectado/)).toBeDefined();
+    await waitFor(() =>
+      expect((router.state.location.search as Record<string, unknown>).calendar).toBeUndefined(),
+    );
     expect(store.confirm).toHaveBeenCalledTimes(1);
   });
 

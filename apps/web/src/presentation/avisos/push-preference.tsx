@@ -99,7 +99,9 @@ export function PushPreference() {
     }
   }
 
-  const activeHere = typeof browserEndpoint === "string";
+  // Activos solo si el navegador está suscrito y el Backend tiene la suscripción:
+  // si registrarla falló, «Activar» reutiliza la del navegador y la vuelve a guardar.
+  const activeHere = typeof browserEndpoint === "string" && status?.enabled === true;
 
   return (
     <section

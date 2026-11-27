@@ -1,3 +1,4 @@
+import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import {
   getCalendarLinkRequest,
@@ -22,18 +23,27 @@ export const CALENDAR_LINK_FAILED: CalendarLinkNotice = {
 /**
  * Confirma el vínculo una sola vez al volver de Google con `?calendar=`. Sin
  * el permiso de eventos, el Backend responde `not_connected` y no es un error.
- * Un retorno con error no llama al Backend.
+ * Un retorno con error no llama al Backend. El marcador se quita de la URL al
+ * leerlo, para que recargar o volver con el historial no confirme de nuevo.
  */
 export function useConfirmCalendarLinkOnReturn(
   callbackStatus: CalendarCallbackStatus | undefined,
 ): CalendarLinkNotice | null {
   const confirm = useConfirmCalendarLink();
+  const navigate = useNavigate();
+  const [returnStatus] = useState(callbackStatus);
   const done = useRef(false);
   const [notice, setNotice] = useState<CalendarLinkNotice | null>(null);
 
   useEffect(() => {
-    if (callbackStatus !== "connected" || done.current) return;
+    if (returnStatus === undefined || done.current) return;
     done.current = true;
+    void navigate({
+      to: ".",
+      search: (previous: Record<string, unknown>) => ({ ...previous, calendar: undefined }),
+      replace: true,
+    });
+    if (returnStatus !== "connected") return;
     confirm()
       .then((result) =>
         setNotice(
@@ -49,9 +59,9 @@ export function useConfirmCalendarLinkOnReturn(
         ),
       )
       .catch(() => setNotice(CALENDAR_LINK_FAILED));
-  }, [callbackStatus, confirm]);
+  }, [returnStatus, confirm, navigate]);
 
-  return callbackStatus === "error" ? CALENDAR_LINK_FAILED : notice;
+  return returnStatus === "error" ? CALENDAR_LINK_FAILED : notice;
 }
 
 /** Inicia la autorización de Google para volver a la misma pantalla. */
