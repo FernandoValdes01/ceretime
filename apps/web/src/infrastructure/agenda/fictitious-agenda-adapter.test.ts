@@ -369,14 +369,19 @@ describe("agenda ficticia del profesional (TI2-115)", () => {
     );
   });
 
-  test("cancelaci\u00f3n posterior al inicio se rechaza por ocurrencia", async () => {
+  test("cancelación por CERETI exige motivo y ocurrencia posterior al inicio", async () => {
     const adapter = createFictitiousAgendaAdapter();
 
+    const sinMotivo = await adapter.changeAppointmentStatus({
+      appointmentId: "aten-ficticio-1",
+      to: "cancelled_by_cereti",
+    });
     const antesDeHora = await adapter.changeAppointmentStatus({
       appointmentId: "aten-ficticio-1",
       to: "completed",
     });
 
+    expect(sinMotivo).toMatchObject({ status: "rejected", cause: "reason_required" });
     expect(antesDeHora).toMatchObject({ status: "rejected", cause: "occurred_before_start" });
   });
 

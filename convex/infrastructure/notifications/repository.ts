@@ -345,30 +345,6 @@ export async function paginateNotificationEventsForRecipientByReadStatus(
 }
 
 /** Página de eventos de la atención, en orden de ocurrencia. */
-/**
- * Verdadero cuando existe un aviso persistido de cambio de sala o de condiciones
- * dirigido al Estudiante para la atención indicada (TI2-155).
- */
-export async function hasStudentCancellationNotice(
-  ctx: DbReader,
-  appointmentId: string,
-  studentId: string,
-): Promise<boolean> {
-  const normalizedAppointment = ctx.db.normalizeId("appointments", appointmentId);
-  const normalizedStudent = ctx.db.normalizeId("users", studentId);
-  if (normalizedAppointment === null || normalizedStudent === null) return false;
-  const rows = await ctx.db
-    .query("notificationEvents")
-    .withIndex("by_appointmentId_and_occurredAt", (q) =>
-      q.eq("appointmentId", normalizedAppointment),
-    )
-    .collect();
-  return rows.some(
-    (row) =>
-      row.recipientId === normalizedStudent &&
-      (row.kind === "appointment_space_changed" || row.kind === "appointment_availability_changed"),
-  );
-}
 export async function paginateNotificationEventsForAppointment(
   ctx: DbReader,
   appointmentId: Id<"appointments">,
@@ -1075,15 +1051,6 @@ export function pushSubscriptionStore(ctx: MutationCtx): PushSubscriptionStore {
       const normalized = ctx.db.normalizeId("users", userId);
       if (normalized === null) return false;
       return await deletePushSubscription(ctx, normalized, endpoint);
-    },
-  };
-}
-
-/** Lector de la excepción de cancelación (TI2-155): cumple por forma. */
-export function appointmentCancellationNoticeReader(ctx: DbReader) {
-  return {
-    hasException: async (appointmentId: string, studentId: string): Promise<boolean> => {
-      return await hasStudentCancellationNotice(ctx, appointmentId, studentId);
     },
   };
 }

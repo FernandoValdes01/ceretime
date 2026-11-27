@@ -177,9 +177,9 @@ const noCompatibility: CompatibilitySpaceSource = {
 /** Lunes 2026-10-26 12:00 UTC: instante fijo de las pruebas. */
 const NOW = Date.UTC(2026, 9, 26, 12);
 
-/** Inicio y fin vigentes antes del cambio, a las 09:00 UTC del mismo día. */
+/** Inicio y fin vigentes antes del cambio, a las 15:00 UTC del mismo día. */
 const CURRENT_START = Date.UTC(2026, 9, 26, 15);
-const CURRENT_END = Date.UTC(2026, 9, 26, 10);
+const CURRENT_END = Date.UTC(2026, 9, 26, 16);
 
 /** Primer destino: mismo día a las 13:00 UTC, después del instante fijo. */
 const FIRST_TARGET_START = Date.UTC(2026, 9, 26, 13);
@@ -201,9 +201,6 @@ interface ChangeWorld {
   readonly audits: AppointmentAuditEvent[];
   readonly notifications: NotificationEventRecorder;
   readonly notices: NotificationEvent[];
-  readonly cancellationNoticeReader: {
-    hasException(appointmentId: string, studentId: string): Promise<boolean>;
-  };
   readonly transitions: Array<{
     readonly appointmentId: string;
     readonly fields: Parameters<AppointmentTransitionPersister["persistAppointmentTransition"]>[1];
@@ -214,11 +211,7 @@ interface ChangeWorld {
  * Fila mutable con lector y persister conectados: el persister guarda el
  * estado, el motivo y la fecha original, como el adaptador de TI2-107.
  */
-function changeWorld(
-  overrides: Partial<WorldRow> & { hasCancellationException?: boolean } = {},
-): ChangeWorld {
-  const { hasCancellationException: exceptionFlag, ...rowOverrides } = overrides;
-  let hasCancellationException = exceptionFlag === true;
+function changeWorld(overrides: Partial<WorldRow> = {}): ChangeWorld {
   const row: WorldRow = {
     id: "appointment-1",
     accompanimentId: "acc-1",
@@ -227,7 +220,7 @@ function changeWorld(
     status: "scheduled",
     startAt: CURRENT_START,
     endAt: CURRENT_END,
-    ...rowOverrides,
+    ...overrides,
   };
   const transitions: ChangeWorld["transitions"] = [];
   const reader: AppointmentChangeReader = {
@@ -244,6 +237,8 @@ function changeWorld(
         row.justificationSubmittedAt = fields.justificationSubmittedAt;
       if (fields.justificationReview !== undefined)
         row.justificationReview = fields.justificationReview;
+      if (fields.justificationReviewExplanation !== undefined)
+        row.justificationReviewExplanation = fields.justificationReviewExplanation;
       if (fields.supportingDocumentReceived !== undefined)
         row.supportingDocumentReceived = fields.supportingDocumentReceived;
     },
@@ -260,20 +255,7 @@ function changeWorld(
       notices.push(...events);
     },
   };
-  const cancellationNoticeReader = {
-    hasException: async () => hasCancellationException,
-  };
-  return {
-    row,
-    reader,
-    persister,
-    audit,
-    audits,
-    notifications,
-    notices,
-    transitions,
-    cancellationNoticeReader,
-  };
+  return { row, reader, persister, audit, audits, notifications, notices, transitions };
 }
 
 const OK_OCCUPATION: OccupySlotResult = {
@@ -333,7 +315,6 @@ function cancelDeps(auth: AuthorizationReader, world: ChangeWorld): CancelAppoin
     audit: world.audit,
     notifications: world.notifications,
     calendarSync: fakeCalendarSync(),
-    notices: world.cancellationNoticeReader,
     now: () => NOW,
   };
 }
@@ -435,8 +416,8 @@ describe("cancelación de una atención (TI2-109)", () => {
     });
   });
 
-  test("el Estudiante cancela sin motivo si existe un aviso persistido de cambio", async () => {
-    const world = changeWorld({ hasCancellationException: true });
+  test("el Estudiante puede cancelar sin motivo y no se guarda un motivo vacío", async () => {
+    const world = changeWorld();
 
     const withoutReason = await cancelAppointment(cancelDeps(authorizedAuth(), world), {
       tokenIdentifier: "token-student",
@@ -447,21 +428,6 @@ describe("cancelación de una atención (TI2-109)", () => {
     expect(world.transitions).toEqual([
       { appointmentId: "appointment-1", fields: { status: "cancelled_by_student" } },
     ]);
-  });
-
-  test("el Estudiante que cancela sin aviso persistido requiere motivo", async () => {
-    const world = changeWorld();
-
-    const withoutReason = await cancelAppointment(cancelDeps(authorizedAuth(), world), {
-      tokenIdentifier: "token-student",
-      appointmentId: "appointment-1",
-    });
-
-    expect(withoutReason).toEqual({
-      status: "error",
-      error: { code: "conflict", message: "La solicitud entra en conflicto con el estado actual." },
-    });
-    expect(world.transitions).toHaveLength(0);
   });
 
   test("la cancelación conserva la fecha original de un reagendamiento previo", async () => {
@@ -482,7 +448,7 @@ describe("cancelación de una atención (TI2-109)", () => {
     expect(world.row.originalStartAt).toBe(originalStartAt);
   });
 
-  test("el Profesional de la atención cancela como CERETI con o sin motivo", async () => {
+  test("el Profesional de la atención cancela como CERETI y el motivo es obligatorio", async () => {
     const withReason = changeWorld();
     const result = await cancelAppointment(cancelDeps(authorizedAuth(), withReason), {
       tokenIdentifier: "token-pro",
@@ -495,15 +461,17 @@ describe("cancelación de una atención (TI2-109)", () => {
       cancelReason: "Profesional sin disponibilidad",
     });
 
-    const withoutReason = changeWorld();
-    const result2 = await cancelAppointment(cancelDeps(authorizedAuth(), withoutReason), {
-      tokenIdentifier: "token-pro",
-      appointmentId: "appointment-1",
-    });
-    expect(result2).toEqual(OK_APPOINTMENT);
-    expect(withoutReason.transitions[0]?.fields).toEqual({
-      status: "cancelled_by_cereti",
-    });
+    for (const reason of [undefined, "", "   "]) {
+      const world = changeWorld();
+      const rejected = await cancelAppointment(cancelDeps(authorizedAuth(), world), {
+        tokenIdentifier: "token-pro",
+        appointmentId: "appointment-1",
+        ...(reason === undefined ? {} : { reason }),
+      });
+      expect(rejected).toEqual(CONFLICT);
+      expect(world.transitions).toHaveLength(0);
+      expect(world.row.status).toBe("scheduled");
+    }
   });
 
   describe("Justificación de inasistencia (TI2-119)", () => {
@@ -640,13 +608,64 @@ describe("cancelación de una atención (TI2-109)", () => {
           tokenIdentifier: "token-pro",
           appointmentId: "appointment-1",
           review: "rejected",
-          explanation: "Explicacion del rechazo",
+          explanation: "Explicación del rechazo",
         },
       );
 
       expect(result).toEqual(OK_APPOINTMENT);
       expect(world.row.status).toBe("no_show_unjustified");
       expect(world.row.justificationReview).toBe("rejected");
+    });
+
+    test("rechazar una entrega sin explicación responde conflict sin escribir", async () => {
+      for (const explanation of [undefined, "   "]) {
+        const world = changeWorld({
+          status: "no_show",
+          startAt: CURRENT_START,
+          justificationExplanation: "Explicación previa",
+          justificationSubmittedAt: CURRENT_START + ONE_DAY,
+          justificationReview: "pending",
+        });
+
+        const result = await reviewAppointmentJustification(
+          justificationDeps(world, CURRENT_START + 2 * ONE_DAY),
+          {
+            tokenIdentifier: "token-pro",
+            appointmentId: "appointment-1",
+            review: "rejected",
+            ...(explanation === undefined ? {} : { explanation }),
+          },
+        );
+
+        expect(result).toEqual(CONFLICT);
+        expect(world.transitions).toHaveLength(0);
+        expect(world.row.status).toBe("no_show");
+        expect(world.row.justificationReview).toBe("pending");
+        expect(world.row.justificationReviewExplanation).toBeUndefined();
+      }
+    });
+
+    test("la explicación del rechazo se guarda recortada", async () => {
+      const world = changeWorld({
+        status: "no_show",
+        startAt: CURRENT_START,
+        justificationExplanation: "Explicación previa",
+        justificationSubmittedAt: CURRENT_START + ONE_DAY,
+        justificationReview: "pending",
+      });
+
+      const result = await reviewAppointmentJustification(
+        justificationDeps(world, CURRENT_START + 2 * ONE_DAY),
+        {
+          tokenIdentifier: "token-pro",
+          appointmentId: "appointment-1",
+          review: "rejected",
+          explanation: "  Explicación recortada  ",
+        },
+      );
+
+      expect(result).toEqual(OK_APPOINTMENT);
+      expect(world.row.justificationReviewExplanation).toBe("Explicación recortada");
     });
 
     test("no se acepta una justificación inexistente ni se cierra dentro del plazo", async () => {
@@ -1463,7 +1482,7 @@ describe("auditoría de cambios de agenda (TI2-128)", () => {
     const withoutReason = changeWorld();
     expect(
       await cancelAppointment(cancelDeps(authorizedAuth(), withoutReason), {
-        tokenIdentifier: "token-student",
+        tokenIdentifier: "token-pro",
         appointmentId: "appointment-1",
       }),
     ).toEqual(CONFLICT);
@@ -1501,11 +1520,7 @@ describe("auditoría de cambios de agenda (TI2-128)", () => {
     };
 
     await expect(
-      cancelAppointment(deps, {
-        tokenIdentifier: "token-student",
-        appointmentId: "appointment-1",
-        reason: "Motivo",
-      }),
+      cancelAppointment(deps, { tokenIdentifier: "token-student", appointmentId: "appointment-1" }),
     ).rejects.toThrow("Referencia inválida");
   });
 });

@@ -52,10 +52,7 @@ import {
 } from "../infrastructure/calendar/google_calendar";
 import { calendarLinkReader } from "../infrastructure/calendar/repository";
 import { calendarSyncScheduler } from "../infrastructure/calendar/sync_scheduler";
-import {
-  appointmentCancellationNoticeReader,
-  notificationEventRecorder,
-} from "../infrastructure/notifications/repository";
+import { notificationEventRecorder } from "../infrastructure/notifications/repository";
 import { compatibilitySpaceSource } from "../infrastructure/spaces/repository";
 import {
   appointmentAttendanceOutcomeUnion,
@@ -171,7 +168,6 @@ export const cancelAppointment = mutation({
           audit: appointmentAuditRecorder(ctx),
           notifications: notificationEventRecorder(ctx),
           calendarSync: calendarSyncScheduler(ctx),
-          notices: appointmentCancellationNoticeReader(ctx),
         },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,
@@ -367,6 +363,7 @@ const appointmentProjectionValidator = v.union(
     justificationExplanation: v.optional(v.string()),
     justificationSubmittedAt: v.optional(v.number()),
     justificationReview: v.optional(justificationReviewUnion),
+    justificationReviewExplanation: v.optional(v.string()),
     supportingDocumentReceived: v.optional(v.boolean()),
     status: appointmentStatusUnion,
     version,

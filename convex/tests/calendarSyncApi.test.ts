@@ -146,7 +146,6 @@ test("TI2-162 API: reservar deja pendiente sin deshacer ante fallo externo", asy
   // Cancelar vuelve a dejar pendiente para que el despacho elimine el evento.
   await asStudent.mutation(api.presentation.appointments.cancelAppointment, {
     appointmentId: booked.appointmentId,
-    reason: "Motivo ficticio",
     version: "v1",
   });
   const afterCancel = await readSync(t, booked.appointmentId);

@@ -147,11 +147,6 @@ export interface AppointmentTransitionPersister {
  */
 export type AppointmentChangeClock = () => number;
 
-/** Puerto que comprueba la excepción persistida de cancelación del Estudiante. */
-export interface AppointmentCancellationNoticeReader {
-  hasException(appointmentId: string, studentId: string): Promise<boolean>;
-}
-
 /** Dependencias de la cancelación, todas por puerto. */
 export interface CancelAppointmentDeps {
   readonly auth: AuthorizationReader;
@@ -160,7 +155,6 @@ export interface CancelAppointmentDeps {
   readonly audit: AppointmentAuditRecorder;
   readonly notifications: NotificationEventRecorder;
   readonly calendarSync: CalendarSyncScheduler;
-  readonly notices: AppointmentCancellationNoticeReader;
   readonly now?: AppointmentChangeClock;
 }
 
@@ -336,20 +330,11 @@ export async function cancelAppointment(
   });
   if (grant.status === "error") return denied();
 
-  // El Estudiante solo puede cancelar sin motivo cuando existe un aviso persistido
-  // de cambio de sala o de condiciones dirigido a él para esta atención. La
-  // excepción la decide el backend con el aviso real; el cliente no la declara.
-  const reason = input.reason?.trim();
-  if (grant.data.actor === "student" && (reason === undefined || reason === "")) {
-    const hasException = await deps.notices.hasException(stored.id, stored.studentId);
-    if (!hasException) return conflict();
-  }
-
   const cancelled = await cancelAuthorizedAppointment(deps, stored, {
     target: grant.data.target,
     actorId: grant.data.callerId,
     occurredAt: occurredNow(deps),
-    ...(reason === undefined || reason === "" ? {} : { reason }),
+    ...(input.reason === undefined ? {} : { reason: input.reason }),
   });
   return cancelled ? okResult({ appointmentId: stored.id }) : conflict();
 }
@@ -632,7 +617,7 @@ export interface ReviewAppointmentJustificationInput {
   readonly tokenIdentifier: string | null;
   readonly appointmentId: string;
   readonly review: JustificationDecision;
-  /** Explicación del Profesional al rechazar; obligatoria si `review === "rejected"`. */
+  /** Explicación del Profesional al rechazar; obligatoria si review es rejected con entrega. */
   readonly explanation?: string;
 }
 
@@ -663,8 +648,11 @@ export async function reviewAppointmentJustification(
   });
   if (grant.status === "error") return denied();
 
-  const reviewExplanation = input.explanation?.trim();
+  if (stored.status !== NO_SHOW_PENDING_STATE) return conflict();
+
+  const reviewedAt = occurredNow(deps);
   const hasSubmission = stored.justificationSubmittedAt !== undefined;
+  const reviewExplanation = input.explanation?.trim();
   if (
     input.review === "rejected" &&
     hasSubmission &&
@@ -672,10 +660,6 @@ export async function reviewAppointmentJustification(
   ) {
     return conflict();
   }
-
-  if (stored.status !== NO_SHOW_PENDING_STATE) return conflict();
-
-  const reviewedAt = occurredNow(deps);
   if (hasSubmission) {
     if (stored.justificationReview !== "pending") return conflict();
   } else {

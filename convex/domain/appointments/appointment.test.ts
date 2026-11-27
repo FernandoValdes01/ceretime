@@ -133,7 +133,26 @@ describe("Política de transición de la atención (TI2-93)", () => {
     expect(studentCancel.cancelReason).toBeUndefined();
   });
 
-  test("la cancelación conserva el motivo cuando viene", () => {
+  test("cancelación CERETI exige motivo y la del estudiante lo conserva cuando viene", () => {
+    const missing = transitionAppointment({
+      from: "scheduled",
+      to: "cancelled_by_cereti",
+      actorId: "profesional-ficticio-1",
+      occurredAt: 1000,
+      currentStartAt: 2000,
+    });
+    expect(missing).toEqual({ status: "rejected", cause: "reason_required" });
+
+    const blank = transitionAppointment({
+      from: "scheduled",
+      to: "cancelled_by_cereti",
+      actorId: "profesional-ficticio-1",
+      occurredAt: 1000,
+      reason: "   ",
+      currentStartAt: 2000,
+    });
+    expect(blank).toEqual({ status: "rejected", cause: "reason_required" });
+
     const cereti = transitionAppointment({
       from: "scheduled",
       to: "cancelled_by_cereti",
@@ -157,6 +176,50 @@ describe("Política de transición de la atención (TI2-93)", () => {
     expect(studentWithReason.status).toBe("applied");
     if (studentWithReason.status !== "applied") return;
     expect(studentWithReason.cancelReason).toBe("Tope de horario");
+  });
+
+  test("cancelar y reagendar se rechazan desde el inicio de la atención", () => {
+    for (const to of ["cancelled_by_student", "cancelled_by_cereti"] as const) {
+      const atStart = transitionAppointment({
+        from: "scheduled",
+        to,
+        actorId: "actor-ficticio",
+        occurredAt: 2000,
+        currentStartAt: 2000,
+        ...(to === "cancelled_by_cereti" ? { reason: "Motivo ficticio" } : {}),
+      });
+      expect(atStart).toEqual({ status: "rejected", cause: "cancel_after_start" });
+
+      const after = transitionAppointment({
+        from: "scheduled",
+        to,
+        actorId: "actor-ficticio",
+        occurredAt: 3000,
+        currentStartAt: 2000,
+        ...(to === "cancelled_by_cereti" ? { reason: "Motivo ficticio" } : {}),
+      });
+      expect(after).toEqual({ status: "rejected", cause: "cancel_after_start" });
+    }
+
+    const reschedule = transitionAppointment({
+      from: "scheduled",
+      to: "rescheduled",
+      actorId: "actor-ficticio",
+      occurredAt: 2000,
+      currentStartAt: 2000,
+      newStartAt: 5000,
+      newEndAt: 6000,
+    });
+    expect(reschedule).toEqual({ status: "rejected", cause: "reschedule_after_start" });
+
+    const beforeStart = transitionAppointment({
+      from: "scheduled",
+      to: "cancelled_by_student",
+      actorId: "actor-ficticio",
+      occurredAt: 1000,
+      currentStartAt: 2000,
+    });
+    expect(beforeStart.status).toBe("applied");
   });
 
   test("reagendamiento fija la fecha original y no la sobrescribe al encadenar", () => {
@@ -891,6 +954,20 @@ describe("Invariantes límite de la atención (TI2-117)", () => {
       const result = transitionAppointment(attempt(NO_SHOW_PENDING_STATE, to));
       expect(result.status).toBe(resolutions.includes(to) ? "applied" : "rejected");
     }
+  });
+
+  test("la cancelación CERETI exige motivo también después de reagendar", () => {
+    // Detecta una fila desde `rescheduled` que no pida el motivo.
+    const base = attempt("rescheduled", "cancelled_by_cereti");
+    const { reason: _omitted, ...withoutReason } = base;
+    expect(transitionAppointment(withoutReason)).toEqual({
+      status: "rejected",
+      cause: "reason_required",
+    });
+    expect(transitionAppointment({ ...base, reason: "   " })).toEqual({
+      status: "rejected",
+      cause: "reason_required",
+    });
   });
 
   test("la fecha original sobrevive a reagendar tres veces y a la cancelación", () => {
