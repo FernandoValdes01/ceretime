@@ -125,7 +125,7 @@ El código de referencia (`deriveCoordinationReferenceCode`) tiene la forma `CER
 
 Los canales (`OFFICIAL_CHANNELS`, en `convex/domain/availability/official_channel.ts`) son una unión por `kind`: `inPerson` con `location` (los mismos campos de ubicación y acceso de un espacio), `email` con `address` y `phone` con `phoneNumber`; todos llevan `id`, `name` y `hours`. Son datos ficticios: la especificación deja los canales reales como pendiente de validación con CERETI, y se reemplazan en ese único archivo.
 
-Web consume el resultado en `convex-agenda-adapter.ts`: junta los cupos de todos los profesionales reservables y, si ninguno tiene, entrega `no_availability` con la `coordination` del motivo de mayor prioridad (`combineNoCompatibleSlotReasons`). La pantalla que la muestra es de TI2-163. Mobile no consume `searchSlots` y no necesita cambios. `bookAppointment` y `rescheduleAppointment` siguen respondiendo `no_availability` como error.
+Web consume el resultado en `convex-agenda-adapter.ts`: junta los cupos de todos los profesionales reservables y, si ninguno tiene, entrega `no_availability` con la `coordination` del motivo de mayor prioridad (`combineNoCompatibleSlotReasons`). La búsqueda de horarios del Estudiante la muestra desde TI2-163, con la explicación, el código y cada canal con su forma de contacto. Mobile no consume `searchSlots` y no necesita cambios. `bookAppointment` y `rescheduleAppointment` siguen respondiendo `no_availability` como error.
 
 Compatibilidad: el cambio de forma de `searchSlots` rompe a un cliente que leía `items` directamente o esperaba el error `no_availability`. El único consumidor es el adaptador Web, que se actualiza en el mismo cambio; la versión sigue siendo `v1`.
 
@@ -135,7 +135,6 @@ Comprobación: `convex/domain/availability/official_channel.test.ts` prueba moti
 
 Siguen en otras issues, que se apoyan en lo que entrega esta:
 
-- Mostrar la explicación, el código de referencia y los canales oficiales al Estudiante: TI2-163.
 - Mostrar en la agenda los profesionales adicionales, los apoyos y qué atenciones en línea no tienen enlace: TI2-164. `getAppointment` todavía no los entrega y `Appointment` no los declara para no anunciar campos que nunca llegan.
 - Registrar en la bitácora que se agregó o reemplazó el enlace: TI2-176, porque la lista de acciones de TI2-128 no lo contempla.
 - Sacar de las atenciones futuras a un profesional que se retira del acompañamiento: TI2-152. Hoy solo sale al reagendar la atención.
@@ -147,3 +146,7 @@ Siguen en otras issues, que se apoyan en lo que entrega esta:
 `reviewAppointmentJustification` acepta `explanation?: string`. Al rechazar una justificación entregada, la explicación es obligatoria: sin texto (o en blanco) responde `conflict` sin escribir. Al aceptar, o al cerrar una inasistencia vencida sin entrega, no se exige. La explicación se recorta y se guarda en `appointments.justificationReviewExplanation`, sin tabla nueva; la vista `full` y la vista `shared` del Estudiante la entregan, igual que `justificationExplanation`, `justificationSubmittedAt`, `justificationReview` y `supportingDocumentReceived`. Ningún aviso la copia.
 
 La política de estados rechaza cambiar una atención una vez iniciada: `occurredAt >= currentStartAt` responde `conflict` para `cancelled_by_student`, `cancelled_by_cereti` y `rescheduled`, con causa `cancel_after_start` o `reschedule_after_start`. La fila conserva su estado y su horario, no se ocupa otro cupo y no se escribe auditoría ni aviso.
+
+## TI2-163: lo que consume la Web del Estudiante
+
+La Web del Estudiante usa estas operaciones sin cambiar su contrato: `searchSlots` con la coordinación por canal oficial y la sala de cada cupo presencial (`space`), `bookAppointment`, `rescheduleAppointment` para cambiar el horario desde la misma búsqueda y la misma confirmación de la reserva, `cancelAppointment` con `reason`, `submitAppointmentJustification`, `getOnlineAccess` y la vista `shared` de `getAppointment` con la recepción y la revisión de la justificación. El motivo de la cancelación se pide como obligatorio solo cuando la transición del dominio lo exige (`requiresReason`); hoy es opcional para el Estudiante. El plazo que muestra sale de `justificationDeadlineFor`, la misma función con la que el Backend entrega, revisa y vence. Cambiar y cancelar no se ofrecen desde el inicio de la atención, igual que los rechaza el Backend. No se muestran apoyos por atención porque la atención ya no los guarda (TI2-165).
