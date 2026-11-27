@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { UNAUTHORIZED_ERROR_MESSAGE } from "../../../../../convex/domain/index.ts";
-import type { FollowUpRecordView } from "./follow-up-data.ts";
+import type { FollowUpRecordView } from "../shared/follow-up/follow-up-data.ts";
 import { AppointmentFollowUpSection } from "./follow-up-form.tsx";
 
 /**
@@ -37,7 +37,7 @@ const store = vi.hoisted(() => {
 
 const save = vi.hoisted(() => vi.fn());
 
-vi.mock("./follow-up-data.ts", async () => {
+vi.mock("../shared/follow-up/follow-up-data.ts", async () => {
   const { useSyncExternalStore } = await import("react");
   return {
     useFollowUpRecord: () => {
@@ -54,6 +54,8 @@ function registro(): FollowUpRecordView {
     appointmentId: "apt-1",
     accompanimentId: "acc-1",
     appointmentStatus: "completed",
+    // Lunes 16-11-2026, 10:00 en Santiago.
+    appointmentStartsAt: Date.UTC(2026, 10, 16, 13),
     agreements: [{ description: "Acuerdo ficticio" }],
     tasks: [],
     nextSteps: "Próximos pasos ficticios",

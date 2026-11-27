@@ -15,10 +15,16 @@ import {
 import { publicErrorOf } from "../../infrastructure/convex/public-error.ts";
 import { ACCESS_DENIED_MESSAGE, DeniedState, LoadingState } from "../shared/view-states.tsx";
 import { GESTION_FOCUS_VISIBLE } from "./assigned-accompaniments-list.tsx";
-import { isAuthorizationDenial } from "./authorization-denial.ts";
-import { useFollowUpRecord, useSaveFollowUpRecord } from "./follow-up-data.ts";
-import { FollowUpRecordContent, type FollowUpContent } from "./follow-up-record.tsx";
-import { followUpResponsibleLabel, followUpTaskStatusLabel } from "./gestion-labels.ts";
+import { isAuthorizationDenial } from "../shared/authorization-denial.ts";
+import { useFollowUpRecord, useSaveFollowUpRecord } from "../shared/follow-up/follow-up-data.ts";
+import {
+  FollowUpRecordContent,
+  type FollowUpContent,
+} from "../shared/follow-up/follow-up-record.tsx";
+import {
+  followUpResponsibleLabel,
+  followUpTaskStatusLabel,
+} from "../shared/follow-up/follow-up-labels.ts";
 
 /**
  * Seguimiento de una atención desde la agenda del Profesional (TI2-165).

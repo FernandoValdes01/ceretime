@@ -1,12 +1,12 @@
 import { useMutation, useQuery } from "convex/react";
 import type { FunctionReturnType } from "convex/server";
-import { FOLLOW_UP_CONTRACT_VERSION } from "../../../../../convex/domain/index.ts";
+import { FOLLOW_UP_CONTRACT_VERSION } from "../../../../../../convex/domain/index.ts";
 // Provisorio (TI2-3): importa los tipos generados por ruta relativa hasta que
 // el monorepo defina el alias o paquete interno compartido.
-import { api } from "../../../../../convex/_generated/api";
+import { api } from "../../../../../../convex/_generated/api";
 
 /**
- * Seguimiento desde la Web del Profesional (TI2-165).
+ * Seguimiento desde la Web del Profesional (TI2-165) y del Estudiante (TI2-166).
  *
  * Cableado delgado sobre `api.presentation.follow_up`
  * (`docs/contratos-sprint-3/seguimiento.md`). Cada query responde `undefined`

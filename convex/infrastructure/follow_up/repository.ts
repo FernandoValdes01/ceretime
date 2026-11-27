@@ -235,10 +235,11 @@ export interface StoredFollowUpRecord {
   readonly id: Id<"followUpRecords">;
   readonly record: Omit<FollowUpRecord, "internalNote">;
   readonly appointmentStatus: AppointmentStatus;
+  readonly appointmentStartsAt: number;
   readonly internalNoteId?: Id<"followUpNotes">;
 }
 
-/** Registro leído con el estado vigente de su atención y la referencia a la nota. */
+/** Registro leído con el estado e inicio vigentes de su atención y la referencia a la nota. */
 async function toStoredRecord(
   ctx: DbReader,
   row: Doc<"followUpRecords">,
@@ -248,6 +249,7 @@ async function toStoredRecord(
     id: row._id,
     record: await toRecordWithoutNote(ctx, row, appointment.accompanimentId),
     appointmentStatus: appointment.status,
+    appointmentStartsAt: appointment.startsAt,
     ...(row.internalNoteId === undefined ? {} : { internalNoteId: row.internalNoteId }),
   };
 }
