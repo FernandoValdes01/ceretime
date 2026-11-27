@@ -20,11 +20,7 @@ import {
   LoadingState,
 } from "../shared/view-states.tsx";
 import { adminLoadFallback } from "./admin-load-fallback.tsx";
-import {
-  staffAccountStatusLabel,
-  staffInstitutionalStatusLabel,
-  staffRoleLabel,
-} from "./admin-accounts-data.ts";
+import { staffAccountStatusLabel, staffInstitutionalStatusLabel } from "./admin-accounts-data.ts";
 
 /**
  * Practicantes para el Profesional (TI2-170).
@@ -151,9 +147,8 @@ function InternAccountsSection({ notify }: { notify: (message: string) => void }
       </div>
       <p>Cuentas con rol practicante, pendientes o habilitadas.</p>
       <ul ref={listRef} className="admin-list">
-        <li className="admin-list__head admin-list__head--accounts" aria-hidden="true">
+        <li className="admin-list__head admin-list__head--interns" aria-hidden="true">
           <span>Cuenta</span>
-          <span>Rol</span>
           <span>Estado</span>
           <span />
         </li>
@@ -283,7 +278,6 @@ function InternAccountRow({
 
   const institutionalLabel = staffInstitutionalStatusLabel(account.institutionalStatus);
   const vigenteLabel = staffAccountStatusLabel(account.accountStatus);
-  const roleLabel = staffRoleLabel(account.role);
 
   async function runEnable() {
     if (pendingRef.current) {
@@ -316,15 +310,11 @@ function InternAccountRow({
 
   return (
     <li tabIndex={-1}>
-      <div className="admin-list__row admin-list__row--accounts">
+      <div className="admin-list__row admin-list__row--interns">
         <div className="admin-list__cell--main">
           <p className="admin-list__name">{account.fullName}</p>
           <p className="admin-list__sub">{account.email}</p>
         </div>
-        <p className="admin-list__text">
-          <span className="sr-only">Rol: </span>
-          {roleLabel}
-        </p>
         <p className="admin-list__text">
           Estado: {institutionalLabel} · Cuenta: {vigenteLabel}
         </p>
