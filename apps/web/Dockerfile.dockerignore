@@ -1,0 +1,15 @@
+# Contexto de `apps/web/Dockerfile` (la raíz del repositorio). Solo entra lo
+# que necesita el build; los `.env*` quedan fuera porque Vite leería
+# `apps/web/.env.local` e incrustaría valores de desarrollo en la imagen.
+*
+!package.json
+!bun.lock
+!patches/
+!convex/
+!apps/web/
+!apps/mobile/package.json
+**/node_modules
+**/dist
+**/.env*
+**/.agents
+**/.claude
