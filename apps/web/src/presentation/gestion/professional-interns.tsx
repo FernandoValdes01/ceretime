@@ -20,7 +20,11 @@ import {
   LoadingState,
 } from "../shared/view-states.tsx";
 import { adminLoadFallback } from "./admin-load-fallback.tsx";
-import { staffAccountStatusLabel, staffInstitutionalStatusLabel } from "./admin-accounts-data.ts";
+import {
+  staffAccountStatusLabel,
+  staffInstitutionalStatusLabel,
+  staffRoleLabel,
+} from "./admin-accounts-data.ts";
 
 /**
  * Practicantes para el Profesional (TI2-170).
@@ -149,6 +153,7 @@ function InternAccountsSection({ notify }: { notify: (message: string) => void }
       <ul ref={listRef} className="admin-list">
         <li className="admin-list__head admin-list__head--accounts" aria-hidden="true">
           <span>Cuenta</span>
+          <span>Rol</span>
           <span>Estado</span>
           <span />
         </li>
@@ -278,6 +283,7 @@ function InternAccountRow({
 
   const institutionalLabel = staffInstitutionalStatusLabel(account.institutionalStatus);
   const vigenteLabel = staffAccountStatusLabel(account.accountStatus);
+  const roleLabel = staffRoleLabel(account.role);
 
   async function runEnable() {
     if (pendingRef.current) {
@@ -315,6 +321,10 @@ function InternAccountRow({
           <p className="admin-list__name">{account.fullName}</p>
           <p className="admin-list__sub">{account.email}</p>
         </div>
+        <p className="admin-list__text">
+          <span className="sr-only">Rol: </span>
+          {roleLabel}
+        </p>
         <p className="admin-list__text">
           Estado: {institutionalLabel} · Cuenta: {vigenteLabel}
         </p>
