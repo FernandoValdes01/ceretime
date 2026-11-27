@@ -281,25 +281,21 @@ function StudentPanelContent() {
         </div>
       </section>
 
-      <section aria-labelledby="student-agreements-title" className="student-portal__section">
+      <section aria-labelledby="student-follow-up-title" className="student-portal__section">
         <div className="student-portal__section-head">
-          <h2 id="student-agreements-title">Acuerdos y tareas</h2>
-          <span className="student-portal__soon">Próximamente</span>
+          <h2 id="student-follow-up-title">Acuerdos, tareas y necesidades de acceso</h2>
         </div>
         <div className="student-portal__empty student-portal__empty--green">
-          <p className="student-portal__empty-title">Aún no tienes acuerdos ni tareas.</p>
-          <p>Los acuerdos y las tareas de tus atenciones estarán disponibles aquí.</p>
-        </div>
-      </section>
-
-      <section aria-labelledby="student-access-needs-title" className="student-portal__section">
-        <div className="student-portal__section-head">
-          <h2 id="student-access-needs-title">Necesidades de acceso</h2>
-          <span className="student-portal__soon">Próximamente</span>
-        </div>
-        <div className="student-portal__empty">
-          <p className="student-portal__empty-title">Aún no registras necesidades de acceso.</p>
-          <p>Podrás actualizarlas y se aplicarán a tus atenciones futuras.</p>
+          <p className="student-portal__empty-title">Están en el detalle de cada acompañamiento.</p>
+          <p>
+            Abre un acompañamiento para ver los acuerdos y tareas de cada atención y actualizar tus
+            necesidades de acceso.
+          </p>
+          <div className="student-portal__cta">
+            <a href="#acompanamientos" className="student-portal__btn student-portal__btn--ghost">
+              Ver mis acompañamientos
+            </a>
+          </div>
         </div>
       </section>
 
@@ -373,7 +369,11 @@ function StudentRequestsBody() {
 /** Sección de acompañamientos propios con sus estados de carga, vacío y éxito. */
 function StudentAccompanimentsSection() {
   return (
-    <section aria-labelledby="student-accompaniments-title" className="student-portal__section">
+    <section
+      aria-labelledby="student-accompaniments-title"
+      id="acompanamientos"
+      className="student-portal__section"
+    >
       <div className="student-portal__section-head">
         <h2 id="student-accompaniments-title">Acompañamientos</h2>
       </div>
