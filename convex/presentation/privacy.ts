@@ -28,6 +28,7 @@ import {
   privacyResponseRuleUnion,
   roleUnion,
 } from "../infrastructure/validators";
+import { notificationEventRecorder } from "../infrastructure/notifications/repository";
 import { unwrapApiResult } from "./session";
 
 /**
@@ -248,6 +249,7 @@ export const resolvePrivacyRequest = mutation({
           profiles: privacyProfileReader(ctx),
           requests: privacyRequestStore(ctx),
           now: Date.now,
+          notifications: notificationEventRecorder(ctx),
         },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,

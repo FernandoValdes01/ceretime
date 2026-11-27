@@ -109,15 +109,20 @@ test("TI2-167 API: solo el Estudiante presenta; otros roles y sin sesión son un
   ).toEqual(DENIED);
 });
 
-test("TI2-167 API: derecho no habilitado responde privacy_request_fields_invalid", async () => {
+test("TI2-168 API: bloqueo y oposición ya se pueden presentar desde la aplicación", async () => {
   const t = convexTest(schema, modules);
   await seedUser(t, "ti167-est2", "student");
   const asStudent = t.withIdentity(identityFor("ti167-est2"));
 
-  const error = await publicError(
-    asStudent.mutation(privacyApi.submitPrivacyRequest, { kind: "objection", version: VERSION }),
-  );
-  expect(error).toMatchObject({ code: "privacy_request_fields_invalid" });
+  for (const kind of ["blocking", "objection"] as const) {
+    const receipt = await asStudent.mutation(privacyApi.submitPrivacyRequest, {
+      kind,
+      version: VERSION,
+    });
+    expect(receipt.kind).toBe(kind);
+    expect(receipt.status).toBe("received");
+    expect(receipt.responseRule).toBe(kind === "blocking" ? "business_2" : "calendar_30");
+  }
 });
 
 test("TI2-167 API: solo el Administrador revisa, resuelve, prorroga y deja constancia", async () => {
@@ -531,7 +536,7 @@ test("TI2-167 API: la constancia sobre solicitud no resuelta responde conflict",
   expect(error).toMatchObject({ code: "conflict" });
 });
 
-test("TI2-167 API: paginación propia y cola del Administrador", async () => {
+test("TI2-167 API: páginas propias y cola del Administrador", async () => {
   const t = convexTest(schema, modules);
   await seedUser(t, "ti167-est12", "student");
   await seedUser(t, "ti167-adm9", "admin");

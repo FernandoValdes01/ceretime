@@ -11,10 +11,7 @@ import {
 } from "../application/spaces/queries";
 import { mutation, query } from "../_generated/server";
 import { SPACE_CATALOG_CONTRACT_VERSION } from "../domain/spaces/space";
-import {
-  accompanimentNeedsAtDateReader,
-  authorizationReader,
-} from "../infrastructure/accompaniments/repository";
+import { accompanimentNeedsAtDateReader } from "../infrastructure/accompaniments/repository";
 import { futureAppointmentsReader } from "../infrastructure/appointments/repository";
 import { availabilityReader } from "../infrastructure/availability/repository";
 import { notificationEventRecorder } from "../infrastructure/notifications/repository";
@@ -26,6 +23,7 @@ import {
 } from "../infrastructure/spaces/repository";
 import { spaceFieldsShape } from "../infrastructure/validators";
 import { unwrapApiResult as unwrap } from "./session";
+import { privacyAwareAuthorizationReader } from "./privacyAuthorization";
 
 /**
  * Borde de Presentación: catálogo de espacios con autorización en Backend (TI2-99).
@@ -104,7 +102,7 @@ export const createSpace = mutation({
     const identity = await ctx.auth.getUserIdentity();
     return unwrap(
       await createSpaceCatalogEntry(
-        authorizationReader(ctx),
+        privacyAwareAuthorizationReader(ctx),
         { ...spaceReader(ctx), ...spaceWriter(ctx) },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,
@@ -123,7 +121,7 @@ export const updateSpace = mutation({
     const identity = await ctx.auth.getUserIdentity();
     return unwrap(
       await updateSpaceCatalogEntry(
-        authorizationReader(ctx),
+        privacyAwareAuthorizationReader(ctx),
         { ...spaceReader(ctx), ...spaceWriter(ctx) },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,
@@ -133,7 +131,7 @@ export const updateSpace = mutation({
         },
         {
           future: futureAppointmentsReader(ctx),
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           availability: availabilityReader(ctx),
           needs: accompanimentNeedsAtDateReader(ctx),
           compatibility: compatibilitySpaceSource(ctx),
@@ -156,7 +154,7 @@ export const setSpaceActive = mutation({
     const identity = await ctx.auth.getUserIdentity();
     return unwrap(
       await setSpaceCatalogActive(
-        authorizationReader(ctx),
+        privacyAwareAuthorizationReader(ctx),
         { ...spaceReader(ctx), ...spaceWriter(ctx) },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,
@@ -166,7 +164,7 @@ export const setSpaceActive = mutation({
         },
         {
           future: futureAppointmentsReader(ctx),
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           availability: availabilityReader(ctx),
           needs: accompanimentNeedsAtDateReader(ctx),
           compatibility: compatibilitySpaceSource(ctx),
@@ -184,7 +182,7 @@ export const getSpace = query({
   handler: async (ctx, { spaceId }) => {
     const identity = await ctx.auth.getUserIdentity();
     return unwrap(
-      await getSpaceCatalogEntry(authorizationReader(ctx), spaceReader(ctx), {
+      await getSpaceCatalogEntry(privacyAwareAuthorizationReader(ctx), spaceReader(ctx), {
         tokenIdentifier: identity?.tokenIdentifier ?? null,
         version: SPACE_CATALOG_CONTRACT_VERSION,
         spaceId,
@@ -207,10 +205,14 @@ export const listInactiveSpaces = query({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     return unwrap(
-      await listInactiveSpaceCatalogUseCase(authorizationReader(ctx), inactiveSpaceReader(ctx), {
-        tokenIdentifier: identity?.tokenIdentifier ?? null,
-        ...args,
-      }),
+      await listInactiveSpaceCatalogUseCase(
+        privacyAwareAuthorizationReader(ctx),
+        inactiveSpaceReader(ctx),
+        {
+          tokenIdentifier: identity?.tokenIdentifier ?? null,
+          ...args,
+        },
+      ),
     );
   },
 });

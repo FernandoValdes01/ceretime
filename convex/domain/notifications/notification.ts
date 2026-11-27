@@ -73,6 +73,9 @@ export const REQUEST_NOTIFICATION_EVENT_KIND_VALUES = [
   "request_referred",
   "request_closed",
   "request_cancelled",
+  // TI2-168: comunicaciones de una resolución de privacidad al titular.
+  "privacy_request_granted",
+  "privacy_request_denied",
 ] as const;
 
 export type RequestNotificationEventKind = (typeof REQUEST_NOTIFICATION_EVENT_KIND_VALUES)[number];
@@ -571,6 +574,29 @@ export function notificationEventsForRequestTransition(
 }
 
 /**
+ * Comunicación de una resolución de privacidad al titular (TI2-168).
+ *
+ * El evento referencia la solicitud de privacidad y al destinatario, sin el
+ * fundamento ni datos sensibles. El texto externo es genérico y no revela el
+ * derecho ni la decisión; el titular la lee en su sesión.
+ */
+export function notificationEventsForPrivacyResolution(input: {
+  readonly requestId: string;
+  readonly recipientId: string;
+  readonly granted: boolean;
+  readonly occurredAt: number;
+}): readonly NotificationEvent[] {
+  return [
+    toNotificationEvent({
+      kind: input.granted ? "privacy_request_granted" : "privacy_request_denied",
+      requestId: input.requestId,
+      recipientId: input.recipientId,
+      occurredAt: input.occurredAt,
+    }),
+  ];
+}
+
+/**
  * Clave de idempotencia estable para reintentos de la misma emisión.
  *
  * Se compone de versión, clase, recurso, destinatario e instante persistido.
@@ -663,6 +689,8 @@ const EXTERNAL_NOTIFICATION_TEXTS: Record<NotificationEventKind, ExternalNotific
   request_referred: PENDING_UPDATE_TEXT,
   request_closed: PENDING_UPDATE_TEXT,
   request_cancelled: PENDING_UPDATE_TEXT,
+  privacy_request_granted: PENDING_UPDATE_TEXT,
+  privacy_request_denied: PENDING_UPDATE_TEXT,
 };
 
 /**

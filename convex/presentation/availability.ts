@@ -17,7 +17,6 @@ import {
 import {
   accompanimentNeedsAtDateReader,
   accompanimentNeedsReader,
-  authorizationReader,
   bookableProfessionalSource,
 } from "../infrastructure/accompaniments/repository";
 import {
@@ -35,6 +34,7 @@ import {
   spaceFieldsShape,
 } from "../infrastructure/validators";
 import { unwrapApiResult as unwrap } from "./session";
+import { privacyAwareAuthorizationReader } from "./privacyAuthorization";
 
 /**
  * Borde de Presentación: bloques y excepciones de disponibilidad (TI2-111).
@@ -72,10 +72,14 @@ export const publishBlock = mutation({
   handler: async (ctx, { version: _version, ...block }) => {
     const identity = await ctx.auth.getUserIdentity();
     return unwrap(
-      await publishAvailabilityBlock(authorizationReader(ctx), availabilityWriter(ctx), {
-        tokenIdentifier: identity?.tokenIdentifier ?? null,
-        block,
-      }),
+      await publishAvailabilityBlock(
+        privacyAwareAuthorizationReader(ctx),
+        availabilityWriter(ctx),
+        {
+          tokenIdentifier: identity?.tokenIdentifier ?? null,
+          block,
+        },
+      ),
     );
   },
 });
@@ -88,7 +92,7 @@ export const updateBlock = mutation({
     const identity = await ctx.auth.getUserIdentity();
     return unwrap(
       await updateAvailabilityBlock(
-        authorizationReader(ctx),
+        privacyAwareAuthorizationReader(ctx),
         { ...availabilityReader(ctx), ...availabilityWriter(ctx) },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, blockId, block },
         {
@@ -110,7 +114,7 @@ export const setBlockActive = mutation({
     const identity = await ctx.auth.getUserIdentity();
     return unwrap(
       await setAvailabilityBlockActive(
-        authorizationReader(ctx),
+        privacyAwareAuthorizationReader(ctx),
         { ...availabilityReader(ctx), ...availabilityWriter(ctx) },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, blockId, isActive },
         {
@@ -141,7 +145,7 @@ export const publishException = mutation({
     const identity = await ctx.auth.getUserIdentity();
     return unwrap(
       await publishAvailabilityException(
-        authorizationReader(ctx),
+        privacyAwareAuthorizationReader(ctx),
         { ...availabilityReader(ctx), ...availabilityWriter(ctx) },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,
@@ -166,7 +170,7 @@ export const removeException = mutation({
     const identity = await ctx.auth.getUserIdentity();
     return unwrap(
       await removeAvailabilityException(
-        authorizationReader(ctx),
+        privacyAwareAuthorizationReader(ctx),
         { ...availabilityReader(ctx), ...availabilityWriter(ctx) },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, exceptionId },
         {
@@ -240,7 +244,7 @@ export const searchSlots = query({
     const result = unwrap(
       await searchAvailabilitySlots(
         {
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           availability: availabilityReader(ctx),
           needs: accompanimentNeedsReader(ctx),
           compatibility: compatibilitySpaceSource(ctx),
@@ -271,7 +275,10 @@ export const listBookableProfessionals = query({
     const identity = await ctx.auth.getUserIdentity();
     const result = unwrap(
       await listBookableProfessionalsUseCase(
-        { auth: authorizationReader(ctx), professionals: bookableProfessionalSource(ctx) },
+        {
+          auth: privacyAwareAuthorizationReader(ctx),
+          professionals: bookableProfessionalSource(ctx),
+        },
         { accompanimentId, tokenIdentifier: identity?.tokenIdentifier ?? null },
       ),
     );
@@ -312,11 +319,15 @@ export const listOwnAvailability = query({
   handler: async (ctx, { from, to }) => {
     const identity = await ctx.auth.getUserIdentity();
     const own = unwrap(
-      await listOwnAvailabilityUseCase(authorizationReader(ctx), availabilityReader(ctx), {
-        tokenIdentifier: identity?.tokenIdentifier ?? null,
-        from,
-        to,
-      }),
+      await listOwnAvailabilityUseCase(
+        privacyAwareAuthorizationReader(ctx),
+        availabilityReader(ctx),
+        {
+          tokenIdentifier: identity?.tokenIdentifier ?? null,
+          from,
+          to,
+        },
+      ),
     );
     // Las listas del dominio son de solo lectura; el validador espera arreglos.
     return {

@@ -190,13 +190,22 @@ describe("Evento de notificación para consumidores (TI2-100)", () => {
       "request_referred",
       "request_closed",
       "request_cancelled",
+      "privacy_request_granted",
+      "privacy_request_denied",
     ]);
     expect(isNotificationEventKind("appointment_reminder")).toBe(true);
     expect(isNotificationEventKind("request_received")).toBe(true);
     expect(isNotificationEventKind("appointment_deleted")).toBe(false);
     expect([...APPOINTMENT_NOTIFICATION_EVENT_KIND_VALUES]).not.toContain("request_received");
     expect(
-      REQUEST_NOTIFICATION_EVENT_KIND_VALUES.every((kind) => kind.startsWith("request_")),
+      REQUEST_NOTIFICATION_EVENT_KIND_VALUES.filter((kind) => kind.startsWith("request_")).every(
+        (kind) => kind.startsWith("request_"),
+      ),
+    ).toBe(true);
+    expect(
+      REQUEST_NOTIFICATION_EVENT_KIND_VALUES.filter((kind) => kind.startsWith("privacy_")).every(
+        (kind) => kind === "privacy_request_granted" || kind === "privacy_request_denied",
+      ),
     ).toBe(true);
     expect(
       APPOINTMENT_NOTIFICATION_EVENT_KIND_VALUES.every((kind) => kind.startsWith("appointment_")),
@@ -250,6 +259,8 @@ describe("Evento de notificación para consumidores (TI2-100)", () => {
       request_referred: PENDING,
       request_closed: PENDING,
       request_cancelled: PENDING,
+      privacy_request_granted: PENDING,
+      privacy_request_denied: PENDING,
     };
     for (const kind of APPOINTMENT_NOTIFICATION_EVENT_KIND_VALUES) {
       const external = toExternalNotification(event(kind));

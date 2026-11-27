@@ -1,4 +1,6 @@
 import { AGENDA_TIME_ZONE } from "../../domain/availability/availability";
+import { CHILE_HOLIDAYS } from "../../domain/calendar/chile_holidays";
+import { notificationEventsForPrivacyResolution } from "../../domain/notifications/notification";
 import {
   canRespondToPrivacyRequest,
   canSubmitPrivacyRequest,
@@ -23,6 +25,7 @@ import {
   type PrivacyResponseOutcome,
 } from "../../domain/privacy/privacy_request";
 import type { PrivacyExtensionRejectionCause } from "../../domain/privacy/privacy_deadlines";
+import type { NotificationEventRecorder } from "../notifications/ports";
 import type {
   PrivacyProfile,
   PrivacyProfileReader,
@@ -56,11 +59,13 @@ import {
  * Opera con datos ficticios.
  */
 
-/** Derechos que esta entrega acepta por la aplicación; bloqueo y oposición son la siguiente tarea. */
+/** Derechos que esta entrega acepta por la aplicación (TI2-168 habilita los tres pendientes). */
 const SUBMITTABLE_KINDS: ReadonlySet<PrivacyRequestKind> = new Set([
   "access",
   "rectification",
   "erasure",
+  "objection",
+  "blocking",
   "portability",
 ]);
 
@@ -74,6 +79,12 @@ export interface PrivacyCommandDeps<RequestId extends string, UserId extends str
   readonly requests: PrivacyRequestStore<RequestId, UserId>;
   /** Reloj del servidor; las pruebas lo avanzan. */
   readonly now: () => number;
+  /**
+   * Efecto material de una resolución concedida (TI2-168): registra el aviso
+   * al titular. Opcional para no romper dobles de la entrega anterior; en
+   * producción lo provee Presentación con el mismo `ctx`.
+   */
+  readonly notifications?: NotificationEventRecorder;
 }
 
 function denied<T>(): ApiResult<T> {
@@ -179,6 +190,7 @@ export async function submitPrivacyRequest<RequestId extends string, UserId exte
     requesterId: profile._id,
     receivedAt: deps.now(),
     timeZone: AGENDA_TIME_ZONE,
+    holidays: CHILE_HOLIDAYS,
   });
   if (result.status === "invalid_reference") throw serverReferenceError();
   return okResult(toOwnProjection(result.request));
@@ -220,12 +232,16 @@ export async function resolvePrivacyRequest<RequestId extends string, UserId ext
   const profile = await findResponder(deps, input.tokenIdentifier);
   if (profile === null) return denied();
 
-  return transitionResult(
+  const record = await deps.requests.getRequest(input.requestId);
+  if (record === null) return denied();
+
+  const occurredAt = deps.now();
+  const result = transitionResult(
     await deps.requests.transition({
       requestId: input.requestId,
       to: "resolved",
       actorId: profile._id,
-      occurredAt: deps.now(),
+      occurredAt,
       response: {
         outcome: input.outcome,
         reasons: input.reasons,
@@ -236,6 +252,21 @@ export async function resolvePrivacyRequest<RequestId extends string, UserId ext
       },
     }),
   );
+
+  // La resolución se comunica al titular (TI2-168). El evento es genérico: no
+  // lleva el derecho, el fundamento ni el bloqueo, que el titular lee en su
+  // sesión. Una denegación conserva los datos y también se comunica.
+  if (result.status === "ok" && deps.notifications !== undefined) {
+    await deps.notifications.record(
+      notificationEventsForPrivacyResolution({
+        requestId: input.requestId,
+        recipientId: record.requesterId,
+        granted: input.outcome !== "denied",
+        occurredAt,
+      }),
+    );
+  }
+  return result;
 }
 
 /** Aplica la única prórroga de hasta 30 días corridos, con su motivo. */

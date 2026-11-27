@@ -27,7 +27,6 @@ import {
   accompanimentNeedsWriter,
   accompanimentProfessionalsReader,
   accompanimentStatusWriter,
-  authorizationReader,
 } from "../infrastructure/accompaniments/repository";
 import {
   appointmentTransitionRepository,
@@ -41,6 +40,7 @@ import { calendarSyncScheduler } from "../infrastructure/calendar/sync_scheduler
 import { compatibilitySpaceSource } from "../infrastructure/spaces/repository";
 import { accompanimentStatusUnion, assignmentRoleUnion } from "../infrastructure/validators";
 import { unwrapApiResult } from "./session";
+import { privacyAwareAuthorizationReader } from "./privacyAuthorization";
 
 /**
  * Programación del vencimiento para la vía pública (TI2-140).
@@ -329,7 +329,10 @@ export const pauseAccompaniment = mutation({
     const identity = await ctx.auth.getUserIdentity();
     const result = unwrapApiResult(
       await pauseAccompanimentUseCase(
-        { auth: authorizationReader(ctx), accompaniments: accompanimentStatusWriter(ctx) },
+        {
+          auth: privacyAwareAuthorizationReader(ctx),
+          accompaniments: accompanimentStatusWriter(ctx),
+        },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, accompanimentId },
       ),
     );
@@ -349,7 +352,10 @@ export const reactivateAccompaniment = mutation({
     const identity = await ctx.auth.getUserIdentity();
     const result = unwrapApiResult(
       await reactivateAccompanimentUseCase(
-        { auth: authorizationReader(ctx), accompaniments: accompanimentStatusWriter(ctx) },
+        {
+          auth: privacyAwareAuthorizationReader(ctx),
+          accompaniments: accompanimentStatusWriter(ctx),
+        },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, accompanimentId },
       ),
     );
@@ -374,7 +380,10 @@ export const getAccompanimentClosurePreview = query({
     const identity = await ctx.auth.getUserIdentity();
     return unwrapApiResult(
       await previewAccompanimentClosure(
-        { auth: authorizationReader(ctx), appointments: pendingAppointmentsReader(ctx) },
+        {
+          auth: privacyAwareAuthorizationReader(ctx),
+          appointments: pendingAppointmentsReader(ctx),
+        },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, accompanimentId },
       ),
     );
@@ -403,7 +412,7 @@ export const closeAccompaniment = mutation({
     const result = unwrapApiResult(
       await closeAccompanimentUseCase(
         {
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           accompaniments: accompanimentStatusWriter(ctx),
           appointments: pendingAppointmentsReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
@@ -444,7 +453,7 @@ export const updateAccompanimentNeeds = mutation({
     const identity = await ctx.auth.getUserIdentity();
     return unwrapApiResult(
       await updateAccompanimentNeedsUseCase(
-        authorizationReader(ctx),
+        privacyAwareAuthorizationReader(ctx),
         accompanimentNeedsWriter(ctx),
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,

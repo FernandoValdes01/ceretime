@@ -44,6 +44,7 @@ import {
   type ApiResult,
   type PublicApiError,
 } from "../../domain/errors/api_error";
+import { guardPrivacyTreatment } from "../privacy/blocking";
 
 /**
  * Caso de uso de autorización por alcance (S2, TI2-88).
@@ -209,6 +210,15 @@ export interface AuthorizationReader {
     accompanimentId: string,
     userId: string,
   ): Promise<ReadonlyArray<AuthorizableAssignment>>;
+  /**
+   * Bloqueos vigentes del titular (TI2-168). Opcional para no romper los dobles
+   * de las pruebas que no ejercen privacidad; cuando está ausente no hay
+   * bloqueos. Producción lo provee con el repositorio de `privacyBlocks`.
+   */
+  listActivePrivacyBlocks?(
+    subjectId: string,
+    now: number,
+  ): Promise<readonly import("../privacy/blocking").ActivePrivacyBlockForGuard[]>;
 }
 
 /**
@@ -253,6 +263,8 @@ export type AppointmentCancellationGrant = AppointmentChangeGrant & {
 export type AppointmentChangeRequest = {
   readonly tokenIdentifier: string | null;
   readonly appointment: AuthorizableAppointment;
+  readonly privacyCategory?: import("../../domain/privacy/privacy_controls").PrivacyDataCategory;
+  readonly now?: () => number;
 };
 
 /**
@@ -262,6 +274,14 @@ export type AppointmentChangeRequest = {
 export type AgendaRequest = {
   readonly tokenIdentifier: string | null;
   readonly accompanimentId: string;
+  /**
+   * Categoría de datos que se quiere tratar (TI2-168). La pasan las cuatro
+   * vías: consultas y cambios sobre `appointments`, avisos sobre
+   * `notifications` y exportaciones sobre `calendar`. Sin categoría, el
+   * guardia no se aplica (comportamiento previo).
+   */
+  readonly privacyCategory?: import("../../domain/privacy/privacy_controls").PrivacyDataCategory;
+  readonly now?: () => number;
 };
 
 function denied<T>(): ApiResult<T> {
@@ -294,6 +314,24 @@ async function loadAgendaContext(
   const accompaniment = await reader.getAccompaniment(request.accompanimentId);
   if (accompaniment === null) return null;
   const assignments = await reader.findActiveAssignments(accompaniment._id, profile._id);
+  if (request.privacyCategory !== undefined && reader.listActivePrivacyBlocks !== undefined) {
+    const now = request.now === undefined ? Date.now() : request.now();
+    const decision = await guardPrivacyTreatment(
+      {
+        blocks: {
+          listActiveBlocksForSubject: (subjectId: string, at: number) =>
+            reader.listActivePrivacyBlocks!(subjectId, at),
+        },
+        now: () => now,
+      },
+      {
+        subjectId: accompaniment.studentId,
+        category: request.privacyCategory,
+        treatment: "query",
+      },
+    );
+    if (decision.status === "blocked") return null;
+  }
   return {
     callerId: profile._id,
     studentId: accompaniment.studentId,
@@ -500,6 +538,24 @@ async function loadAppointmentChangeContext(
   if (accompaniment === null) return null;
   if (request.appointment.accompanimentId !== accompaniment._id) return null;
   const assignments = await reader.findActiveAssignments(accompaniment._id, profile._id);
+  if (request.privacyCategory !== undefined && reader.listActivePrivacyBlocks !== undefined) {
+    const now = request.now === undefined ? Date.now() : request.now();
+    const decision = await guardPrivacyTreatment(
+      {
+        blocks: {
+          listActiveBlocksForSubject: (subjectId: string, at: number) =>
+            reader.listActivePrivacyBlocks!(subjectId, at),
+        },
+        now: () => now,
+      },
+      {
+        subjectId: accompaniment.studentId,
+        category: request.privacyCategory,
+        treatment: "change",
+      },
+    );
+    if (decision.status === "blocked") return null;
+  }
   const base = buildAuthorizationContext({ profile, accompaniment, assignments });
   return {
     callerId: profile._id,

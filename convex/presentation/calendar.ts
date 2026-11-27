@@ -8,7 +8,6 @@ import type { CalendarLinkDisconnectResult } from "../application/calendar/calen
 import { unauthorizedError } from "../domain/errors/api_error";
 import { action, mutation, query } from "../_generated/server";
 import { internal } from "../_generated/api";
-import { authorizationReader } from "../infrastructure/accompaniments/repository";
 import {
   googleCalendarConnectionReader,
   googleCalendarOAuthAccess,
@@ -16,6 +15,7 @@ import {
 import { calendarLinkReader, calendarLinkStore } from "../infrastructure/calendar/repository";
 import { calendarLinkSyncScheduler } from "../infrastructure/calendar/sync_scheduler";
 import { throwPublicApiError, unwrapApiResult } from "./session";
+import { privacyAwareAuthorizationReader } from "./privacyAuthorization";
 
 /**
  * Borde de Presentación: vínculo propio con Google Calendar (TI2-161).
@@ -70,7 +70,7 @@ export const getCalendarLinkStatus = query({
     return unwrapApiResult(
       await getCalendarLinkStatusUseCase(
         {
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           oauth: googleCalendarConnectionReader(ctx),
           store: calendarLinkReader(ctx),
         },
@@ -95,7 +95,7 @@ export const confirmCalendarLink = mutation({
     return unwrapApiResult(
       await confirmCalendarLinkUseCase(
         {
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           oauth: googleCalendarConnectionReader(ctx),
           store: calendarLinkStore(ctx),
           linkSync: calendarLinkSyncScheduler(ctx),

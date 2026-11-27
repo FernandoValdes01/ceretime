@@ -1175,6 +1175,24 @@ export function privacyRequestReader(ctx: DbReader) {
 }
 
 /** Escrituras y lecturas de la misma transacción para Aplicación. */
+/** Bloqueos vigentes del titular para el guardia de tratamiento (TI2-168). */
+export function privacyBlockReader(ctx: DbReader) {
+  return {
+    listActiveBlocksForSubject: async (subjectId: string, now: number) => {
+      const id = ctx.db.normalizeId("users", subjectId);
+      if (id === null) return [];
+      const rows = await listActivePrivacyBlocksForSubject(ctx, id, now);
+      return rows.map((row) => ({
+        id: row.id as string,
+        scope: row.scope,
+        startsAt: row.startsAt,
+        endsAt: row.endsAt,
+        ...(row.liftedAt === undefined ? {} : { liftedAt: row.liftedAt }),
+      }));
+    },
+  };
+}
+
 export function privacyRequestStore(ctx: MutationCtx) {
   return {
     ...privacyRequestReader(ctx),

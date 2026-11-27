@@ -161,10 +161,14 @@ async function canReadResource(
   notification: StoredNotification,
 ): Promise<boolean> {
   if ("appointmentId" in notification) {
-    const appointment = await findReadableAppointment(deps, {
-      tokenIdentifier,
-      appointmentId: notification.appointmentId,
-    });
+    const appointment = await findReadableAppointment(
+      {
+        auth: deps.auth,
+        appointments: deps.appointments,
+        privacyCategory: "notifications",
+      },
+      { tokenIdentifier, appointmentId: notification.appointmentId },
+    );
     return appointment !== null;
   }
   const request = await findReadableRequest(deps.requests, {

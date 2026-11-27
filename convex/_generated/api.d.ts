@@ -37,6 +37,7 @@ import type * as application_notifications_dispatch from "../application/notific
 import type * as application_notifications_inbox from "../application/notifications/inbox.js";
 import type * as application_notifications_ports from "../application/notifications/ports.js";
 import type * as application_notifications_push from "../application/notifications/push.js";
+import type * as application_privacy_blocking from "../application/privacy/blocking.js";
 import type * as application_privacy_commands from "../application/privacy/commands.js";
 import type * as application_privacy_ports from "../application/privacy/ports.js";
 import type * as application_privacy_projection from "../application/privacy/projection.js";
@@ -130,6 +131,7 @@ import type * as presentation_calendar from "../presentation/calendar.js";
 import type * as presentation_follow_up from "../presentation/follow_up.js";
 import type * as presentation_notifications from "../presentation/notifications.js";
 import type * as presentation_privacy from "../presentation/privacy.js";
+import type * as presentation_privacyAuthorization from "../presentation/privacyAuthorization.js";
 import type * as presentation_requests from "../presentation/requests.js";
 import type * as presentation_session from "../presentation/session.js";
 import type * as presentation_spaces from "../presentation/spaces.js";
@@ -170,6 +172,7 @@ declare const fullApi: ApiFromModules<{
   "application/notifications/inbox": typeof application_notifications_inbox;
   "application/notifications/ports": typeof application_notifications_ports;
   "application/notifications/push": typeof application_notifications_push;
+  "application/privacy/blocking": typeof application_privacy_blocking;
   "application/privacy/commands": typeof application_privacy_commands;
   "application/privacy/ports": typeof application_privacy_ports;
   "application/privacy/projection": typeof application_privacy_projection;
@@ -263,6 +266,7 @@ declare const fullApi: ApiFromModules<{
   "presentation/follow_up": typeof presentation_follow_up;
   "presentation/notifications": typeof presentation_notifications;
   "presentation/privacy": typeof presentation_privacy;
+  "presentation/privacyAuthorization": typeof presentation_privacyAuthorization;
   "presentation/requests": typeof presentation_requests;
   "presentation/session": typeof presentation_session;
   "presentation/spaces": typeof presentation_spaces;
