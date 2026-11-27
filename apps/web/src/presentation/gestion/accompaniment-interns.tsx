@@ -228,13 +228,7 @@ function InternsEditor({
                       setError("Las fechas deben tener el formato AAAA-MM-DD y existir.");
                       return;
                     }
-                    if (
-                      from !== undefined &&
-                      until !== undefined &&
-                      from !== null &&
-                      until !== null &&
-                      from > until
-                    ) {
+                    if (from !== undefined && until !== undefined && from > until) {
                       setError("La fecha de inicio no puede ser posterior a la de fin.");
                       return;
                     }

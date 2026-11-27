@@ -81,7 +81,8 @@ export const getAccount = query({
   },
 });
 
-/** Habilita una cuenta profesional o administrativa pendiente o revocada.
+/**
+ * Habilita una cuenta profesional o administrativa pendiente o revocada.
  * Registra actor y fecha. El practicante no entra por esta vía (TI2-140).
  */
 export const enableAccount = mutation({

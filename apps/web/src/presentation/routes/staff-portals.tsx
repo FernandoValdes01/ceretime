@@ -37,8 +37,8 @@ export function ProfessionalHome() {
       <h1 id="professional-home-title">Portal del Profesional</h1>
       <p>Tus solicitudes y acompañamientos asignados estarán disponibles aquí.</p>
       <p>
-        Habilita practicantes y asigna acompañamientos desde{" "}
-        <Link to="/profesional/practicantes">Practicantes</Link>.
+        Habilita practicantes desde <Link to="/profesional/practicantes">Practicantes</Link>; la
+        asignación se hace en el detalle de cada acompañamiento.
       </p>
     </section>
   );

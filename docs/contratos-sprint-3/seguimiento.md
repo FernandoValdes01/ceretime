@@ -227,18 +227,7 @@ TI2-152 agrega estas reglas al cambio:
 
 ### Cambio de practicantes — TI2-170
 
-El cambio se hace con `assignAccompanimentAccess`, `updateAccompanimentAccess` y `revokeAccompanimentAccess` de TI2-140 (`docs/contratos-sprint-3/cuentas.md`), con `assignedRole: "intern"`. Para elegir a quién, TI2-170 agrega una lectura con la misma exigencia de alcance:
-
-| Operación | Argumentos | Devuelve | Quién | Denegación |
-| --- | --- | --- | --- | --- |
-| `presentation.accompaniments.listAccompanimentInterns` (query) | `accompanimentId` | `{assigned, assignable, assignableComplete}` | Profesional de personal, habilitado y vigente, con asignación profesional activa sobre ese acompañamiento | `unauthorized` sin ese permiso, sin revelar si el acompañamiento existe; `conflict` si el acompañamiento supera las 200 asignaciones leídas |
-
-- `assigned`: los practicantes con asignación activa y vigente, cada uno con `userId`, `fullName`, `assignedAt?`, `validFrom?` y `validUntil?`, ordenados por nombre.
-- `assignable`: los practicantes habilitados y vigentes que todavía no están asignados, con `userId` y `fullName`, ordenados por nombre. No incluye cuentas de prueba ni cuentas inhabilitadas.
-- `assignableComplete`: `false` si había más de 100 perfiles practicantes y la lista de asignables no los revisó todos.
-- No entrega correo ni estado de las cuentas.
-
-Quien se retira pierde el acceso en la consulta siguiente aunque conserve el enlace: la vista del practicante (TI2-116) reemplaza el contenido por el aviso de acceso denegado. Un acompañamiento cerrado no admite conceder ni modificar accesos (`conflict`); retirar sigue permitido.
+El cambio se hace con `assignAccompanimentAccess`, `updateAccompanimentAccess` y `revokeAccompanimentAccess` de TI2-140, con `assignedRole: "intern"`. El contrato completo de la gestión desde la Web del Profesional (habilitación, listado de practicantes y accesos por acompañamiento) vive en `docs/contratos-sprint-3/cuentas.md`, junto a TI2-140; acá solo queda el enlace para no duplicarlo. Quien se retira pierde el acceso en la consulta siguiente aunque conserve el enlace: la vista del practicante (TI2-116) reemplaza el contenido por el aviso de acceso denegado.
 
 ```ts
 const preview = useQuery(api.presentation.accompaniments.getAccompanimentClosurePreview, {
