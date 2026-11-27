@@ -711,6 +711,23 @@ describe("cancelación de una atención (TI2-109)", () => {
       expect(world.row.justificationReview).toBeUndefined();
     });
 
+    test("una explicación en blanco al cerrar sin entrega no se guarda", async () => {
+      const world = changeWorld({ status: "no_show", startAt: CURRENT_START });
+
+      const result = await reviewAppointmentJustification(
+        justificationDeps(world, CURRENT_START + 10 * ONE_DAY),
+        {
+          tokenIdentifier: "token-pro",
+          appointmentId: "appointment-1",
+          review: "rejected",
+          explanation: "   ",
+        },
+      );
+
+      expect(result).toEqual(OK_APPOINTMENT);
+      expect(world.row.justificationReviewExplanation).toBeUndefined();
+    });
+
     test("una entrega ya resuelta no se revisa dos veces", async () => {
       for (const review of ["accepted", "rejected"] as const) {
         const world = changeWorld({

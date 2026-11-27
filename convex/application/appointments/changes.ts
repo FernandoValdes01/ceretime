@@ -683,7 +683,7 @@ export async function reviewAppointmentJustification(
   await deps.persister.persistAppointmentTransition(stored.id, {
     status: outcome.change.to,
     ...(hasSubmission ? { justificationReview: input.review } : {}),
-    ...(input.review === "rejected" && reviewExplanation !== undefined
+    ...(input.review === "rejected" && reviewExplanation
       ? { justificationReviewExplanation: reviewExplanation }
       : {}),
     ...(outcome.originalStartAt === undefined ? {} : { originalStartsAt: outcome.originalStartAt }),
