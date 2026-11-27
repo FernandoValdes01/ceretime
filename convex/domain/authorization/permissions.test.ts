@@ -14,10 +14,13 @@ import {
   canReadAccount,
   canReadAvailability,
   canReadInternalNote,
+  canReadOwnPrivacyRequests,
   canReadSpaceCatalog,
   canRecordAppointmentAttendance,
   canRescheduleAppointment,
+  canRespondToPrivacyRequest,
   canRevokeAccount,
+  canSubmitPrivacyRequest,
   canUseAppointmentOnlineAccess,
   canWriteFollowUp,
   getAccompanimentView,
@@ -31,6 +34,7 @@ import {
   type AppointmentChangeAuthorizationContext,
   type AuthorizationContext,
   type AvailabilityAuthorizationContext,
+  type PrivacyRequestAuthorizationContext,
 } from "./permissions";
 import { toAppointmentProjection, type Appointment } from "../appointments/appointment";
 import { toFollowUpProjection, type FollowUpRecord } from "../follow_up/follow_up";
@@ -881,7 +885,9 @@ describe("Proyecciones de TI2-127 compuestas con la política (TI2-117)", () => 
     for (const context of contexts) {
       const view = getFollowUpView(context);
       if (view === null) continue;
-      const output = JSON.stringify(toFollowUpProjection(record, "completed", view));
+      const output = JSON.stringify(
+        toFollowUpProjection(record, { status: "completed", startsAt: 0 }, view),
+      );
       expect(output.includes(NOTE)).toBe(canReadInternalNote(context));
       checked += 1;
     }
@@ -895,7 +901,11 @@ describe("Proyecciones de TI2-127 compuestas con la política (TI2-117)", () => 
     let checked = 0;
     for (const context of contexts) {
       if (getFollowUpView(context) !== "minimized") continue;
-      const projected = toFollowUpProjection(record, "completed", "minimized");
+      const projected = toFollowUpProjection(
+        record,
+        { status: "completed", startsAt: 0 },
+        "minimized",
+      );
       const output = JSON.stringify(projected);
       for (const text of ["marcador-acuerdo", "marcador-tarea", "marcador-pasos"]) {
         expect(output.includes(text)).toBe(true);
@@ -919,5 +929,56 @@ describe("Proyecciones de TI2-127 compuestas con la política (TI2-117)", () => 
       checked += 1;
     }
     expect(checked).toBeGreaterThan(0);
+  });
+});
+
+function privacyContext(
+  overrides: Partial<PrivacyRequestAuthorizationContext>,
+): PrivacyRequestAuthorizationContext {
+  return {
+    role: "student",
+    institutionalStatus: "enabled",
+    accountStatus: "active",
+    ...overrides,
+  };
+}
+
+describe("permisos de solicitudes de privacidad (TI2-167)", () => {
+  test("solo el Estudiante vigente presenta y lee lo propio", () => {
+    // Detecta un formulario para otros roles o una lectura sin cuenta vigente.
+    for (const role of ROLE_VALUES) {
+      const context = privacyContext({ role });
+      const expected = role === "student";
+      expect(canSubmitPrivacyRequest(context)).toBe(expected);
+      expect(canReadOwnPrivacyRequests(context)).toBe(expected);
+    }
+    expect(canSubmitPrivacyRequest(privacyContext({ institutionalStatus: "disabled" }))).toBe(
+      false,
+    );
+    expect(canSubmitPrivacyRequest(privacyContext({ accountStatus: "inactive" }))).toBe(false);
+  });
+
+  test("solo el Administrador vigente responde", () => {
+    // Detecta una respuesta de otro rol o de una cuenta sin vigencia.
+    for (const role of ROLE_VALUES) {
+      expect(canRespondToPrivacyRequest(privacyContext({ role }))).toBe(role === "admin");
+    }
+    expect(
+      canRespondToPrivacyRequest(privacyContext({ role: "admin", accountStatus: "inactive" })),
+    ).toBe(false);
+  });
+
+  test("la matriz declara las tres acciones de privacidad", () => {
+    // Detecta una acción publicada sin su fila de documentación.
+    for (const action of [
+      "privacyRequest:submit",
+      "privacyRequest:readOwn",
+      "privacyRequest:respond",
+    ] as const) {
+      expect(AUTHORIZATION_ACTIONS).toContain(action);
+      const row = PERMISSION_MATRIX.find((entry) => entry.action === action);
+      expect(row).toBeDefined();
+      expect(row?.admin).toBeTruthy();
+    }
   });
 });

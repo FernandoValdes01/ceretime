@@ -3395,7 +3395,9 @@ test("TI2-145: la atención guarda pendiente, sincronizado o error con sus inten
 
   expect(await t.run(async (ctx) => await readCalendarSyncState(ctx, appointmentId))).toBeNull();
 
-  const pending = await t.run(async (ctx) => await markCalendarSyncPending(ctx, appointmentId));
+  const pending = await t.run(
+    async (ctx) => await markCalendarSyncPending(ctx, appointmentId, TI83_MONDAY),
+  );
   expect(pending).toEqual({ status: "recorded", attempts: 0 });
   expect(await t.run(async (ctx) => await readCalendarSyncState(ctx, appointmentId))).toEqual({
     status: "pending",
@@ -3419,7 +3421,7 @@ test("TI2-145: la atención guarda pendiente, sincronizado o error con sus inten
   });
 
   // Volver a encolar no cuenta un intento y limpia el error anterior.
-  await t.run(async (ctx) => await markCalendarSyncPending(ctx, appointmentId));
+  await t.run(async (ctx) => await markCalendarSyncPending(ctx, appointmentId, TI83_MONDAY + 15));
   expect(await t.run(async (ctx) => await readCalendarSyncState(ctx, appointmentId))).toEqual({
     status: "pending",
     attempts: 1,
@@ -3511,10 +3513,17 @@ test("TI2-118: el seguimiento guarda acuerdos y tareas en filas propias y la not
   if (stored === null) throw new Error("El registro guardado debe leerse.");
   expect(stored.record).not.toHaveProperty("internalNote");
   expect(stored.internalNoteId).toBe(tables.notes[0]._id);
-  expect(toSharedFollowUpProjection(stored.record, stored.appointmentStatus)).toEqual({
+  expect(stored.appointmentStartsAt).toBe(TI83_MONDAY_9H);
+  expect(
+    toSharedFollowUpProjection(stored.record, {
+      status: stored.appointmentStatus,
+      startsAt: stored.appointmentStartsAt,
+    }),
+  ).toEqual({
     appointmentId,
     accompanimentId,
     appointmentStatus: "completed",
+    appointmentStartsAt: TI83_MONDAY_9H,
     agreements: input.agreements,
     tasks: input.tasks,
     nextSteps: input.nextSteps,

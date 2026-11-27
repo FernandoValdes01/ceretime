@@ -15,12 +15,17 @@ import {
   AVAILABILITY_CONTRACT_VERSION,
 } from "../domain/availability/availability";
 import {
+  accompanimentNeedsAtDateReader,
   accompanimentNeedsReader,
   authorizationReader,
   bookableProfessionalSource,
 } from "../infrastructure/accompaniments/repository";
-import { slotOccupancyReader } from "../infrastructure/appointments/repository";
+import {
+  futureAppointmentsReader,
+  slotOccupancyReader,
+} from "../infrastructure/appointments/repository";
 import { availabilityReader, availabilityWriter } from "../infrastructure/availability/repository";
+import { notificationEventRecorder } from "../infrastructure/notifications/repository";
 import { compatibilitySpaceSource } from "../infrastructure/spaces/repository";
 import {
   availabilityExceptionKindUnion,
@@ -86,6 +91,12 @@ export const updateBlock = mutation({
         authorizationReader(ctx),
         { ...availabilityReader(ctx), ...availabilityWriter(ctx) },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, blockId, block },
+        {
+          future: futureAppointmentsReader(ctx),
+          needs: accompanimentNeedsAtDateReader(ctx),
+          compatibility: compatibilitySpaceSource(ctx),
+          notifications: notificationEventRecorder(ctx),
+        },
       ),
     );
   },
@@ -102,6 +113,12 @@ export const setBlockActive = mutation({
         authorizationReader(ctx),
         { ...availabilityReader(ctx), ...availabilityWriter(ctx) },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, blockId, isActive },
+        {
+          future: futureAppointmentsReader(ctx),
+          needs: accompanimentNeedsAtDateReader(ctx),
+          compatibility: compatibilitySpaceSource(ctx),
+          notifications: notificationEventRecorder(ctx),
+        },
       ),
     );
   },
@@ -123,10 +140,20 @@ export const publishException = mutation({
   handler: async (ctx, { version: _version, ...exception }) => {
     const identity = await ctx.auth.getUserIdentity();
     return unwrap(
-      await publishAvailabilityException(authorizationReader(ctx), availabilityWriter(ctx), {
-        tokenIdentifier: identity?.tokenIdentifier ?? null,
-        exception,
-      }),
+      await publishAvailabilityException(
+        authorizationReader(ctx),
+        { ...availabilityReader(ctx), ...availabilityWriter(ctx) },
+        {
+          tokenIdentifier: identity?.tokenIdentifier ?? null,
+          exception,
+        },
+        {
+          future: futureAppointmentsReader(ctx),
+          needs: accompanimentNeedsAtDateReader(ctx),
+          compatibility: compatibilitySpaceSource(ctx),
+          notifications: notificationEventRecorder(ctx),
+        },
+      ),
     );
   },
 });
@@ -142,6 +169,12 @@ export const removeException = mutation({
         authorizationReader(ctx),
         { ...availabilityReader(ctx), ...availabilityWriter(ctx) },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, exceptionId },
+        {
+          future: futureAppointmentsReader(ctx),
+          needs: accompanimentNeedsAtDateReader(ctx),
+          compatibility: compatibilitySpaceSource(ctx),
+          notifications: notificationEventRecorder(ctx),
+        },
       ),
     );
   },

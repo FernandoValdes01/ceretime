@@ -6,6 +6,7 @@ import {
   updateAccompanimentAssignment,
   type AssignmentScheduler,
 } from "../application/accompaniments/commands";
+import { updateAccompanimentNeeds as updateAccompanimentNeedsUseCase } from "../application/accompaniments/needs";
 import {
   getAccompanimentDetail,
   getInternalNotesUseCase,
@@ -13,6 +14,7 @@ import {
   listOwnedAccompanimentsUseCase,
 } from "../application/accompaniments/queries";
 import { listAccompanimentProfessionals as listAccompanimentProfessionalsUseCase } from "../application/accompaniments/professionals";
+import { listAccompanimentInterns as listAccompanimentInternsUseCase } from "../application/accompaniments/interns";
 import {
   closeAccompaniment as closeAccompanimentUseCase,
   pauseAccompaniment as pauseAccompanimentUseCase,
@@ -22,16 +24,23 @@ import {
 import { mutation, query, type MutationCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import {
+  accompanimentInternsReader,
+  accompanimentNeedsAtDateReader,
+  accompanimentNeedsWriter,
   accompanimentProfessionalsReader,
   accompanimentStatusWriter,
   authorizationReader,
 } from "../infrastructure/accompaniments/repository";
 import {
   appointmentTransitionRepository,
+  futureAppointmentsReader,
   pendingAppointmentsReader,
 } from "../infrastructure/appointments/repository";
+import { availabilityReader } from "../infrastructure/availability/repository";
 import { notificationEventRecorder } from "../infrastructure/notifications/repository";
 import { appointmentAuditRecorder } from "../infrastructure/audit/repository";
+import { calendarSyncScheduler } from "../infrastructure/calendar/sync_scheduler";
+import { compatibilitySpaceSource } from "../infrastructure/spaces/repository";
 import { accompanimentStatusUnion, assignmentRoleUnion } from "../infrastructure/validators";
 import { unwrapApiResult } from "./session";
 
@@ -180,6 +189,43 @@ export const listAccompanimentProfessionals = query({
     const identity = await ctx.auth.getUserIdentity();
     const result = unwrapApiResult(
       await listAccompanimentProfessionalsUseCase(accompanimentProfessionalsReader(ctx), {
+        tokenIdentifier: identity?.tokenIdentifier ?? null,
+        accompanimentId: args.accompanimentId,
+      }),
+    );
+    return {
+      ...result,
+      assigned: [...result.assigned],
+      assignable: [...result.assignable],
+    };
+  },
+});
+
+/**
+ * Practicantes asignados al acompañamiento y los que se le pueden asignar,
+ * con su nombre y su vigencia acordada (TI2-170). Solo el profesional de
+ * personal asignado; el cambio se hace con `assignAccompanimentAccess`,
+ * `updateAccompanimentAccess` y `revokeAccompanimentAccess`.
+ */
+export const listAccompanimentInterns = query({
+  args: { accompanimentId: v.id("accompaniments") },
+  returns: v.object({
+    assigned: v.array(
+      v.object({
+        userId: v.id("users"),
+        fullName: v.string(),
+        assignedAt: v.optional(v.number()),
+        validFrom: v.optional(v.number()),
+        validUntil: v.optional(v.number()),
+      }),
+    ),
+    assignable: v.array(v.object({ userId: v.id("users"), fullName: v.string() })),
+    assignableComplete: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    const result = unwrapApiResult(
+      await listAccompanimentInternsUseCase(accompanimentInternsReader(ctx), {
         tokenIdentifier: identity?.tokenIdentifier ?? null,
         accompanimentId: args.accompanimentId,
       }),
@@ -402,6 +448,7 @@ export const closeAccompaniment = mutation({
           persister: appointmentTransitionRepository(ctx).persister,
           audit: appointmentAuditRecorder(ctx),
           notifications: notificationEventRecorder(ctx),
+          calendarSync: calendarSyncScheduler(ctx),
         },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,
@@ -415,5 +462,42 @@ export const closeAccompaniment = mutation({
       status: result.status,
       cancelledAppointments: result.cancelledAppointments,
     };
+  },
+});
+
+/**
+ * Actualiza las necesidades de acceso del estudiante (TI2-156).
+ *
+ * Solo el estudiante dueño, sobre un acompañamiento activo o en pausa. El
+ * cambio se aplica a atenciones futuras sin alterar lo registrado antes: las
+ * anteriores conservan su fila. Las futuras que dejan de ser compatibles se
+ * avisan a sus profesionales para coordinar una solución, sin cancelarlas.
+ */
+export const updateAccompanimentNeeds = mutation({
+  args: {
+    accompanimentId: v.id("accompaniments"),
+    accessNeeds: v.string(),
+  },
+  returns: v.null(),
+  handler: async (ctx, { accompanimentId, accessNeeds }) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(
+      await updateAccompanimentNeedsUseCase(
+        authorizationReader(ctx),
+        accompanimentNeedsWriter(ctx),
+        {
+          tokenIdentifier: identity?.tokenIdentifier ?? null,
+          accompanimentId,
+          accessNeeds,
+        },
+        {
+          future: futureAppointmentsReader(ctx),
+          availability: availabilityReader(ctx),
+          needs: accompanimentNeedsAtDateReader(ctx),
+          compatibility: compatibilitySpaceSource(ctx),
+          notifications: notificationEventRecorder(ctx),
+        },
+      ),
+    );
   },
 });

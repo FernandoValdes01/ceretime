@@ -418,6 +418,55 @@ function expectOnlyAppointmentId(result: unknown, appointmentId: string) {
 
 // ── Cancelación ─────────────────────────────────────────────────────────────
 
+test("TI2-155 API: cancelar y reagendar se rechazan desde el inicio sin tocar la reserva", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "after-start");
+  const block = await seedBlock(t, agenda.pro);
+  const date = futureDateForWeekday(1);
+  const [, target] = slotsOnDate(agenda.pro, block, date);
+  const startsAt = Date.now() - HOUR;
+  const appointmentId = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt,
+    endsAt: startsAt + HOUR,
+  });
+  const before = await getAppointment(t, appointmentId);
+  const asStudent = t.withIdentity(agenda.studentIdentity);
+  const asPro = t.withIdentity(agenda.proIdentity);
+
+  await expectPublicError(
+    asStudent.mutation(api.presentation.appointments.cancelAppointment, {
+      appointmentId,
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+    "conflict",
+  );
+  await expectPublicError(
+    asPro.mutation(api.presentation.appointments.cancelAppointment, {
+      appointmentId,
+      reason: "Motivo ficticio",
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+    "conflict",
+  );
+  await expectPublicError(
+    asStudent.mutation(api.presentation.appointments.rescheduleAppointment, {
+      appointmentId,
+      professionalId: agenda.pro,
+      modality: "online",
+      startAt: target!.startAt,
+      endAt: target!.endAt,
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+    "conflict",
+  );
+
+  expect(await getAppointment(t, appointmentId)).toEqual(before);
+  expect(await readAuditRows(t)).toHaveLength(0);
+});
+
 test("TI2-121 API: cancelar devuelve solo appointmentId y libera el cupo", async () => {
   const t = convexTest(schema, modules);
   const agenda = await seedAgenda(t, "cancel-shape");
@@ -910,6 +959,7 @@ test("TI2-122 API: reagendar actualiza el .ics y deja obsoleto el evento anterio
       modality: "online",
       calendarAdded: false,
       calendarNeedsUpdate: true,
+      calendarSyncStatus: "pending",
     },
   ]);
 
@@ -2912,6 +2962,7 @@ test("TI2-128 API: un evento escrito en una transacción que aborta se descarta 
           appointments: appointmentChangeReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
           notifications: notificationEventRecorder(ctx),
+          calendarSync: { scheduleSync: async () => undefined },
           audit: {
             recordAppointmentAudit: async (event) => {
               await recorder.recordAppointmentAudit(event);
@@ -3032,6 +3083,7 @@ test("TI2-119 API: el rechazo deja la inasistencia sin justificar y sin sanción
     await asPro.mutation(api.presentation.appointments.reviewAppointmentJustification, {
       appointmentId,
       review: "rejected",
+      explanation: "Explicación del rechazo",
       version: APPOINTMENT_CONTRACT_VERSION,
     }),
     appointmentId,
@@ -3044,6 +3096,71 @@ test("TI2-119 API: el rechazo deja la inasistencia sin justificar y sin sanción
   });
   // Sin sanción automática: la revisión solo cambia el estado de la atención.
   expect(await readAuditRows(t)).toHaveLength(0);
+});
+
+test("TI2-155 API: el Estudiante lee la explicación del rechazo en su vista compartida", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "justification-shared-explanation");
+  const startsAt = Date.now() - 2 * HOUR;
+  const appointmentId = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt,
+    endsAt: startsAt + HOUR,
+    status: "no_show",
+  });
+  const asStudent = t.withIdentity(agenda.studentIdentity);
+  const asPro = t.withIdentity(agenda.proIdentity);
+
+  await asStudent.mutation(api.presentation.appointments.submitAppointmentJustification, {
+    appointmentId,
+    explanation: "Explicación entregada",
+    supportingDocumentReceived: true,
+    version: APPOINTMENT_CONTRACT_VERSION,
+  });
+  expectOnlyAppointmentId(
+    await asPro.mutation(api.presentation.appointments.reviewAppointmentJustification, {
+      appointmentId,
+      review: "rejected",
+      explanation: "  Explicación del rechazo  ",
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+    appointmentId,
+  );
+
+  expect(await getAppointment(t, appointmentId)).toMatchObject({
+    justificationReviewExplanation: "Explicación del rechazo",
+  });
+
+  const detail = await asStudent.query(api.presentation.appointments.getAppointment, {
+    appointmentId,
+    version: APPOINTMENT_CONTRACT_VERSION,
+  });
+  expect(detail).toMatchObject({
+    id: appointmentId,
+    status: "no_show_unjustified",
+    view: "shared",
+    justificationReview: "rejected",
+    justificationReviewExplanation: "Explicación del rechazo",
+  });
+
+  const from = new Date(startsAt - DAY).toISOString().slice(0, 10);
+  const to = new Date(startsAt + DAY).toISOString().slice(0, 10);
+  const page = await asStudent.query(api.presentation.appointments.listAppointments, {
+    from,
+    to,
+    limit: 10,
+    version: APPOINTMENT_CONTRACT_VERSION,
+  });
+  expect(page.items).toEqual([
+    expect.objectContaining({
+      id: appointmentId,
+      status: "no_show_unjustified",
+      view: "shared",
+      justificationReviewExplanation: "Explicación del rechazo",
+    }),
+  ]);
 });
 
 test("TI2-119 API: el plazo vencido rechaza la entrega y el Profesional cierra sin justificación", async () => {
@@ -3090,6 +3207,7 @@ test("TI2-119 API: el plazo vencido rechaza la entrega y el Profesional cierra s
     await asPro.mutation(api.presentation.appointments.reviewAppointmentJustification, {
       appointmentId,
       review: "rejected",
+      explanation: "Explicación del rechazo",
       version: APPOINTMENT_CONTRACT_VERSION,
     }),
     appointmentId,
@@ -3289,6 +3407,7 @@ test("TI2-119 API: recursos ajenos, roles y cuentas sin vigencia se deniegan sin
       .mutation(api.presentation.appointments.reviewAppointmentJustification, {
         appointmentId: inactiveProAppointment,
         review: "rejected",
+        explanation: "Explicación del rechazo",
         version: APPOINTMENT_CONTRACT_VERSION,
       }),
     "unauthorized",

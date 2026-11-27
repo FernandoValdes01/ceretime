@@ -136,6 +136,13 @@ vi.mock("convex/react", async () => {
             | undefined,
         );
       }
+      if (
+        name === "presentation/accompaniments:listAccompanimentInterns" ||
+        name === "presentation/accompaniments:listAccompanimentProfessionals" ||
+        name === "presentation/accounts:listInternAccounts"
+      ) {
+        return undefined;
+      }
       return sessionMocks.getSession();
     },
   };
@@ -1154,6 +1161,8 @@ describe("portal del Estudiante con sesión y rol independientes (TI2-12)", () =
     expect(heading).toBeDefined();
     expect(router.state.location.pathname).toBe("/estudiante/horarios");
     expect(screen.queryByRole("heading", { name: "Portal del Estudiante" })).toBeNull();
+    expect(screen.getByText("Estudiante")).toBeDefined();
+    expect(screen.queryByText("Estudiante acompañado")).toBeNull();
     expect(screen.getByRole("button", { name: "Cerrar sesión" })).toBeDefined();
   });
 });

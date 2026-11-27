@@ -1,5 +1,5 @@
 import { createRootRoute } from "@tanstack/react-router";
-import { NotFoundRedirect, RootComponent } from "./route-components.tsx";
+import { NotFoundPage, RootComponent } from "./route-components.tsx";
 
 /**
  * Raíz del router (TI2-133).
@@ -9,5 +9,5 @@ import { NotFoundRedirect, RootComponent } from "./route-components.tsx";
  */
 export const rootRoute = createRootRoute({
   component: RootComponent,
-  notFoundComponent: NotFoundRedirect,
+  notFoundComponent: NotFoundPage,
 });

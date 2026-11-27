@@ -1,13 +1,14 @@
 import {
   APPOINTMENT_CONTRACT_VERSION,
+  isCalendarActionableStatus,
   toAppointmentProjection,
   type Appointment,
   type AppointmentContractVersion,
-  type AppointmentPage,
   type AppointmentProjection,
   type AppointmentStatus,
   type AppointmentView,
 } from "../../domain/appointments/appointment";
+import { isAppointmentStillBookable } from "./impact";
 import { isProfileActive } from "../../domain/authorization/permissions";
 import {
   civilRangeToInstantRange,
@@ -21,6 +22,10 @@ import {
   unauthorizedError,
   type ApiResult,
 } from "../../domain/errors/api_error";
+import type {
+  CalendarSyncErrorCode,
+  CalendarSyncStatus,
+} from "../../domain/calendar/calendar_link";
 import {
   authorizeAppointmentRead,
   type AuthorizableProfile,
@@ -74,7 +79,27 @@ export interface AppointmentAgendaReader {
 export interface AppointmentQueryDeps {
   readonly auth: AuthorizationReader;
   readonly appointments: AppointmentAgendaReader;
+  readonly availability: import("../availability/ports").AvailabilityReader;
+  readonly needsAtDate: {
+    findNeedsAt(
+      accompanimentId: string,
+      at: number,
+    ): Promise<{
+      readonly _id: string;
+      readonly needs: readonly { readonly id: string; readonly label: string }[];
+    } | null>;
+  };
+  readonly compatibility: import("../availability/ports").CompatibilitySpaceSource;
+  readonly participants: {
+    listAdditionalIds(appointmentId: string): Promise<readonly string[]>;
+  };
+  readonly now?: () => number;
 }
+
+/** Atención proyectada con marca de coordinación (TI2-156). */
+export type AppointmentProjectionWithCoordination = AppointmentProjection & {
+  readonly needsCoordination: boolean;
+};
 
 /** Entrada de la lista: sin `accompanimentId` es la agenda propia. */
 export interface ListAppointmentsQuery {
@@ -114,18 +139,60 @@ function instantRangeOf(input: ListAppointmentsQuery): InstantRange | null {
   }
 }
 
+/** Marca si la atención futura y vigente dejó de ser reservable (TI2-156).
+ *
+ * Ante un fallo de lectura (tope truncado, versión ausente) marca `true`
+ * (revisar): es lo seguro, en vez de ocultar toda la agenda por un dato
+ * secundario.
+ */
+async function coordinationFor(
+  deps: AppointmentQueryDeps,
+  row: Appointment,
+  now: number,
+): Promise<boolean> {
+  if (!isCalendarActionableStatus(row.status) || row.startAt <= now) return false;
+  const additionalIds = await deps.participants.listAdditionalIds(row.id);
+  const result = await isAppointmentStillBookable(
+    {
+      auth: deps.auth,
+      availability: deps.availability,
+      needs: deps.needsAtDate,
+      compatibility: deps.compatibility,
+    },
+    {
+      id: row.id,
+      accompanimentId: row.accompanimentId,
+      professionalId: row.professionalId,
+      modality: row.modality,
+      ...(row.spaceId === undefined ? {} : { spaceId: row.spaceId }),
+      startAt: row.startAt,
+      endAt: row.endAt,
+      ...(additionalIds.length === 0 ? {} : { additionalProfessionalIds: [...additionalIds] }),
+    },
+  );
+  if (result.status === "error") return true;
+  return !result.data;
+}
+
 /** Atenciones de un acompañamiento con la vista de quien consulta. */
 async function readAccompanimentAgenda(
   deps: AppointmentQueryDeps,
   tokenIdentifier: string | null,
   accompanimentId: string,
   range: InstantRange,
-): Promise<ApiResult<readonly AppointmentProjection[]>> {
+): Promise<ApiResult<readonly AppointmentProjectionWithCoordination[]>> {
   const grant = await authorizeAppointmentRead(deps.auth, { tokenIdentifier, accompanimentId });
   if (grant.status === "error") return denied();
   const rows = await deps.appointments.listByAccompaniment(accompanimentId, range);
   if (rows.status === "error") return conflict();
-  return okResult(rows.data.map((row) => toAppointmentProjection(row, grant.data.view)));
+  const now = deps.now === undefined ? Date.now() : deps.now();
+  const projections: AppointmentProjectionWithCoordination[] = [];
+  for (const row of rows.data) {
+    const projected = toAppointmentProjection(row, grant.data.view);
+    const needsCoordination = await coordinationFor(deps, row, now);
+    projections.push({ ...projected, needsCoordination });
+  }
+  return okResult(projections);
 }
 
 /** Filas de la agenda propia según el rol, o `null` si el rol no tiene agenda propia. */
@@ -154,7 +221,7 @@ async function readOwnAgenda(
   deps: AppointmentQueryDeps,
   tokenIdentifier: string | null,
   range: InstantRange,
-): Promise<ApiResult<readonly AppointmentProjection[]>> {
+): Promise<ApiResult<readonly AppointmentProjectionWithCoordination[]>> {
   if (tokenIdentifier === null) return denied();
   const profile = await deps.auth.findProfileByTokenIdentifier(tokenIdentifier);
   if (profile === null || !isProfileActive(profile)) return denied();
@@ -162,8 +229,9 @@ async function readOwnAgenda(
   if (rows === null) return denied();
   if (rows.status === "error") return conflict();
 
+  const now = deps.now === undefined ? Date.now() : deps.now();
   const views = new Map<string, AppointmentView | null>();
-  const projections: AppointmentProjection[] = [];
+  const projections: AppointmentProjectionWithCoordination[] = [];
   for (const row of rows.data) {
     let view = views.get(row.accompanimentId);
     if (view === undefined) {
@@ -174,7 +242,11 @@ async function readOwnAgenda(
       view = grant.status === "ok" ? grant.data.view : null;
       views.set(row.accompanimentId, view);
     }
-    if (view !== null) projections.push(toAppointmentProjection(row, view));
+    if (view !== null) {
+      const projected = toAppointmentProjection(row, view);
+      const needsCoordination = await coordinationFor(deps, row, now);
+      projections.push({ ...projected, needsCoordination });
+    }
   }
   return okResult(projections);
 }
@@ -204,7 +276,14 @@ function positionCursors(items: readonly AppointmentProjection[]): readonly stri
 export async function listAppointments(
   deps: AppointmentQueryDeps,
   input: ListAppointmentsQuery,
-): Promise<ApiResult<AppointmentPage>> {
+): Promise<
+  ApiResult<{
+    readonly items: readonly AppointmentProjectionWithCoordination[];
+    readonly hasMore: boolean;
+    readonly nextCursor: string | null;
+    readonly version: AppointmentContractVersion;
+  }>
+> {
   if (input.version !== APPOINTMENT_CONTRACT_VERSION) return conflict();
   if (!Number.isInteger(input.limit) || input.limit < 1) return conflict();
   if (input.limit > LIST_APPOINTMENTS_PAGE_LIMIT_MAX) return conflict();
@@ -243,11 +322,16 @@ export async function listAppointments(
 export async function getAppointment(
   deps: AppointmentQueryDeps,
   input: GetAppointmentQuery,
-): Promise<ApiResult<AppointmentProjection>> {
+): Promise<ApiResult<AppointmentProjectionWithCoordination>> {
   if (input.version !== APPOINTMENT_CONTRACT_VERSION) return conflict();
   const readable = await findReadableAppointment(deps, input);
   if (readable === null) return denied();
-  return okResult(toAppointmentProjection(readable.appointment, readable.view));
+  const now = deps.now === undefined ? Date.now() : deps.now();
+  const needsCoordination = await coordinationFor(deps, readable.appointment, now);
+  return okResult({
+    ...toAppointmentProjection(readable.appointment, readable.view),
+    needsCoordination,
+  });
 }
 
 /** Capacidades de la regla de lectura del detalle de una atención. */
@@ -290,6 +374,14 @@ export interface AppointmentCalendarSummary {
   readonly modality: ModalityPreference;
   readonly calendarAdded: boolean;
   readonly calendarNeedsUpdate: boolean;
+  /**
+   * Estado de sincronización automática (TI2-162), ausente en filas anteriores
+   * a TI2-145: `pending` no pide nada cuando nadie vinculó, `synced` refleja
+   * el horario vigente y `error` trae el código genérico (`not_connected` pide
+   * volver a vincular, `unavailable` permite reintentar).
+   */
+  readonly calendarSyncStatus?: CalendarSyncStatus;
+  readonly calendarSyncErrorCode?: CalendarSyncErrorCode;
 }
 
 /** Lectura acotada por acompañamiento, ordenada de la más reciente a la más antigua. */

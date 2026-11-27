@@ -13,6 +13,9 @@
   ],
   "words": [
     "cmdk",
+    "nginx",
+    "nginxinc",
+    "ENVSUBST",
     "evals",
     "frontmatter",
     "garamond",
@@ -258,6 +261,8 @@
     "CALSCALE",
     "Crockford",
     "CROCKFORD",
+    "Bookability",
+    "participations",
     "gmail",
     "Autopush"
   ]

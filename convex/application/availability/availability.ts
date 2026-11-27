@@ -19,6 +19,12 @@ import {
   unauthorizedError,
   type ApiResult,
 } from "../../domain/errors/api_error";
+import {
+  isAppointmentStillBookable,
+  notifyAvailabilityImpact,
+  type ImpactedAppointmentInput,
+} from "../appointments/impact";
+import type { NotificationEventRecorder } from "../notifications/ports";
 import type { AccessNeed } from "../../domain/requests/request";
 import { assessCompatibility, type CompatibilityOption } from "../../domain/spaces/compatibility";
 import { toSpaceFields } from "../../domain/spaces/space";
@@ -97,6 +103,129 @@ function isValidSearchRange(from: string, to: string): boolean {
 export type PublishBlockInput = Omit<AvailabilityBlock, "id" | "professionalId" | "version">;
 
 /**
+ * Impacto de un cambio de disponibilidad sobre atenciones futuras (TI2-156).
+ *
+ * Obligatorio: sin él el caso de uso no avisa. `future` lista por participante
+ * (responsable o adicional, TI2-142); `now` solo lo fijan las pruebas.
+ */
+export interface AvailabilityChangeImpactDeps {
+  readonly future: {
+    listResponsibleByWeekdays(
+      professionalId: string,
+      weekdays: readonly number[],
+      now: number,
+      pageSize?: number,
+    ): Promise<{
+      readonly complete: boolean;
+      readonly appointments: readonly ImpactedAppointmentInput[];
+    }>;
+    listResponsibleByDate(
+      professionalId: string,
+      date: string,
+      now: number,
+    ): Promise<{
+      readonly complete: boolean;
+      readonly appointments: readonly ImpactedAppointmentInput[];
+    }>;
+    listAdditionalByWeekdays(
+      professionalId: string,
+      weekdays: readonly number[],
+      now: number,
+      pageSize?: number,
+    ): Promise<{
+      readonly complete: boolean;
+      readonly appointments: readonly ImpactedAppointmentInput[];
+    }>;
+    listAdditionalByDate(
+      professionalId: string,
+      date: string,
+      now: number,
+      pageSize?: number,
+    ): Promise<{
+      readonly complete: boolean;
+      readonly appointments: readonly ImpactedAppointmentInput[];
+    }>;
+  };
+  readonly needs: {
+    findNeedsAt(
+      accompanimentId: string,
+      at: number,
+    ): Promise<{
+      readonly _id: string;
+      readonly needs: readonly { readonly id: string; readonly label: string }[];
+    } | null>;
+  };
+  readonly compatibility: CompatibilitySpaceSource;
+  readonly notifications: NotificationEventRecorder;
+  readonly now?: () => number;
+}
+
+async function collectAvailabilityCandidates(
+  future: AvailabilityChangeImpactDeps["future"],
+  professionalId: string,
+  weekdays: readonly number[],
+  now: number,
+): Promise<
+  | { readonly complete: true; readonly appointments: ImpactedAppointmentInput[] }
+  | { readonly complete: false }
+> {
+  const responsible = await future.listResponsibleByWeekdays(professionalId, weekdays, now);
+  if (!responsible.complete) return { complete: false };
+  const seen = new Map<string, ImpactedAppointmentInput>();
+  for (const appointment of responsible.appointments) seen.set(appointment.id, appointment);
+  const additional = await future.listAdditionalByWeekdays(professionalId, weekdays, now);
+  if (!additional.complete) return { complete: false };
+  for (const appointment of additional.appointments) seen.set(appointment.id, appointment);
+  return { complete: true, appointments: [...seen.values()] };
+}
+
+async function collectAvailabilityCandidatesByDate(
+  future: AvailabilityChangeImpactDeps["future"],
+  professionalId: string,
+  date: string,
+  now: number,
+): Promise<
+  | { readonly complete: true; readonly appointments: ImpactedAppointmentInput[] }
+  | { readonly complete: false }
+> {
+  const responsible = await future.listResponsibleByDate(professionalId, date, now);
+  if (!responsible.complete) return { complete: false };
+  const additional = await future.listAdditionalByDate(professionalId, date, now);
+  if (!additional.complete) return { complete: false };
+  const seen = new Map<string, ImpactedAppointmentInput>();
+  for (const appointment of [...responsible.appointments, ...additional.appointments]) {
+    seen.set(appointment.id, appointment);
+  }
+  return { complete: true, appointments: [...seen.values()] };
+}
+
+async function evaluateAllBookable(
+  deps: {
+    readonly auth: AuthorizationReader;
+    readonly availability: AvailabilityReader;
+    readonly needs: AvailabilityChangeImpactDeps["needs"];
+    readonly compatibility: CompatibilitySpaceSource;
+  },
+  appointments: readonly ImpactedAppointmentInput[],
+): Promise<{ readonly ok: true; readonly byId: Map<string, boolean> } | { readonly ok: false }> {
+  const byId = new Map<string, boolean>();
+  for (const appointment of appointments) {
+    const result = await isAppointmentStillBookable(
+      {
+        auth: deps.auth,
+        availability: deps.availability,
+        needs: deps.needs,
+        compatibility: deps.compatibility,
+      },
+      appointment,
+    );
+    if (result.status === "error") return { ok: false };
+    byId.set(appointment.id, result.data);
+  }
+  return { ok: true, byId };
+}
+
+/**
  * Publica un bloque recurrente propio. El dueño sale del actor autorizado,
  * nunca del cliente. Requiere profesional vigente (TI2-86).
  */
@@ -117,6 +246,10 @@ export async function publishAvailabilityBlock(
  * Reemplaza la ventana de un bloque propio. El dueño se lee en el servidor
  * desde la fila guardada: un bloque ajeno o inexistente se deniega igual,
  * sin filtrar existencia.
+ *
+ * Compara antes y después en la misma transacción y avisa solo lo que pasa de
+ * reservable a no reservable, sin borrar ni cancelar. Acota a los días de la
+ * semana del bloque viejo y del nuevo para no bloquear una agenda llena.
  */
 export async function updateAvailabilityBlock(
   auth: AuthorizationReader,
@@ -126,6 +259,7 @@ export async function updateAvailabilityBlock(
     readonly blockId: string;
     readonly block: PublishBlockInput;
   },
+  impact: AvailabilityChangeImpactDeps,
 ): Promise<ApiResult<null>> {
   const existing = await store.getBlock(input.blockId);
   if (existing === null) return denied();
@@ -134,12 +268,43 @@ export async function updateAvailabilityBlock(
     professionalId: existing.professionalId,
   });
   if (grant.status === "error") return denied();
-  return store.updateBlock(input.blockId, input.block);
+  const now = impact.now === undefined ? Date.now() : impact.now();
+  const weekdays = [...new Set([existing.weekday, input.block.weekday])];
+  const candidates = await collectAvailabilityCandidates(
+    impact.future,
+    existing.professionalId,
+    weekdays,
+    now,
+  );
+  if (!candidates.complete) return errResult(conflictError());
+  const slotDeps = {
+    auth,
+    availability: store as AvailabilityReader,
+    needs: impact.needs,
+    compatibility: impact.compatibility,
+  };
+  const before = await evaluateAllBookable(slotDeps, candidates.appointments);
+  if (!before.ok) return errResult(conflictError());
+  const written = await store.updateBlock(input.blockId, input.block);
+  if (written.status === "error") return written;
+  const after = await evaluateAllBookable(slotDeps, candidates.appointments);
+  if (!after.ok) return errResult(conflictError());
+  const newly = candidates.appointments.filter(
+    (appointment) =>
+      before.byId.get(appointment.id) === true && after.byId.get(appointment.id) === false,
+  );
+  await notifyAvailabilityImpact(impact.notifications, newly, {
+    actorId: grant.data.callerId,
+    occurredAt: now,
+  });
+  return written;
 }
 
 /**
  * Activa o retira un bloque propio sin borrarlo. La reactivación exige que
  * la sala siga vigente; esa comprobación vive en el repositorio (TI2-95).
+ *
+ * Solo avisa lo que deja de estar cubierto: reactivar no avisa.
  */
 export async function setAvailabilityBlockActive(
   auth: AuthorizationReader,
@@ -149,6 +314,7 @@ export async function setAvailabilityBlockActive(
     readonly blockId: string;
     readonly isActive: boolean;
   },
+  impact: AvailabilityChangeImpactDeps,
 ): Promise<ApiResult<null>> {
   const existing = await store.getBlock(input.blockId);
   if (existing === null) return denied();
@@ -157,7 +323,35 @@ export async function setAvailabilityBlockActive(
     professionalId: existing.professionalId,
   });
   if (grant.status === "error") return denied();
-  return store.setBlockActive(input.blockId, input.isActive);
+  const now = impact.now === undefined ? Date.now() : impact.now();
+  const candidates = await collectAvailabilityCandidates(
+    impact.future,
+    existing.professionalId,
+    [existing.weekday],
+    now,
+  );
+  if (!candidates.complete) return errResult(conflictError());
+  const slotDeps = {
+    auth,
+    availability: store as AvailabilityReader,
+    needs: impact.needs,
+    compatibility: impact.compatibility,
+  };
+  const before = await evaluateAllBookable(slotDeps, candidates.appointments);
+  if (!before.ok) return errResult(conflictError());
+  const written = await store.setBlockActive(input.blockId, input.isActive);
+  if (written.status === "error") return written;
+  const after = await evaluateAllBookable(slotDeps, candidates.appointments);
+  if (!after.ok) return errResult(conflictError());
+  const newly = candidates.appointments.filter(
+    (appointment) =>
+      before.byId.get(appointment.id) === true && after.byId.get(appointment.id) === false,
+  );
+  await notifyAvailabilityImpact(impact.notifications, newly, {
+    actorId: grant.data.callerId,
+    occurredAt: now,
+  });
+  return written;
 }
 
 /** Entrada de publicación de una excepción propia, sin profesional del cliente. */
@@ -168,29 +362,68 @@ export type PublishExceptionInput = Omit<
 
 /**
  * Publica una excepción puntual propia (cancelación o agregado). El dueño
- * sale del actor autorizado, nunca del cliente.
+ * sale del actor autorizado, nunca del cliente. Solo la cancelación puede
+ * dejar futuras sin cobertura y se avisa con antes/después en su fecha; el
+ * agregado solo suma disponibilidad y no avisa.
  */
 export async function publishAvailabilityException(
   auth: AuthorizationReader,
-  store: AvailabilityWriter,
+  store: AvailabilityReader & AvailabilityWriter,
   input: { readonly tokenIdentifier: string | null; readonly exception: PublishExceptionInput },
+  impact: AvailabilityChangeImpactDeps,
 ): Promise<ApiResult<{ readonly exceptionId: string }>> {
   const grant = await authorizeAvailabilityEdit(auth, {
     tokenIdentifier: input.tokenIdentifier,
     professionalId: null,
   });
   if (grant.status === "error") return denied();
-  return store.insertException({ professionalId: grant.data.callerId, ...input.exception });
+  if (input.exception.kind !== "cancelled") {
+    return store.insertException({ professionalId: grant.data.callerId, ...input.exception });
+  }
+  const now = impact.now === undefined ? Date.now() : impact.now();
+  const candidates = await collectAvailabilityCandidatesByDate(
+    impact.future,
+    grant.data.callerId,
+    input.exception.date,
+    now,
+  );
+  if (!candidates.complete) return errResult(conflictError());
+  const slotDeps = {
+    auth,
+    availability: store as AvailabilityReader,
+    needs: impact.needs,
+    compatibility: impact.compatibility,
+  };
+  const before = await evaluateAllBookable(slotDeps, candidates.appointments);
+  if (!before.ok) return errResult(conflictError());
+  const written = await store.insertException({
+    professionalId: grant.data.callerId,
+    ...input.exception,
+  });
+  if (written.status === "error") return written;
+  const after = await evaluateAllBookable(slotDeps, candidates.appointments);
+  if (!after.ok) return errResult(conflictError());
+  const newly = candidates.appointments.filter(
+    (appointment) =>
+      before.byId.get(appointment.id) === true && after.byId.get(appointment.id) === false,
+  );
+  await notifyAvailabilityImpact(impact.notifications, newly, {
+    actorId: grant.data.callerId,
+    occurredAt: now,
+  });
+  return written;
 }
 
 /**
- * Retira una excepción propia. Una excepción ajena o inexistente se deniega
- * igual, sin filtrar existencia.
+ * Retira una excepción propia. Acota a su fecha: retirar una ventana agregada
+ * puede dejar futuras sin cobertura y se avisa, retirar una cancelación solo
+ * agrega disponibilidad y no avisa a nadie nuevo.
  */
 export async function removeAvailabilityException(
   auth: AuthorizationReader,
   store: AvailabilityReader & AvailabilityWriter,
   input: { readonly tokenIdentifier: string | null; readonly exceptionId: string },
+  impact: AvailabilityChangeImpactDeps,
 ): Promise<ApiResult<null>> {
   const existing = await store.getException(input.exceptionId);
   if (existing === null) return denied();
@@ -199,7 +432,35 @@ export async function removeAvailabilityException(
     professionalId: existing.professionalId,
   });
   if (grant.status === "error") return denied();
-  return store.removeException(input.exceptionId);
+  const now = impact.now === undefined ? Date.now() : impact.now();
+  const candidates = await collectAvailabilityCandidatesByDate(
+    impact.future,
+    existing.professionalId,
+    existing.date,
+    now,
+  );
+  if (!candidates.complete) return errResult(conflictError());
+  const slotDeps = {
+    auth,
+    availability: store as AvailabilityReader,
+    needs: impact.needs,
+    compatibility: impact.compatibility,
+  };
+  const before = await evaluateAllBookable(slotDeps, candidates.appointments);
+  if (!before.ok) return errResult(conflictError());
+  const written = await store.removeException(input.exceptionId);
+  if (written.status === "error") return written;
+  const after = await evaluateAllBookable(slotDeps, candidates.appointments);
+  if (!after.ok) return errResult(conflictError());
+  const newly = candidates.appointments.filter(
+    (appointment) =>
+      before.byId.get(appointment.id) === true && after.byId.get(appointment.id) === false,
+  );
+  await notifyAvailabilityImpact(impact.notifications, newly, {
+    actorId: grant.data.callerId,
+    occurredAt: now,
+  });
+  return written;
 }
 
 /** Disponibilidad propia: bloques vigentes y excepciones del rango pedido. */

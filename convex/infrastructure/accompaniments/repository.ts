@@ -511,6 +511,14 @@ export function accompanimentOpener(ctx: MutationCtx) {
         { accompanimentId, userId: professionalId, assignedRole: "professional" },
         professionalId,
       );
+      const now = Date.now();
+      await ctx.db.insert("accompanimentNeeds", {
+        accompanimentId,
+        accessNeeds: opening.accessNeeds,
+        validFrom: 1,
+        createdBy: professionalId,
+        createdAt: now,
+      });
       const opened = await getAccompanimentById(ctx, accompanimentId);
       if (opened === null) throw new Error("El acompañamiento abierto no quedó guardado.");
       return {
@@ -572,6 +580,180 @@ export function accompanimentStatusWriter(ctx: MutationCtx) {
 }
 
 /**
+ * Escritura de necesidades de acceso del acompañamiento (TI2-156). Cumple por
+ * forma el puerto `AccompanimentNeedsWriter` sin importarlo. Solo cambia el
+ * texto `accessNeeds` para atenciones futuras: las anteriores conservan su
+ * fila y no se tocan.
+ */
+export async function patchAccompanimentAccessNeeds(
+  ctx: MutationCtx,
+  accompanimentId: string,
+  accessNeeds: string,
+): Promise<void> {
+  const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+  if (id === null) {
+    throw new Error("La actualización de necesidades referencia un acompañamiento inexistente.");
+  }
+  await ctx.db.patch(id, { accessNeeds });
+}
+
+/**
+ * Escritor de necesidades para Aplicación (TI2-156).
+ *
+ * Guarda la copia vigente en `accompaniments` y versiona en
+ * `accompanimentNeeds` (NECESIDADES_ACCESO del MER): cierra la vigente con
+ * `validUntil` y crea la nueva con `validFrom` en el instante del cambio.
+ */
+export function accompanimentNeedsWriter(ctx: MutationCtx) {
+  return {
+    saveAccessNeeds: async (accompanimentId: string, accessNeeds: string) =>
+      await patchAccompanimentAccessNeeds(ctx, accompanimentId, accessNeeds),
+    saveVersionedAccessNeeds: async (
+      accompanimentId: string,
+      accessNeeds: string,
+      actorId: string,
+      now: number,
+    ) => await saveVersionedAccessNeeds(ctx, accompanimentId, accessNeeds, actorId, now),
+  };
+}
+
+/** Tope de versiones leídas por acompañamiento para decidir la vigente. */
+export const MAX_NEED_VERSIONS = 100;
+
+/** Versiones de un acompañamiento ordenadas por vigencia. */
+export async function listNeedVersions(
+  ctx: DbReader,
+  accompanimentId: Id<"accompaniments">,
+): Promise<Doc<"accompanimentNeeds">[]> {
+  return await ctx.db
+    .query("accompanimentNeeds")
+    .withIndex("by_accompanimentId_and_validFrom", (q) => q.eq("accompanimentId", accompanimentId))
+    .order("asc")
+    .take(MAX_NEED_VERSIONS + 1);
+}
+
+/** Versión vigente a un instante (exclusivo en `validUntil`). */
+export function needVersionAt(
+  versions: readonly Doc<"accompanimentNeeds">[],
+  at: number,
+): Doc<"accompanimentNeeds"> | null {
+  let current: Doc<"accompanimentNeeds"> | null = null;
+  for (const version of versions) {
+    if (version.validFrom <= at && (version.validUntil === undefined || at < version.validUntil)) {
+      if (current === null || version.validFrom > current.validFrom) current = version;
+    }
+  }
+  return current;
+}
+
+/**
+ * Cierra la vigente y crea la nueva versión, además de la copia en
+ * `accompaniments`. Si no hay versiones (fila anterior a la migración o
+ * semilla sin migrar), crea primero la inicial con el texto vigente antes del
+ * cambio (`validFrom: 1`), así las atenciones pasadas se siguen evaluando con
+ * lo que regía y no con lo nuevo.
+ */
+export async function saveVersionedAccessNeeds(
+  ctx: MutationCtx,
+  accompanimentId: string,
+  accessNeeds: string,
+  actorId: string,
+  now: number,
+): Promise<void> {
+  const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+  const actor = ctx.db.normalizeId("users", actorId);
+  if (id === null || actor === null) {
+    throw new Error("La actualización versionada referencia un acompañamiento inexistente.");
+  }
+  const row = await getAccompanimentById(ctx, id);
+  if (row === null) {
+    throw new Error("La actualización versionada referencia un acompañamiento inexistente.");
+  }
+  const versions = await listNeedVersions(ctx, id);
+  if (versions.length === 0) {
+    await ctx.db.insert("accompanimentNeeds", {
+      accompanimentId: id,
+      accessNeeds: row.accessNeeds,
+      validFrom: 1,
+      validUntil: now,
+      createdBy: actor,
+      createdAt: now,
+    });
+  } else {
+    const current = needVersionAt(versions, now);
+    if (current !== null && current.validUntil === undefined) {
+      await ctx.db.patch(current._id, { validUntil: now });
+    }
+  }
+  await ctx.db.insert("accompanimentNeeds", {
+    accompanimentId: id,
+    accessNeeds,
+    validFrom: now,
+    createdBy: actor,
+    createdAt: now,
+  });
+  await ctx.db.patch(id, { accessNeeds });
+}
+
+/**
+ * Necesidades vigentes a una fecha para evaluar una atención (TI2-156).
+ * Cumple por forma el puerto versionado sin importarlo.
+ */
+export function accompanimentNeedsAtDateReader(ctx: DbReader) {
+  return {
+    findNeedsAt: async (accompanimentId: string, at: number) => {
+      const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+      if (id === null) return null;
+      const versions = await listNeedVersions(ctx, id);
+      if (versions.length > MAX_NEED_VERSIONS) return null;
+      const version = needVersionAt(versions, at);
+      if (version !== null)
+        return { _id: id as string, needs: accessNeedsFromLines(version.accessNeeds) };
+      const row = await getAccompanimentById(ctx, id);
+      return row === null
+        ? null
+        : { _id: row._id as string, needs: accessNeedsFromLines(row.accessNeeds) };
+    },
+  };
+}
+
+/**
+ * Asignaciones practicantes activas de un acompañamiento (TI2-170), o `null`
+ * si el acompañamiento supera el tope de filas leídas: así la lista nunca se
+ * recorta en silencio.
+ *
+ * No filtra por vigencia: la Web muestra cada fila con su estado (vigente,
+ * programada o vencida) a partir de `validFrom`/`validUntil`, y una fila
+ * programada o vencida sigue excluyendo a su practicante de los asignables
+ * para no ofrecer un alta duplicada que el Backend rechazaría. La lectura
+ * efectiva (`findActiveAssignmentsForUser`) sí exige ventana vigente.
+ */
+export async function listActiveInternAssignments(
+  ctx: DbReader,
+  accompanimentId: Id<"accompaniments">,
+): Promise<Doc<"accompanimentAssignments">[] | null> {
+  const rows = await ctx.db
+    .query("accompanimentAssignments")
+    .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+      q.eq("accompanimentId", accompanimentId),
+    )
+    .take(MAX_ASSIGNMENTS_PER_ACCOMPANIMENT + 1);
+  if (rows.length > MAX_ASSIGNMENTS_PER_ACCOMPANIMENT) return null;
+  return rows.filter((row) => row.status === "active" && row.assignedRole === "intern");
+}
+
+/**
+ * Perfiles con rol practicante, hasta `limit` más uno para saber si quedan
+ * más. Quien llama decide cuáles se pueden asignar.
+ */
+export async function takeInternProfiles(ctx: DbReader, limit: number): Promise<Doc<"users">[]> {
+  return await ctx.db
+    .query("users")
+    .withIndex("by_role", (q) => q.eq("role", "intern"))
+    .take(limit + 1);
+}
+
+/**
  * Lecturas de los profesionales de un acompañamiento (puerto
  * `AccompanimentProfessionalsReader`, TI2-165). Un identificador de otra
  * tabla responde igual que uno inexistente.
@@ -604,5 +786,42 @@ export function accompanimentProfessionalsReader(ctx: DbReader) {
       }));
     },
     takeProfessionalProfiles: (limit: number) => takeProfessionalProfiles(ctx, limit),
+  };
+}
+
+/**
+ * Lecturas de los practicantes de un acompañamiento (puerto
+ * `AccompanimentInternsReader`, TI2-170). Un identificador de otra tabla
+ * responde igual que uno inexistente.
+ */
+export function accompanimentInternsReader(ctx: DbReader) {
+  return {
+    findProfileByTokenIdentifier: (tokenIdentifier: string) =>
+      findProfileByTokenIdentifier(ctx, tokenIdentifier),
+    getProfile: (userId: Id<"users">) => getUserById(ctx, userId),
+    getAccompanimentStatus: async (accompanimentId: string) => {
+      const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+      if (id === null) return null;
+      return (await getAccompanimentById(ctx, id))?.status ?? null;
+    },
+    hasActiveProfessionalAssignment: async (accompanimentId: string, userId: Id<"users">) => {
+      const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+      if (id === null) return false;
+      const rows = await findActiveAssignmentsForUser(ctx, id, userId);
+      return rows.some((row) => row.assignedRole === "professional");
+    },
+    listActiveInternAssignments: async (accompanimentId: string) => {
+      const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+      if (id === null) return [];
+      const rows = await listActiveInternAssignments(ctx, id);
+      if (rows === null) return null;
+      return rows.map((row) => ({
+        userId: row.userId,
+        ...(row.grantedAt === undefined ? {} : { assignedAt: row.grantedAt }),
+        ...(row.validFrom === undefined ? {} : { validFrom: row.validFrom }),
+        ...(row.validUntil === undefined ? {} : { validUntil: row.validUntil }),
+      }));
+    },
+    takeInternProfiles: (limit: number) => takeInternProfiles(ctx, limit),
   };
 }

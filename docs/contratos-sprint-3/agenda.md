@@ -53,6 +53,10 @@ Todas exigen `version: "v1"`, derivan la identidad con `ctx.auth.getUserIdentity
 
 `bookAppointment` sigue siendo la única operación de reserva. El Estudiante reserva como antes. El Profesional asignado la usa para coordinar en nombre del Estudiante dueño, que sale del acompañamiento leído en el servidor; el Profesional que coordina debe ser uno de los profesionales de la atención. Es la única ampliación de permisos: hasta ahora un Profesional que llamaba a `bookAppointment` recibía `unauthorized`.
 
+## Marca de coordinación en la agenda (TI2-156)
+
+`listAppointments` y `getAppointment` devuelven `needsCoordination: boolean` en las tres vistas (`full`, `shared`, `minimized`). Es `true` solo cuando la atención está vigente (`scheduled`/`rescheduled`), empieza en el futuro y ya no es reservable con la configuración vigente (disponibilidad que la cubre, compatibilidad con las necesidades vigentes a su fecha y adicional reservable y cubierto); en cualquier otro caso es `false` y no cambia el estado. Ante un fallo de lectura (tope truncado, versión ausente) se devuelve `true` (revisar) en vez de fallar toda la lista: es lo seguro para no ocultar la agenda por un dato secundario. La vista `minimized` del Practicante también la trae: es un booleano, no revela las necesidades (Ley 21.719), y permite coordinar sin verlas.
+
 ## Respuestas y errores
 
 Se usan solo los códigos de TI2-88 (`ConvexError({code, message})` con esas dos claves) y los clientes distinguen por `code`. No se agrega un código nuevo: Web ya importa `convex/domain` y puede validar el enlace con `normalizeOnlineAccessLink` antes de enviarlo, así muestra la causa exacta con la misma regla del servidor.
@@ -80,6 +84,9 @@ Cada reserva, cambio de horario, cancelación, inasistencia y justificación dej
 | Inasistencia registrada | `appointment_no_show` | El Estudiante |
 | Justificación entregada | `appointment_justification_submitted` | Los profesionales |
 | Justificación aceptada, rechazada o vencida | `appointment_justification_reviewed` | El Estudiante |
+| Cambio de disponibilidad que deja sin cobertura (TI2-156) | `appointment_availability_changed` | Los participantes salvo quien cambió, solo lo que pasa de reservable a no reservable (antes/después en la misma mutación; reactivar o agregar disponibilidad no avisa) |
+| Cambio de sala o condiciones que deja sin compatibilidad, o cambio de ubicación (TI2-156) | `appointment_space_changed` | Los participantes salvo quien cambió; si cambia la ubicación, a todas las futuras de esa sala |
+| Necesidades actualizadas que dejan sin compatibilidad (TI2-156) | `appointment_needs_updated` | Los profesionales de las futuras que dejan de ser compatibles |
 
 La justificación no tiene fila propia: su aviso referencia la atención. Ningún aviso copia el motivo de cancelación ni la explicación; el texto externo de la inasistencia y de la justificación es el genérico «Tienes una actualización pendiente». El reagendamiento avisa a los participantes que quedan después del cambio: un adicional que sale porque perdió su asignación o la vigencia de su cuenta, o el responsable anterior cuando el Estudiante elige a otro profesional, ya no participa de la atención y no recibe aviso, porque el repositorio solo acepta destinatarios que participan del recurso. La realización (`completed`) no avisa. Un reintento de una reserva o de un cambio ya aplicado se rechaza por la política de estados o por la ocupación, y un cambio rechazado no deja aviso porque la mutation se descarta completa. Si dos intentos llegaran con el mismo instante, la clave de idempotencia deja una sola fila.
 
@@ -134,3 +141,9 @@ Siguen en otras issues, que se apoyan en lo que entrega esta:
 - Sacar de las atenciones futuras a un profesional que se retira del acompañamiento: TI2-152. Hoy solo sale al reagendar la atención.
 - La búsqueda de cupos comunes a varios profesionales (`searchSlots` recibe un solo `professionalId`) queda para la coordinación en Web; la reserva igual revalida la disponibilidad de cada uno.
 - El máximo de profesionales por atención y los topes de apoyos son provisionales.
+
+## TI2-155: explicación del rechazo y cambios desde el inicio
+
+`reviewAppointmentJustification` acepta `explanation?: string`. Al rechazar una justificación entregada, la explicación es obligatoria: sin texto (o en blanco) responde `conflict` sin escribir. Al aceptar, o al cerrar una inasistencia vencida sin entrega, no se exige. La explicación se recorta y se guarda en `appointments.justificationReviewExplanation`, sin tabla nueva; la vista `full` y la vista `shared` del Estudiante la entregan, igual que `justificationExplanation`, `justificationSubmittedAt`, `justificationReview` y `supportingDocumentReceived`. Ningún aviso la copia.
+
+La política de estados rechaza cambiar una atención una vez iniciada: `occurredAt >= currentStartAt` responde `conflict` para `cancelled_by_student`, `cancelled_by_cereti` y `rescheduled`, con causa `cancel_after_start` o `reschedule_after_start`. La fila conserva su estado y su horario, no se ocupa otro cupo y no se escribe auditoría ni aviso.

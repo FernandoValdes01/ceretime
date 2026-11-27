@@ -54,6 +54,13 @@ export {
 export type { ReferralRequestState, RequestState, Sprint1RequestState } from "./requests/state";
 export { isOpenRequestState } from "./requests/transitions";
 export { findRequestTransition } from "./requests/transition_policy";
+// Derivaciones de entrada y de salida (TI2-143): límites y condición de apertura.
+export {
+  RECEIVED_AT_FUTURE_MESSAGE,
+  REFERRAL_REASON_MAX_LENGTH,
+  REFERRAL_UNIT_MAX_LENGTH,
+  referralAllowsAccompaniment,
+} from "./requests/referral";
 
 // Acompañamiento y sus vistas de lectura.
 export {
@@ -96,11 +103,14 @@ export type {
 export {
   API_ERROR_CODE_VALUES,
   API_ERROR_MESSAGES,
+  ASSIGNMENT_FIELDS_INVALID_ERROR_CODE,
+  ASSIGNMENT_FIELDS_INVALID_ERROR_MESSAGE,
   CONFLICT_ERROR_CODE,
   CONFLICT_ERROR_MESSAGE,
   NO_AVAILABILITY_ERROR_CODE,
   NO_AVAILABILITY_ERROR_MESSAGE,
   REQUEST_FIELDS_INVALID_ERROR_CODE,
+  REQUEST_STUDENT_NOT_FOUND_ERROR_CODE,
   SPACE_FIELDS_INVALID_ERROR_CODE,
   SPACE_FIELDS_INVALID_ERROR_MESSAGE,
   UNAUTHORIZED_ERROR_CODE,
@@ -122,6 +132,8 @@ export {
   AVAILABILITY_CONTRACT_VERSION,
   AVAILABILITY_EXCEPTION_KIND_VALUES,
 } from "./availability/availability";
+// Fecha civil de un instante en una zona horaria, para comparar con lo que escribe la persona.
+export { addCivilDays, civilDateOfInstant, midnightToEpochMs } from "./calendar/civil_days";
 export type {
   AvailabilityBlock,
   AvailabilityContractVersion,
@@ -318,6 +330,9 @@ export {
   notificationEventsForRequestReceived,
   notificationEventsForRequestTransition,
   notificationEventsForTransition,
+  notificationEventsForAvailabilityChange,
+  notificationEventsForSpaceChange,
+  notificationEventsForNeedsUpdated,
   notificationIdempotencyKey,
   toExternalNotification,
   toNotificationEvent,

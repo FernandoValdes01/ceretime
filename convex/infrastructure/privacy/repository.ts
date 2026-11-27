@@ -44,6 +44,7 @@ import {
   type PrivacyResponseInput,
 } from "../../domain/privacy/privacy_request";
 import type { Role } from "../../domain/identity/roles";
+import { findProfileByTokenIdentifier } from "../accounts/repository";
 
 /**
  * Repositorio de solicitudes de derechos de privacidad, bloqueos temporales y
@@ -1142,4 +1143,46 @@ export async function listRetentionExceptionsByPrivacyRequest(
     .withIndex("by_privacyRequestId", (q) => q.eq("privacyRequestId", privacyRequestId))
     .take(limit);
   return rows.map(toStoredPrivacyRetentionException);
+}
+
+// ---------------------------------------------------------------------------
+// Adaptadores de los puertos de Aplicación (TI2-167)
+// ---------------------------------------------------------------------------
+
+/**
+ * Perfil de la sesión para los casos de uso de privacidad. Cumple por forma
+ * `PrivacyProfileReader` sin importar Aplicación; la vigencia la decide
+ * Dominio. Un `tokenIdentifier` nulo no consulta la base.
+ */
+export function privacyProfileReader(ctx: DbReader) {
+  return {
+    findProfile: async (tokenIdentifier: string | null) =>
+      tokenIdentifier === null ? null : await findProfileByTokenIdentifier(ctx, tokenIdentifier),
+  };
+}
+
+/** Lecturas de solicitudes de privacidad para Aplicación. */
+export function privacyRequestReader(ctx: DbReader) {
+  return {
+    getRequest: (requestId: Id<"privacyRequests">) => getPrivacyRequest(ctx, requestId),
+    listByRequester: (requesterId: Id<"users">, paginationOpts: PaginationOptions) =>
+      paginatePrivacyRequestsByRequester(ctx, requesterId, paginationOpts),
+    listByStatus: (status: PrivacyRequestStatus, paginationOpts: PaginationOptions) =>
+      paginatePrivacyRequestsByStatus(ctx, status, paginationOpts),
+    listByDeadline: (paginationOpts: PaginationOptions, options?: { dueBefore?: number }) =>
+      paginatePrivacyRequestsByDeadline(ctx, paginationOpts, options),
+  };
+}
+
+/** Escrituras y lecturas de la misma transacción para Aplicación. */
+export function privacyRequestStore(ctx: MutationCtx) {
+  return {
+    ...privacyRequestReader(ctx),
+    create: (input: CreatePrivacyRequestInput) => createPrivacyRequest(ctx, input),
+    transition: (input: ApplyPrivacyRequestTransitionInput) =>
+      applyPrivacyRequestTransition(ctx, input),
+    extend: (input: ExtendPrivacyRequestDeadlineInput) => extendPrivacyRequestDeadline(ctx, input),
+    recordDelivery: (input: RecordPrivacyResponseDeliveryInput) =>
+      recordPrivacyResponseDelivery(ctx, input),
+  };
 }

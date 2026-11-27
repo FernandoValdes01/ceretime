@@ -56,6 +56,7 @@ const sharedFollowUpFields = {
   appointmentId: v.string(),
   accompanimentId: v.string(),
   appointmentStatus: appointmentStatusUnion,
+  appointmentStartsAt: v.number(),
   agreements: v.array(agreementValidator),
   tasks: v.array(taskValidator),
   nextSteps: v.string(),
@@ -74,6 +75,7 @@ const followUpProjectionValidator = v.union(
   v.object({
     appointmentId: v.string(),
     appointmentStatus: appointmentStatusUnion,
+    appointmentStartsAt: v.number(),
     agreements: v.array(agreementValidator),
     tasks: v.array(taskValidator),
     nextSteps: v.string(),

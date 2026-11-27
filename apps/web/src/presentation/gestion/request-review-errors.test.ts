@@ -2,6 +2,7 @@ import { ConvexError } from "convex/values";
 import { describe, expect, test } from "vitest";
 import {
   isRequestAccessDenied,
+  REGISTER_OFFICIAL_FALLBACK_MESSAGE,
   REQUEST_ACTION_FALLBACK_MESSAGE,
   requestActionFailureOf,
 } from "./request-review-errors.ts";
@@ -65,6 +66,14 @@ describe("requestActionFailureOf (TI2-157)", () => {
         message: REQUEST_ACTION_FALLBACK_MESSAGE,
       });
     }
+  });
+});
+
+describe("respaldo del registro por canal oficial (TI2-158)", () => {
+  test("un fallo sin código pide revisar la bandeja antes de reintentar", () => {
+    const failure = requestActionFailureOf(new Error("Server Error"), "registerOfficial");
+    expect(failure).toEqual({ status: "rejected", message: REGISTER_OFFICIAL_FALLBACK_MESSAGE });
+    expect(REGISTER_OFFICIAL_FALLBACK_MESSAGE).toMatch(/bandeja de triage antes de registrarla/);
   });
 });
 

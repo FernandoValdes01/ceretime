@@ -54,7 +54,7 @@ export function StudentLayout({
 function StudentAccountUnavailable({ onRetry }: { onRetry: () => void }) {
   return (
     <section aria-labelledby="student-unavailable-title" className="student-portal__head">
-      <span className="student-portal__badge">Estudiante acompañado</span>
+      <span className="student-portal__badge">Estudiante</span>
       <h1 id="student-unavailable-title">Portal del Estudiante</h1>
       <p role="alert" className="student-portal__error">
         No pudimos preparar tu cuenta. Inténtalo de nuevo.
@@ -80,7 +80,7 @@ function StudentAccountUnavailable({ onRetry }: { onRetry: () => void }) {
 function StudentAccountNotEnabled() {
   return (
     <section aria-labelledby="student-not-enabled-title" className="student-portal__head">
-      <span className="student-portal__badge">Estudiante acompañado</span>
+      <span className="student-portal__badge">Estudiante</span>
       <h1 id="student-not-enabled-title">Tu cuenta no está habilitada</h1>
       <p className="student-portal__lead">
         Por ahora no puedes usar el portal del Estudiante con esta cuenta. Si crees que es un error,
@@ -177,6 +177,9 @@ export class StudentPanelErrorBoundary extends Component<
 }
 
 function StudentPanelContent() {
+  // La insignia dice solo el rol (TI2-185). La cuenta pendiente tiene su
+  // propia sección y el proceso se ve en cada fila de acompañamiento; la
+  // pantalla no anuncia «acompañado» antes de que exista uno.
   const session = useStudentSession();
   const headingRef = useRef<HTMLHeadingElement>(null);
   const ready = session !== undefined;
@@ -190,7 +193,7 @@ function StudentPanelContent() {
   if (!ready) {
     return (
       <section aria-labelledby="student-home-title" className="student-portal__head">
-        <span className="student-portal__badge">Estudiante acompañado</span>
+        <span className="student-portal__badge">Estudiante</span>
         <h1 id="student-home-title">Portal del Estudiante</h1>
         <p role="status" className="student-portal__loading">
           Cargando tu resumen…
@@ -202,7 +205,7 @@ function StudentPanelContent() {
   if (session.status === "unauthenticated") {
     return (
       <section aria-labelledby="student-home-title" className="student-portal__head">
-        <span className="student-portal__badge">Estudiante acompañado</span>
+        <span className="student-portal__badge">Estudiante</span>
         <h1 id="student-home-title">Portal del Estudiante</h1>
         <p className="student-portal__lead">
           Vuelve al acceso e inicia sesión para ver tu resumen.
@@ -214,7 +217,7 @@ function StudentPanelContent() {
   return (
     <>
       <section aria-labelledby="student-home-title" className="student-portal__head">
-        <span className="student-portal__badge">Estudiante acompañado</span>
+        <span className="student-portal__badge">Estudiante</span>
         <h1 id="student-home-title" ref={headingRef} tabIndex={-1}>
           Portal del Estudiante
         </h1>
@@ -278,25 +281,21 @@ function StudentPanelContent() {
         </div>
       </section>
 
-      <section aria-labelledby="student-agreements-title" className="student-portal__section">
+      <section aria-labelledby="student-follow-up-title" className="student-portal__section">
         <div className="student-portal__section-head">
-          <h2 id="student-agreements-title">Acuerdos y tareas</h2>
-          <span className="student-portal__soon">Próximamente</span>
+          <h2 id="student-follow-up-title">Acuerdos, tareas y necesidades de acceso</h2>
         </div>
         <div className="student-portal__empty student-portal__empty--green">
-          <p className="student-portal__empty-title">Aún no tienes acuerdos ni tareas.</p>
-          <p>Los acuerdos y las tareas de tus atenciones estarán disponibles aquí.</p>
-        </div>
-      </section>
-
-      <section aria-labelledby="student-access-needs-title" className="student-portal__section">
-        <div className="student-portal__section-head">
-          <h2 id="student-access-needs-title">Necesidades de acceso</h2>
-          <span className="student-portal__soon">Próximamente</span>
-        </div>
-        <div className="student-portal__empty">
-          <p className="student-portal__empty-title">Aún no registras necesidades de acceso.</p>
-          <p>Podrás actualizarlas y se aplicarán a tus atenciones futuras.</p>
+          <p className="student-portal__empty-title">Están en el detalle de cada acompañamiento.</p>
+          <p>
+            Abre un acompañamiento para ver los acuerdos y tareas de cada atención y actualizar tus
+            necesidades de acceso.
+          </p>
+          <div className="student-portal__cta">
+            <a href="#acompanamientos" className="student-portal__btn student-portal__btn--ghost">
+              Ver mis acompañamientos
+            </a>
+          </div>
         </div>
       </section>
 
@@ -370,7 +369,11 @@ function StudentRequestsBody() {
 /** Sección de acompañamientos propios con sus estados de carga, vacío y éxito. */
 function StudentAccompanimentsSection() {
   return (
-    <section aria-labelledby="student-accompaniments-title" className="student-portal__section">
+    <section
+      aria-labelledby="student-accompaniments-title"
+      id="acompanamientos"
+      className="student-portal__section"
+    >
       <div className="student-portal__section-head">
         <h2 id="student-accompaniments-title">Acompañamientos</h2>
       </div>

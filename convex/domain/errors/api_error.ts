@@ -35,6 +35,12 @@ export type ApiResult<T> = { status: "ok"; data: T } | { status: "error"; error:
  * campos de una solicitud, con la misma idea: un código y el detalle en el
  * mensaje. TI2-146 suma `follow_up_fields_invalid` para los campos del
  * registro de seguimiento: `conflict` queda para lo que depende del estado.
+ * TI2-158 suma `request_student_not_found` para el correo del registro por
+ * canal oficial que no es de un Estudiante vigente, para que la Web marque
+ * ese campo por código y no por el texto del mensaje. TI2-167 suma
+ * `privacy_request_fields_invalid` para los campos de una solicitud de
+ * derechos y de su resolución; el estado y la vigencia del plazo siguen
+ * usando `conflict`.
  */
 export const API_ERROR_CODE_VALUES = [
   "access_needs_empty",
@@ -46,6 +52,8 @@ export const API_ERROR_CODE_VALUES = [
   "assignment_fields_invalid",
   "request_fields_invalid",
   "follow_up_fields_invalid",
+  "request_student_not_found",
+  "privacy_request_fields_invalid",
 ] as const;
 
 /** Código estable de un error público del contrato común. */
@@ -79,6 +87,15 @@ export const REQUEST_FIELDS_INVALID_ERROR_CODE = "request_fields_invalid" as con
 /** Campos del registro de seguimiento inválidos: el mensaje indica qué corregir. */
 export const FOLLOW_UP_FIELDS_INVALID_ERROR_CODE = "follow_up_fields_invalid" as const;
 
+/**
+ * El correo del registro por canal oficial no es de un Estudiante vigente
+ * (TI2-158). Solo lo recibe el personal que registra.
+ */
+export const REQUEST_STUDENT_NOT_FOUND_ERROR_CODE = "request_student_not_found" as const;
+
+/** Campos de la solicitud de privacidad o de su resolución inválidos. */
+export const PRIVACY_REQUEST_FIELDS_INVALID_ERROR_CODE = "privacy_request_fields_invalid" as const;
+
 /** Conflicto con el estado actual, sin filtrar la existencia del recurso. */
 export const CONFLICT_ERROR_CODE = "conflict" as const;
 
@@ -104,6 +121,14 @@ export const REQUEST_FIELDS_INVALID_ERROR_MESSAGE = "Los datos de la solicitud n
 /** Mensaje genérico para campos del seguimiento inválidos; el detalle va en el error. */
 export const FOLLOW_UP_FIELDS_INVALID_ERROR_MESSAGE = "Los datos del seguimiento no son válidos.";
 
+/** Mensaje del correo sin Estudiante vigente: dice qué dato corregir. */
+export const REQUEST_STUDENT_NOT_FOUND_ERROR_MESSAGE =
+  "No hay una cuenta de Estudiante vigente con ese correo.";
+
+/** Mensaje genérico para campos de la solicitud de privacidad inválidos. */
+export const PRIVACY_REQUEST_FIELDS_INVALID_ERROR_MESSAGE =
+  "Los datos de la solicitud de privacidad no son válidos.";
+
 /** Mensaje comprensible para conflicto, sin detalles sensibles. */
 export const CONFLICT_ERROR_MESSAGE = "La solicitud entra en conflicto con el estado actual.";
 
@@ -126,6 +151,8 @@ export const API_ERROR_MESSAGES: Record<ApiErrorCode, string> = {
   assignment_fields_invalid: ASSIGNMENT_FIELDS_INVALID_ERROR_MESSAGE,
   request_fields_invalid: REQUEST_FIELDS_INVALID_ERROR_MESSAGE,
   follow_up_fields_invalid: FOLLOW_UP_FIELDS_INVALID_ERROR_MESSAGE,
+  request_student_not_found: REQUEST_STUDENT_NOT_FOUND_ERROR_MESSAGE,
+  privacy_request_fields_invalid: PRIVACY_REQUEST_FIELDS_INVALID_ERROR_MESSAGE,
 };
 
 /** Verdadero cuando el código pertenece al contrato público estable. */
@@ -141,6 +168,14 @@ export function unauthorizedError(): PublicApiError {
 /** Error público de conflicto, sin filtrar la existencia de recursos. */
 export function conflictError(): PublicApiError {
   return { code: CONFLICT_ERROR_CODE, message: CONFLICT_ERROR_MESSAGE };
+}
+
+/** Error público del correo sin Estudiante vigente en el registro oficial. */
+export function requestStudentNotFoundError(): PublicApiError {
+  return {
+    code: REQUEST_STUDENT_NOT_FOUND_ERROR_CODE,
+    message: REQUEST_STUDENT_NOT_FOUND_ERROR_MESSAGE,
+  };
 }
 
 /**

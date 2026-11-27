@@ -35,7 +35,7 @@ vi.mock("convex/react", () => ({ useQuery: () => mockedSession }));
 
 // El seguimiento tiene sus propias pruebas (`follow-up-form.test.tsx`): acá
 // la atención todavía no lo tiene.
-vi.mock("./follow-up-data.ts", () => ({
+vi.mock("../shared/follow-up/follow-up-data.ts", () => ({
   useFollowUpRecord: () => null,
   useSaveFollowUpRecord: () => vi.fn(),
 }));
@@ -545,6 +545,7 @@ describe("navegación del portal con agenda (TI2-115)", () => {
       "Inicio",
       "Solicitudes",
       "Acompañamientos",
+      "Practicantes",
       "Agenda",
       "Disponibilidad",
     ]);

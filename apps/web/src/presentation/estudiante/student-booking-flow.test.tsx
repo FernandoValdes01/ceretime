@@ -163,6 +163,7 @@ function createFakeBackend() {
     endAt: appointment.endAt,
     status: appointment.status,
     version: "v1",
+    needsCoordination: false,
     ...(exposeFullView && appointment.cancelReason !== undefined
       ? { view: "full" as const, cancelReason: appointment.cancelReason }
       : { view: "shared" as const }),
@@ -417,6 +418,8 @@ vi.mock("convex/react", () => ({
     return backend.readReactive(ref, args);
   },
   useAction: () => async () => null,
+  // Las necesidades de acceso (TI2-166) no participan en este flujo.
+  useMutation: () => async () => null,
   useConvex: () => backend.client,
 }));
 

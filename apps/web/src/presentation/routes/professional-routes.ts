@@ -7,6 +7,8 @@ import {
   ProfessionalAvailabilityRouteComponent,
   ProfessionalIndexRouteComponent,
   ProfessionalLayoutRouteComponent,
+  ProfessionalOfficialRequestRouteComponent,
+  ProfessionalPracticantesRouteComponent,
   ProfessionalRequestDetailRouteComponent,
   ProfessionalRequestsRouteComponent,
 } from "./route-components.tsx";
@@ -47,6 +49,13 @@ const professionalRequestDetailRoute = createRoute({
   component: ProfessionalRequestDetailRouteComponent,
 });
 
+// Registro por canal oficial (TI2-158). El segmento fijo gana sobre `$requestId`.
+const professionalOfficialRequestRoute = createRoute({
+  getParentRoute: () => professionalLayoutRoute,
+  path: "solicitudes/registrar",
+  component: ProfessionalOfficialRequestRouteComponent,
+});
+
 const professionalAccompanimentsRoute = createRoute({
   getParentRoute: () => professionalLayoutRoute,
   path: "acompanamientos",
@@ -77,15 +86,23 @@ const professionalAgendaDetailRoute = createRoute({
   component: ProfessionalAgendaDetailRouteComponent,
 });
 
+const professionalPracticantesRoute = createRoute({
+  getParentRoute: () => professionalLayoutRoute,
+  path: "practicantes",
+  component: ProfessionalPracticantesRouteComponent,
+});
+
 export const professionalRoutes = [
   professionalLayoutRoute.addChildren([
     professionalIndexRoute,
     professionalRequestsRoute,
     professionalRequestDetailRoute,
+    professionalOfficialRequestRoute,
     professionalAccompanimentsRoute,
     professionalAccompanimentDetailRoute,
     professionalAvailabilityRoute,
     professionalAgendaRoute,
     professionalAgendaDetailRoute,
+    professionalPracticantesRoute,
   ]),
 ] as const;

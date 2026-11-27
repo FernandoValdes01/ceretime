@@ -381,18 +381,27 @@ export default defineSchema({
     calendarEventAddedAt: v.optional(v.number()),
     calendarEventStartsAt: v.optional(v.number()),
     calendarEventEndsAt: v.optional(v.number()),
-    // Estado de la sincronización automática (TI2-145): las filas anteriores
+    // Estado de la sincronización automática (TI2-145, TI2-162): las filas anteriores
     // no lo tienen y se leen sin error; `calendarSyncStateOf` las devuelve como
     // ausentes, no como pendientes inventadas. `calendarSyncErrorCode` reutiliza
     // los motivos genéricos del respaldo `.ics` y nunca copia respuestas del
-    // proveedor.
+    // proveedor. `calendarSyncScheduledAt` marca cuándo se programó el último
+    // despacho para no programar otro mientras uno sigue en curso; `calendarEventOwnerId` guarda
+    // de qué calendario es el evento (el `subject` de Better Auth que lo
+    // creó), así actualizar y eliminar usan siempre ese calendario.
     calendarSyncStatus: v.optional(calendarSyncStatusUnion),
     calendarSyncAttempts: v.optional(v.number()),
     calendarSyncLastAttemptAt: v.optional(v.number()),
     calendarSyncErrorCode: v.optional(calendarSyncErrorCodeUnion),
+    calendarSyncScheduledAt: v.optional(v.number()),
+    calendarEventOwnerId: v.optional(v.string()),
+    // Fallos seguidos sin éxito: el reintento los acota y los espera con
+    // backoff. Se reinicia con cada éxito y con cada cambio nuevo.
+    calendarSyncFailures: v.optional(v.number()),
     justificationExplanation: v.optional(v.string()),
     justificationSubmittedAt: v.optional(v.number()),
     justificationReview: v.optional(justificationReviewUnion),
+    justificationReviewExplanation: v.optional(v.string()),
     supportingDocumentReceived: v.optional(v.boolean()),
     // Referencia del acceso privado de la atención en línea (TI2-138),
     // `urlPrivada?` de ATENCIONES. Opcional porque las atenciones presenciales
@@ -432,7 +441,19 @@ export default defineSchema({
     // Atenciones del centro por estado desde un instante: confirma los cruces
     // de un profesional adicional, porque su fila de participante no guarda
     // horario (TI2-165), sin leer las canceladas.
-    .index("by_status_and_startsAt", ["status", "startsAt"]),
+    .index("by_status_and_startsAt", ["status", "startsAt"])
+    // Sincronización automática con Calendar (TI2-162): reintento de
+    // pendientes no despachadas y de fallos recuperables, por el intento más
+    // antiguo y sin barrer la tabla. `not_connected` pide volver a vincular y
+    // no se reintenta solo.
+    .index("by_calendarSyncStatus_and_scheduledAt", [
+      "calendarSyncStatus",
+      "calendarSyncScheduledAt",
+    ])
+    .index("by_calendarSyncStatus_and_lastAttemptAt", [
+      "calendarSyncStatus",
+      "calendarSyncLastAttemptAt",
+    ]),
 
   // Tabla 'appointmentProfessionals': profesionales que participan en una
   // atención (TI2-138), ATENCION_PROFESIONALES del MER.
@@ -455,7 +476,26 @@ export default defineSchema({
   })
     // Participantes de la atención: una fila basta para decidir y el conjunto
     // se lee sin filtrar en memoria.
-    .index("by_appointmentId_and_professionalId", ["appointmentId", "professionalId"]),
+    .index("by_appointmentId_and_professionalId", ["appointmentId", "professionalId"])
+    // Futuras donde el profesional participa (TI2-156, TI2-142): responsable o
+    // adicional, para avisarle cuando su disponibilidad deja de cubrirlas.
+    .index("by_professionalId", ["professionalId"]),
+
+  // Tabla 'accompanimentNeeds': versiones de necesidades de acceso (TI2-156).
+  // NECESIDADES_ACCESO del MER (`vigenteDesde`, `vigenteHasta?`): cada fila es
+  // la versión vigente desde `validFrom` hasta `validUntil` (exclusivo;
+  // ausente en la vigente). Actualizar cierra la vigente y crea una nueva con
+  // `validFrom` en el instante del cambio, sin tocar `accompaniments`, que
+  // conserva solo la copia vigente como caché. Las atenciones se evalúan con
+  // la versión vigente a su `startsAt`, así las anteriores no cambian.
+  accompanimentNeeds: defineTable({
+    accompanimentId: v.id("accompaniments"),
+    accessNeeds: v.string(),
+    validFrom: v.number(),
+    validUntil: v.optional(v.number()),
+    createdBy: v.optional(v.id("users")),
+    createdAt: v.number(),
+  }).index("by_accompanimentId_and_validFrom", ["accompanimentId", "validFrom"]),
 
   // Tabla 'notificationEvents': eventos de aviso con un único recurso
   // (atención o solicitud) y su destinatario (TI2-118, ampliada por TI2-145).

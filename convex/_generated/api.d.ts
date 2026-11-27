@@ -9,6 +9,8 @@
  */
 
 import type * as application_accompaniments_commands from "../application/accompaniments/commands.js";
+import type * as application_accompaniments_interns from "../application/accompaniments/interns.js";
+import type * as application_accompaniments_needs from "../application/accompaniments/needs.js";
 import type * as application_accompaniments_professionals from "../application/accompaniments/professionals.js";
 import type * as application_accompaniments_queries from "../application/accompaniments/queries.js";
 import type * as application_accompaniments_status from "../application/accompaniments/status.js";
@@ -19,6 +21,7 @@ import type * as application_appointments_audit from "../application/appointment
 import type * as application_appointments_booking from "../application/appointments/booking.js";
 import type * as application_appointments_changes from "../application/appointments/changes.js";
 import type * as application_appointments_commands from "../application/appointments/commands.js";
+import type * as application_appointments_impact from "../application/appointments/impact.js";
 import type * as application_appointments_occupancy from "../application/appointments/occupancy.js";
 import type * as application_appointments_online_access from "../application/appointments/online_access.js";
 import type * as application_appointments_queries from "../application/appointments/queries.js";
@@ -27,6 +30,7 @@ import type * as application_availability_availability from "../application/avai
 import type * as application_availability_ports from "../application/availability/ports.js";
 import type * as application_calendar_calendar from "../application/calendar/calendar.js";
 import type * as application_calendar_calendar_link from "../application/calendar/calendar_link.js";
+import type * as application_calendar_sync from "../application/calendar/sync.js";
 import type * as application_follow_up_commands from "../application/follow_up/commands.js";
 import type * as application_follow_up_ports from "../application/follow_up/ports.js";
 import type * as application_follow_up_queries from "../application/follow_up/queries.js";
@@ -34,6 +38,10 @@ import type * as application_notifications_dispatch from "../application/notific
 import type * as application_notifications_inbox from "../application/notifications/inbox.js";
 import type * as application_notifications_ports from "../application/notifications/ports.js";
 import type * as application_notifications_push from "../application/notifications/push.js";
+import type * as application_privacy_commands from "../application/privacy/commands.js";
+import type * as application_privacy_ports from "../application/privacy/ports.js";
+import type * as application_privacy_projection from "../application/privacy/projection.js";
+import type * as application_privacy_queries from "../application/privacy/queries.js";
 import type * as application_requests_commands from "../application/requests/commands.js";
 import type * as application_requests_notifications from "../application/requests/notifications.js";
 import type * as application_requests_ports from "../application/requests/ports.js";
@@ -59,6 +67,7 @@ import type * as domain_accounts_enablement from "../domain/accounts/enablement.
 import type * as domain_accounts_own_profile from "../domain/accounts/own_profile.js";
 import type * as domain_appointments_appointment from "../domain/appointments/appointment.js";
 import type * as domain_appointments_audit from "../domain/appointments/audit.js";
+import type * as domain_appointments_justification_deadline from "../domain/appointments/justification_deadline.js";
 import type * as domain_appointments_online_access from "../domain/appointments/online_access.js";
 import type * as domain_appointments_participants from "../domain/appointments/participants.js";
 import type * as domain_auth_institutional_domain from "../domain/auth/institutional_domain.js";
@@ -67,6 +76,7 @@ import type * as domain_availability_availability from "../domain/availability/a
 import type * as domain_availability_official_channel from "../domain/availability/official_channel.js";
 import type * as domain_calendar_calendar_event from "../domain/calendar/calendar_event.js";
 import type * as domain_calendar_calendar_link from "../domain/calendar/calendar_link.js";
+import type * as domain_calendar_chile_holidays from "../domain/calendar/chile_holidays.js";
 import type * as domain_calendar_civil_days from "../domain/calendar/civil_days.js";
 import type * as domain_errors_api_error from "../domain/errors/api_error.js";
 import type * as domain_follow_up_follow_up from "../domain/follow_up/follow_up.js";
@@ -75,6 +85,7 @@ import type * as domain_identity_roles from "../domain/identity/roles.js";
 import type * as domain_index from "../domain/index.js";
 import type * as domain_notifications_delivery from "../domain/notifications/delivery.js";
 import type * as domain_notifications_notification from "../domain/notifications/notification.js";
+import type * as domain_notifications_push from "../domain/notifications/push.js";
 import type * as domain_privacy_privacy_controls from "../domain/privacy/privacy_controls.js";
 import type * as domain_privacy_privacy_deadlines from "../domain/privacy/privacy_deadlines.js";
 import type * as domain_privacy_privacy_request from "../domain/privacy/privacy_request.js";
@@ -94,6 +105,7 @@ import type * as infrastructure_auth_google_providers from "../infrastructure/au
 import type * as infrastructure_availability_repository from "../infrastructure/availability/repository.js";
 import type * as infrastructure_calendar_google_calendar from "../infrastructure/calendar/google_calendar.js";
 import type * as infrastructure_calendar_repository from "../infrastructure/calendar/repository.js";
+import type * as infrastructure_calendar_sync_scheduler from "../infrastructure/calendar/sync_scheduler.js";
 import type * as infrastructure_follow_up_repository from "../infrastructure/follow_up/repository.js";
 import type * as infrastructure_notifications_gmail_sender from "../infrastructure/notifications/gmail_sender.js";
 import type * as infrastructure_notifications_repository from "../infrastructure/notifications/repository.js";
@@ -103,6 +115,7 @@ import type * as infrastructure_requests_repository from "../infrastructure/requ
 import type * as infrastructure_spaces_repository from "../infrastructure/spaces/repository.js";
 import type * as infrastructure_validators from "../infrastructure/validators.js";
 import type * as operations_accounts from "../operations/accounts.js";
+import type * as operations_appointments from "../operations/appointments.js";
 import type * as operations_assignments from "../operations/assignments.js";
 import type * as operations_calendar from "../operations/calendar.js";
 import type * as operations_fictitiousData from "../operations/fictitiousData.js";
@@ -117,6 +130,7 @@ import type * as presentation_availability from "../presentation/availability.js
 import type * as presentation_calendar from "../presentation/calendar.js";
 import type * as presentation_follow_up from "../presentation/follow_up.js";
 import type * as presentation_notifications from "../presentation/notifications.js";
+import type * as presentation_privacy from "../presentation/privacy.js";
 import type * as presentation_requests from "../presentation/requests.js";
 import type * as presentation_session from "../presentation/session.js";
 import type * as presentation_spaces from "../presentation/spaces.js";
@@ -129,6 +143,8 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "application/accompaniments/commands": typeof application_accompaniments_commands;
+  "application/accompaniments/interns": typeof application_accompaniments_interns;
+  "application/accompaniments/needs": typeof application_accompaniments_needs;
   "application/accompaniments/professionals": typeof application_accompaniments_professionals;
   "application/accompaniments/queries": typeof application_accompaniments_queries;
   "application/accompaniments/status": typeof application_accompaniments_status;
@@ -139,6 +155,7 @@ declare const fullApi: ApiFromModules<{
   "application/appointments/booking": typeof application_appointments_booking;
   "application/appointments/changes": typeof application_appointments_changes;
   "application/appointments/commands": typeof application_appointments_commands;
+  "application/appointments/impact": typeof application_appointments_impact;
   "application/appointments/occupancy": typeof application_appointments_occupancy;
   "application/appointments/online_access": typeof application_appointments_online_access;
   "application/appointments/queries": typeof application_appointments_queries;
@@ -147,6 +164,7 @@ declare const fullApi: ApiFromModules<{
   "application/availability/ports": typeof application_availability_ports;
   "application/calendar/calendar": typeof application_calendar_calendar;
   "application/calendar/calendar_link": typeof application_calendar_calendar_link;
+  "application/calendar/sync": typeof application_calendar_sync;
   "application/follow_up/commands": typeof application_follow_up_commands;
   "application/follow_up/ports": typeof application_follow_up_ports;
   "application/follow_up/queries": typeof application_follow_up_queries;
@@ -154,6 +172,10 @@ declare const fullApi: ApiFromModules<{
   "application/notifications/inbox": typeof application_notifications_inbox;
   "application/notifications/ports": typeof application_notifications_ports;
   "application/notifications/push": typeof application_notifications_push;
+  "application/privacy/commands": typeof application_privacy_commands;
+  "application/privacy/ports": typeof application_privacy_ports;
+  "application/privacy/projection": typeof application_privacy_projection;
+  "application/privacy/queries": typeof application_privacy_queries;
   "application/requests/commands": typeof application_requests_commands;
   "application/requests/notifications": typeof application_requests_notifications;
   "application/requests/ports": typeof application_requests_ports;
@@ -179,6 +201,7 @@ declare const fullApi: ApiFromModules<{
   "domain/accounts/own_profile": typeof domain_accounts_own_profile;
   "domain/appointments/appointment": typeof domain_appointments_appointment;
   "domain/appointments/audit": typeof domain_appointments_audit;
+  "domain/appointments/justification_deadline": typeof domain_appointments_justification_deadline;
   "domain/appointments/online_access": typeof domain_appointments_online_access;
   "domain/appointments/participants": typeof domain_appointments_participants;
   "domain/auth/institutional_domain": typeof domain_auth_institutional_domain;
@@ -187,6 +210,7 @@ declare const fullApi: ApiFromModules<{
   "domain/availability/official_channel": typeof domain_availability_official_channel;
   "domain/calendar/calendar_event": typeof domain_calendar_calendar_event;
   "domain/calendar/calendar_link": typeof domain_calendar_calendar_link;
+  "domain/calendar/chile_holidays": typeof domain_calendar_chile_holidays;
   "domain/calendar/civil_days": typeof domain_calendar_civil_days;
   "domain/errors/api_error": typeof domain_errors_api_error;
   "domain/follow_up/follow_up": typeof domain_follow_up_follow_up;
@@ -195,6 +219,7 @@ declare const fullApi: ApiFromModules<{
   "domain/index": typeof domain_index;
   "domain/notifications/delivery": typeof domain_notifications_delivery;
   "domain/notifications/notification": typeof domain_notifications_notification;
+  "domain/notifications/push": typeof domain_notifications_push;
   "domain/privacy/privacy_controls": typeof domain_privacy_privacy_controls;
   "domain/privacy/privacy_deadlines": typeof domain_privacy_privacy_deadlines;
   "domain/privacy/privacy_request": typeof domain_privacy_privacy_request;
@@ -214,6 +239,7 @@ declare const fullApi: ApiFromModules<{
   "infrastructure/availability/repository": typeof infrastructure_availability_repository;
   "infrastructure/calendar/google_calendar": typeof infrastructure_calendar_google_calendar;
   "infrastructure/calendar/repository": typeof infrastructure_calendar_repository;
+  "infrastructure/calendar/sync_scheduler": typeof infrastructure_calendar_sync_scheduler;
   "infrastructure/follow_up/repository": typeof infrastructure_follow_up_repository;
   "infrastructure/notifications/gmail_sender": typeof infrastructure_notifications_gmail_sender;
   "infrastructure/notifications/repository": typeof infrastructure_notifications_repository;
@@ -223,6 +249,7 @@ declare const fullApi: ApiFromModules<{
   "infrastructure/spaces/repository": typeof infrastructure_spaces_repository;
   "infrastructure/validators": typeof infrastructure_validators;
   "operations/accounts": typeof operations_accounts;
+  "operations/appointments": typeof operations_appointments;
   "operations/assignments": typeof operations_assignments;
   "operations/calendar": typeof operations_calendar;
   "operations/fictitiousData": typeof operations_fictitiousData;
@@ -237,6 +264,7 @@ declare const fullApi: ApiFromModules<{
   "presentation/calendar": typeof presentation_calendar;
   "presentation/follow_up": typeof presentation_follow_up;
   "presentation/notifications": typeof presentation_notifications;
+  "presentation/privacy": typeof presentation_privacy;
   "presentation/requests": typeof presentation_requests;
   "presentation/session": typeof presentation_session;
   "presentation/spaces": typeof presentation_spaces;

@@ -34,6 +34,7 @@ export const PORTAL_NAVIGATION = {
       { to: "/profesional", label: "Inicio", exact: true },
       { to: "/profesional/solicitudes", label: "Solicitudes", exact: false },
       { to: "/profesional/acompanamientos", label: "Acompañamientos", exact: false },
+      { to: "/profesional/practicantes", label: "Practicantes", exact: false },
       { to: "/profesional/agenda", label: "Agenda", exact: false },
       { to: "/profesional/disponibilidad", label: "Disponibilidad", exact: false },
     ],
@@ -78,7 +79,7 @@ export function useNavigateToPath() {
       void router.navigate({
         // `to` solo lleva el pathname; la query va en `search` para que
         // TanStack no la trate como parte de la ruta y no caiga en
-        // NotFoundRedirect. El target ya viene validado por
+        // la página de no encontrado. El target ya viene validado por
         // `resolveReturnTarget`.
         to: url.pathname as "/",
         search: search as never,

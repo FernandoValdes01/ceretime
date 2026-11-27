@@ -17,6 +17,7 @@ import {
   type SpaceLabels,
 } from "./student-appointments-page-data.ts";
 import { DeniedState, EmptyState, ErrorState, LoadingState } from "../shared/view-states.tsx";
+import { StudentAppointmentFollowUp } from "./student-follow-up.tsx";
 import type { AgendaAppointment } from "../../application/agenda/agenda-port.ts";
 
 /**
@@ -331,6 +332,7 @@ function AppointmentDetailBody({
       {isSpaceUnresolved(shown, spaceLabels) ? (
         <SpaceNotice spaceLabels={spaceLabels} onFocusTitle={onFocusTitle} />
       ) : null}
+      <StudentAppointmentFollowUp appointmentId={shown.id} appointmentStatus={shown.status} />
     </>
   );
 }

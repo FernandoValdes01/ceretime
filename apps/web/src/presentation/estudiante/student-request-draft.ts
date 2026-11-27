@@ -5,7 +5,9 @@ import {
 import type { OwnRequestSubmission } from "./student-request-form-data.ts";
 
 /**
- * Borrador del formulario de solicitud del Estudiante (TI2-149).
+ * Borrador del formulario de solicitud del Estudiante (TI2-149). El registro
+ * por canal oficial del Profesional (TI2-158) usa la misma forma, sin guardarla
+ * en el navegador.
  *
  * Guarda lo que el Estudiante escribe mientras arma su solicitud: sobrevive a
  * recargar la página, a salir y volver al formulario y a un envío fallido.
@@ -58,6 +60,13 @@ export type RequestDraftField =
 
 export type RequestDraftErrors = Partial<Record<RequestDraftField, string>>;
 
+/**
+ * Quién completa el contenido (TI2-158): el propio Estudiante o el personal
+ * que registra una solicitud recibida por canal oficial. Cambia solo la voz de
+ * los textos; los campos y las comprobaciones son los mismos.
+ */
+export type RequestFormVoice = "student" | "staff";
+
 /** Orden en que el formulario muestra los campos: el resumen de errores lo respeta. */
 export const REQUEST_DRAFT_FIELD_ORDER: readonly RequestDraftField[] = [
   "needSummary",
@@ -88,20 +97,29 @@ export function emptyRequestDraft(): RequestDraft {
  * horario venga completo: los topes, el formato y las demás reglas los
  * decide el Backend y su mensaje se muestra tal cual.
  */
-export function findMissingFields(draft: RequestDraft): RequestDraftErrors {
+export function findMissingFields(
+  draft: RequestDraft,
+  voice: RequestFormVoice,
+): RequestDraftErrors {
   const errors: RequestDraftErrors = {};
   if (draft.needSummary.trim() === "") {
     errors.needSummary = "Describe la barrera o necesidad.";
   }
   if (draft.expectedOutcome.trim() === "") {
-    errors.expectedOutcome = "Indica qué esperas de CERETI.";
+    errors.expectedOutcome =
+      voice === "student"
+        ? "Indica qué esperas de CERETI."
+        : "Indica qué espera el estudiante de CERETI.";
   }
   if (draft.accessNeedIds.length === 0 && draft.otherAccessNeed.trim() === "") {
     errors.accessNeeds =
       "Selecciona al menos una necesidad de acceso o escribe cuál en «Otra necesidad de acceso».";
   }
   if (draft.modalityPreference === "") {
-    errors.modalityPreference = "Indica si prefieres la modalidad presencial o en línea.";
+    errors.modalityPreference =
+      voice === "student"
+        ? "Indica si prefieres la modalidad presencial o en línea."
+        : "Indica si el estudiante prefiere la modalidad presencial o en línea.";
   }
   if (draft.preferredWeekdays.length === 0) {
     errors.preferredWeekdays = "Selecciona al menos un día disponible.";
@@ -110,15 +128,18 @@ export function findMissingFields(draft: RequestDraft): RequestDraftErrors {
     errors.availableTime = "Indica la hora de inicio y la de término, o deja ambas vacías.";
   }
   if (draft.preferredAccessibleInformationChannel.trim() === "") {
-    errors.preferredAccessibleInformationChannel = "Indica cómo prefieres recibir información.";
+    errors.preferredAccessibleInformationChannel =
+      voice === "student"
+        ? "Indica cómo prefieres recibir información."
+        : "Indica cómo prefiere recibir información el estudiante.";
   }
   return errors;
 }
 
 /** Arma el envío de la forma completa de `createRequest` desde un borrador sin campos faltantes. */
-export function toOwnRequestSubmission(draft: RequestDraft): OwnRequestSubmission {
+export function toRequestContentSubmission(draft: RequestDraft): OwnRequestSubmission {
   if (draft.modalityPreference === "") {
-    throw new Error("toOwnRequestSubmission requiere la modalidad elegida.");
+    throw new Error("toRequestContentSubmission requiere la modalidad elegida.");
   }
   const otherAccessNeed = draft.otherAccessNeed.trim();
   const hasTimeRange = draft.availableFrom !== "" && draft.availableTo !== "";

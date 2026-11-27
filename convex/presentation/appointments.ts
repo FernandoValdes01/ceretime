@@ -29,6 +29,7 @@ import { action, mutation, query } from "../_generated/server";
 import { APPOINTMENT_CONTRACT_VERSION } from "../domain/appointments/appointment";
 import { AGENDA_TIME_ZONE } from "../domain/availability/availability";
 import {
+  accompanimentNeedsAtDateReader,
   accompanimentNeedsReader,
   authorizationReader,
 } from "../infrastructure/accompaniments/repository";
@@ -39,6 +40,7 @@ import {
   appointmentChangeReader,
   appointmentListReader,
   appointmentOccupier,
+  appointmentParticipantsReader,
   appointmentTransitionRepository,
   onlineAccessReader,
   onlineAccessStore,
@@ -49,11 +51,14 @@ import {
   googleCalendarGateway,
 } from "../infrastructure/calendar/google_calendar";
 import { calendarLinkReader } from "../infrastructure/calendar/repository";
+import { calendarSyncScheduler } from "../infrastructure/calendar/sync_scheduler";
 import { notificationEventRecorder } from "../infrastructure/notifications/repository";
 import { compatibilitySpaceSource } from "../infrastructure/spaces/repository";
 import {
   appointmentAttendanceOutcomeUnion,
   appointmentStatusUnion,
+  calendarSyncErrorCodeUnion,
+  calendarSyncStatusUnion,
   justificationDecisionUnion,
   justificationReviewUnion,
   modalityUnion,
@@ -132,6 +137,7 @@ export const bookAppointment = mutation({
           occupier: appointmentOccupier(ctx),
           audit: appointmentAuditRecorder(ctx),
           notifications: notificationEventRecorder(ctx),
+          calendarSync: calendarSyncScheduler(ctx),
         },
         { ...slot, timeZone: AGENDA_TIME_ZONE, tokenIdentifier: identity?.tokenIdentifier ?? null },
       ),
@@ -161,6 +167,7 @@ export const cancelAppointment = mutation({
           persister: appointmentTransitionRepository(ctx).persister,
           audit: appointmentAuditRecorder(ctx),
           notifications: notificationEventRecorder(ctx),
+          calendarSync: calendarSyncScheduler(ctx),
         },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,
@@ -199,6 +206,7 @@ export const rescheduleAppointment = mutation({
           persister: appointmentTransitionRepository(ctx).persister,
           audit: appointmentAuditRecorder(ctx),
           notifications: notificationEventRecorder(ctx),
+          calendarSync: calendarSyncScheduler(ctx),
           occupier: appointmentOccupier(ctx),
           availability: availabilityReader(ctx),
           needs: accompanimentNeedsReader(ctx),
@@ -294,10 +302,11 @@ export const reviewAppointmentJustification = mutation({
   args: {
     appointmentId: v.string(),
     review: justificationDecisionUnion,
+    explanation: v.optional(v.string()),
     version: v.literal(APPOINTMENT_CONTRACT_VERSION),
   },
   returns: appointmentResultValidator,
-  handler: async (ctx, { version: _version, appointmentId, review }) => {
+  handler: async (ctx, { version: _version, appointmentId, review, explanation }) => {
     const identity = await ctx.auth.getUserIdentity();
     return unwrapApiResult(
       await reviewAppointmentJustificationUseCase(
@@ -311,6 +320,7 @@ export const reviewAppointmentJustification = mutation({
           tokenIdentifier: identity?.tokenIdentifier ?? null,
           appointmentId,
           review,
+          ...(explanation === undefined ? {} : { explanation }),
         },
       ),
     );
@@ -334,10 +344,12 @@ const appointmentProjectionValidator = v.union(
     justificationExplanation: v.optional(v.string()),
     justificationSubmittedAt: v.optional(v.number()),
     justificationReview: v.optional(justificationReviewUnion),
+    justificationReviewExplanation: v.optional(v.string()),
     supportingDocumentReceived: v.optional(v.boolean()),
     status: appointmentStatusUnion,
     version,
     view: v.literal("full"),
+    needsCoordination: v.boolean(),
   }),
   v.object({
     id: v.string(),
@@ -351,10 +363,12 @@ const appointmentProjectionValidator = v.union(
     justificationExplanation: v.optional(v.string()),
     justificationSubmittedAt: v.optional(v.number()),
     justificationReview: v.optional(justificationReviewUnion),
+    justificationReviewExplanation: v.optional(v.string()),
     supportingDocumentReceived: v.optional(v.boolean()),
     status: appointmentStatusUnion,
     version,
     view: v.literal("shared"),
+    needsCoordination: v.boolean(),
   }),
   v.object({
     id: v.string(),
@@ -363,6 +377,7 @@ const appointmentProjectionValidator = v.union(
     endAt: v.number(),
     modality: modalityUnion,
     view: v.literal("minimized"),
+    needsCoordination: v.boolean(),
   }),
 );
 
@@ -391,7 +406,14 @@ export const listAppointments = query({
     const identity = await ctx.auth.getUserIdentity();
     const page = unwrapApiResult(
       await listAppointmentsUseCase(
-        { auth: authorizationReader(ctx), appointments: appointmentAgendaReader(ctx) },
+        {
+          auth: authorizationReader(ctx),
+          appointments: appointmentAgendaReader(ctx),
+          availability: availabilityReader(ctx),
+          needsAtDate: accompanimentNeedsAtDateReader(ctx),
+          compatibility: compatibilitySpaceSource(ctx),
+          participants: appointmentParticipantsReader(ctx),
+        },
         { ...args, timeZone: AGENDA_TIME_ZONE, tokenIdentifier: identity?.tokenIdentifier ?? null },
       ),
     );
@@ -408,7 +430,14 @@ export const getAppointment = query({
     const identity = await ctx.auth.getUserIdentity();
     return unwrapApiResult(
       await getAppointmentUseCase(
-        { auth: authorizationReader(ctx), appointments: appointmentAgendaReader(ctx) },
+        {
+          auth: authorizationReader(ctx),
+          appointments: appointmentAgendaReader(ctx),
+          availability: availabilityReader(ctx),
+          needsAtDate: accompanimentNeedsAtDateReader(ctx),
+          compatibility: compatibilitySpaceSource(ctx),
+          participants: appointmentParticipantsReader(ctx),
+        },
         { ...args, tokenIdentifier: identity?.tokenIdentifier ?? null },
       ),
     );
@@ -469,6 +498,8 @@ const appointmentCalendarSummaryValidator = v.object({
   modality: modalityUnion,
   calendarAdded: v.boolean(),
   calendarNeedsUpdate: v.boolean(),
+  calendarSyncStatus: v.optional(calendarSyncStatusUnion),
+  calendarSyncErrorCode: v.optional(calendarSyncErrorCodeUnion),
 });
 
 /**
