@@ -101,15 +101,18 @@ export interface FollowUpRecord {
 /**
  * Proyección compartida con el estudiante: acuerdos, tareas y próximos pasos.
  *
- * Omite `internalNote` por construcción. `appointmentStatus` es el estado
- * vigente que la aplicación lee de la atención al proyectar, no una copia
- * guardada en el seguimiento. La autorización de cada vista vive en
- * Aplicación; acá solo se recorta la forma.
+ * Omite `internalNote` por construcción. `appointmentStatus` y
+ * `appointmentStartsAt` son el estado y el inicio vigentes que la aplicación
+ * lee de la atención al proyectar, no una copia guardada en el seguimiento.
+ * La autorización de cada vista vive en Aplicación; acá solo se recorta la
+ * forma.
  */
 export interface SharedFollowUpProjection {
   readonly appointmentId: string;
   readonly accompanimentId: string;
   readonly appointmentStatus: AppointmentStatus;
+  /** Inicio de la atención (ms epoch), para distinguir los registros del historial. */
+  readonly appointmentStartsAt: number;
   readonly agreements: readonly FollowUpAgreement[];
   readonly tasks: readonly FollowUpTask[];
   readonly nextSteps: string;
@@ -135,12 +138,19 @@ export type FollowUpView = (typeof FOLLOW_UP_VIEW_VALUES)[number];
 export interface MinimizedFollowUpProjection {
   readonly appointmentId: string;
   readonly appointmentStatus: AppointmentStatus;
+  readonly appointmentStartsAt: number;
   readonly agreements: readonly FollowUpAgreement[];
   readonly tasks: readonly FollowUpTask[];
   readonly nextSteps: string;
   readonly suggestedNextAppointmentDate?: string;
   readonly version: FollowUpContractVersion;
   readonly view: "minimized";
+}
+
+/** Datos vigentes de la atención que se agregan a la proyección del registro. */
+export interface FollowUpAppointmentFacts {
+  readonly status: AppointmentStatus;
+  readonly startsAt: number;
 }
 
 /** Proyección de lectura del seguimiento según la vista autorizada. */
@@ -433,18 +443,19 @@ export function isFollowUpRetry(confirmed: FollowUpRecord, incoming: FollowUpRec
  * Proyección compartida con el estudiante.
  *
  * Arma el objeto campo por campo: aunque el registro traiga la nota interna,
- * la salida no puede incluirla ni por accidente. `appointmentStatus` lo aporta
- * la atención vigente al leer; el seguimiento no guarda una copia. Acuerdos y
- * tareas se copian con su forma mínima.
+ * la salida no puede incluirla ni por accidente. El estado y el inicio los
+ * aporta la atención vigente al leer; el seguimiento no guarda una copia.
+ * Acuerdos y tareas se copian con su forma mínima.
  */
 export function toSharedFollowUpProjection(
   record: FollowUpRecord,
-  appointmentStatus: AppointmentStatus,
+  appointment: FollowUpAppointmentFacts,
 ): SharedFollowUpProjection {
   return {
     appointmentId: record.appointmentId,
     accompanimentId: record.accompanimentId,
-    appointmentStatus,
+    appointmentStatus: appointment.status,
+    appointmentStartsAt: appointment.startsAt,
     agreements: record.agreements.map(({ description }) => ({ description })),
     tasks: record.tasks.map(({ description, responsible, status }) => ({
       description,
@@ -468,17 +479,14 @@ export function toSharedFollowUpProjection(
  */
 export function toFollowUpProjection(
   record: FollowUpRecord,
-  appointmentStatus: AppointmentStatus,
+  appointment: FollowUpAppointmentFacts,
   view: FollowUpView,
 ): FollowUpProjection {
   if (view === "minimized") {
-    const { accompanimentId: _link, ...content } = toSharedFollowUpProjection(
-      record,
-      appointmentStatus,
-    );
+    const { accompanimentId: _link, ...content } = toSharedFollowUpProjection(record, appointment);
     return { ...content, view };
   }
-  const shared = toSharedFollowUpProjection(record, appointmentStatus);
+  const shared = toSharedFollowUpProjection(record, appointment);
   if (view === "shared") return { ...shared, view };
   return {
     ...shared,

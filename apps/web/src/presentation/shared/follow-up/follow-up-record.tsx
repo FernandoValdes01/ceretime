@@ -1,36 +1,36 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { Link } from "@tanstack/react-router";
-import { CONFLICT_ERROR_CODE } from "../../../../../convex/domain/index.ts";
-import { publicErrorOf } from "../../infrastructure/convex/public-error.ts";
-import { formatCivilDateWithYear } from "../shared/date-format.ts";
-import { DeniedState, EmptyState, LoadingState } from "../shared/view-states.tsx";
-import { GESTION_FOCUS_VISIBLE } from "./assigned-accompaniments-list.tsx";
-import { isAuthorizationDenial } from "./authorization-denial.ts";
+import { CONFLICT_ERROR_CODE } from "../../../../../../convex/domain/index.ts";
+import { publicErrorOf } from "../../../infrastructure/convex/public-error.ts";
+import { isAuthorizationDenial } from "../authorization-denial.ts";
+import { formatAgendaDate, formatCivilDateWithYear } from "../date-format.ts";
+import { DeniedState, EmptyState, LoadingState } from "../view-states.tsx";
 import {
   useFollowUpHistory,
   type FollowUpHistoryPage,
   type FollowUpRecordView,
 } from "./follow-up-data.ts";
-import {
-  appointmentStatusLabel,
-  followUpResponsibleLabel,
-  followUpTaskStatusLabel,
-} from "./gestion-labels.ts";
+import { followUpResponsibleLabel, followUpTaskStatusLabel } from "./follow-up-labels.ts";
 
 /**
- * Seguimiento confirmado en solo lectura (TI2-165).
+ * Seguimiento confirmado en solo lectura (TI2-165, TI2-166).
  *
- * Separa lo que ve el estudiante de la nota interna con un encabezado propio
- * para cada parte, un borde distinto y el texto «no se comparte»: la
- * diferencia no depende solo del color. No ofrece editar, porque el primer
- * guardado confirma el registro y el contrato no admite cambios.
+ * Una sola representación para el Profesional y el Estudiante; cambia solo lo
+ * que depende de quién mira (`audience`). Para el Profesional separa lo que
+ * ve el estudiante de la nota interna con un encabezado propio para cada
+ * parte, un borde distinto y el texto «no se comparte»: la diferencia no
+ * depende solo del color. El Estudiante recibe del Backend la vista `shared`,
+ * sin nota interna, y además el componente no la muestra en su audiencia. No
+ * ofrece editar, porque el primer guardado confirma el registro y el contrato
+ * no admite cambios.
  */
+
+/** Quién mira el seguimiento. */
+export type FollowUpAudience = "professional" | "student";
 
 const SHARED_BLOCK = "rounded-lg border border-border-low bg-surface-container-lowest p-4";
 const INTERNAL_BLOCK =
   "rounded-lg border-2 border-dashed border-outline bg-surface-container-low p-4";
 const BLOCK_TITLE = "m-0 text-base font-bold text-on-surface";
-const LINK = `inline-flex min-h-[44px] w-fit items-center rounded-[0.5rem] text-base font-semibold text-primary underline ${GESTION_FOCUS_VISIBLE}`;
 
 /** Contenido de un seguimiento que se muestra, confirmado o por confirmar. */
 export type FollowUpContent = Pick<
@@ -45,19 +45,27 @@ export type FollowUpContent = Pick<
 export function FollowUpRecordContent({
   record,
   pending = false,
+  audience = "professional",
 }: {
   record: FollowUpContent;
   pending?: boolean;
+  audience?: FollowUpAudience;
 }) {
+  const student = audience === "student";
   return (
     <div className="flex flex-col gap-4 text-left wrap-anywhere">
-      <p className="m-0 text-sm text-on-surface-variant">
-        {pending
-          ? "Revisa el seguimiento: al confirmarlo queda guardado y ya no se puede editar."
-          : "Seguimiento confirmado: no se puede editar."}
-      </p>
-      <section aria-label="Se comparte con el estudiante" className={SHARED_BLOCK}>
-        <p className={BLOCK_TITLE}>Se comparte con el estudiante</p>
+      {student ? null : (
+        <p className="m-0 text-sm text-on-surface-variant">
+          {pending
+            ? "Revisa el seguimiento: al confirmarlo queda guardado y ya no se puede editar."
+            : "Seguimiento confirmado: no se puede editar."}
+        </p>
+      )}
+      <section
+        aria-label={student ? "Seguimiento de la atención" : "Se comparte con el estudiante"}
+        className={SHARED_BLOCK}
+      >
+        {student ? null : <p className={BLOCK_TITLE}>Se comparte con el estudiante</p>}
         <FollowUpField label="Acuerdos">
           {record.agreements.length === 0 ? (
             <p className="m-0">Sin acuerdos.</p>
@@ -96,7 +104,7 @@ export function FollowUpRecordContent({
           </FollowUpField>
         )}
       </section>
-      {record.internalNote !== undefined ? (
+      {!student && record.internalNote !== undefined ? (
         <section aria-label="Nota interna: no se comparte" className={INTERNAL_BLOCK}>
           <p className={BLOCK_TITLE}>Nota interna: no se comparte</p>
           <p className="m-0 mt-2 text-sm text-on-surface-variant">
@@ -119,13 +127,31 @@ function FollowUpField({ label, children }: { label: string; children: ReactNode
 }
 
 /**
- * Historial de seguimiento de un acompañamiento (TI2-165).
+ * Lo que el historial muestra distinto según quién mira: la etiqueta del
+ * estado de la atención y el enlace a su detalle viven en el área de cada rol,
+ * y el texto del historial vacío dice dónde se origina el seguimiento.
+ */
+export interface FollowUpHistoryAudience {
+  readonly audience: FollowUpAudience;
+  readonly appointmentStatusLabel: (status: string) => string;
+  readonly renderAppointmentLink: (appointmentId: string) => ReactNode;
+  readonly emptyHint: string;
+}
+
+/**
+ * Historial de seguimiento de un acompañamiento (TI2-165, TI2-166).
  *
  * Solo recorre las atenciones del acompañamiento pedido, así que no mezcla
  * acompañamientos. El Backend pagina por atenciones: una página puede traer
  * menos registros que el límite, o ninguno, y aun así tener más.
  */
-export function FollowUpHistory({ accompanimentId }: { accompanimentId: string }) {
+export function FollowUpHistory({
+  accompanimentId,
+  view,
+}: {
+  accompanimentId: string;
+  view: FollowUpHistoryAudience;
+}) {
   // Cursores pedidos; el primero es `null`. Crece con "Cargar más".
   const [cursors, setCursors] = useState<ReadonlyArray<string | null>>([null]);
   const [counts, setCounts] = useState<ReadonlyArray<number>>([]);
@@ -157,6 +183,7 @@ export function FollowUpHistory({ accompanimentId }: { accompanimentId: string }
         <FollowUpHistoryPageView
           key={cursor ?? "first"}
           accompanimentId={accompanimentId}
+          view={view}
           cursor={cursor}
           index={index}
           isLast={index === cursors.length - 1}
@@ -172,6 +199,7 @@ export function FollowUpHistory({ accompanimentId }: { accompanimentId: string }
 
 function FollowUpHistoryPageView({
   accompanimentId,
+  view,
   cursor,
   index,
   isLast,
@@ -181,6 +209,7 @@ function FollowUpHistoryPageView({
   onRestart,
 }: {
   accompanimentId: string;
+  view: FollowUpHistoryAudience;
   cursor: string | null;
   index: number;
   isLast: boolean;
@@ -225,6 +254,7 @@ function FollowUpHistoryPageView({
   return (
     <FollowUpHistoryPageItems
       page={page}
+      view={view}
       index={index}
       isLast={isLast}
       totalBefore={totalBefore}
@@ -236,6 +266,7 @@ function FollowUpHistoryPageView({
 
 function FollowUpHistoryPageItems({
   page,
+  view,
   index,
   isLast,
   totalBefore,
@@ -243,6 +274,7 @@ function FollowUpHistoryPageItems({
   onMore,
 }: {
   page: FollowUpHistoryPage;
+  view: FollowUpHistoryAudience;
   index: number;
   isLast: boolean;
   totalBefore: number;
@@ -260,7 +292,7 @@ function FollowUpHistoryPageItems({
     <>
       {empty ? (
         <EmptyState title="Este acompañamiento todavía no tiene seguimientos.">
-          <p>El seguimiento se registra desde el detalle de una atención realizada en la agenda.</p>
+          <p>{view.emptyHint}</p>
         </EmptyState>
       ) : null}
       {page.items.length > 0 ? (
@@ -268,19 +300,14 @@ function FollowUpHistoryPageItems({
           {page.items.map((record) => (
             <li key={record.appointmentId} className="rounded-lg border border-border-low p-4">
               <article
-                aria-label={`Seguimiento de una atención ${appointmentStatusLabel(record.appointmentStatus).toLowerCase()}`}
+                aria-label={`Seguimiento de la atención del ${formatAgendaDate(record.appointmentStartsAt)}`}
               >
                 <p className="m-0 text-lg font-semibold">
-                  Atención: {appointmentStatusLabel(record.appointmentStatus)}
+                  Atención del {formatAgendaDate(record.appointmentStartsAt)} ·{" "}
+                  {view.appointmentStatusLabel(record.appointmentStatus)}
                 </p>
-                <Link
-                  to="/profesional/agenda/$appointmentId"
-                  params={{ appointmentId: record.appointmentId }}
-                  className={LINK}
-                >
-                  Ver la atención
-                </Link>
-                <FollowUpRecordContent record={record} />
+                {view.renderAppointmentLink(record.appointmentId)}
+                <FollowUpRecordContent record={record} audience={view.audience} />
               </article>
             </li>
           ))}

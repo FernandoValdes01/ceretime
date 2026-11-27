@@ -27,6 +27,10 @@ import {
   type SharedFollowUpProjection as BarrelShared,
 } from "../index";
 
+/** Inicio ficticio de la atención: lunes 16-11-2026, 10:00 en Santiago. */
+const STARTS_AT = Date.UTC(2026, 10, 16, 13);
+const completed = { status: "completed", startsAt: STARTS_AT } as const;
+
 const validInput: FollowUpRecordInput = {
   appointmentId: "atencion-ficticia-1",
   accompanimentId: "acompanamiento-ficticio-1",
@@ -105,11 +109,12 @@ describe("Registro de seguimiento (TI2-106)", () => {
 
   test("la proyección compartida no incluye la nota interna", () => {
     const record = recordOf(validInput);
-    const shared = toSharedFollowUpProjection(record, "completed");
+    const shared = toSharedFollowUpProjection(record, completed);
     expect(Object.keys(shared).sort()).toEqual([
       "accompanimentId",
       "agreements",
       "appointmentId",
+      "appointmentStartsAt",
       "appointmentStatus",
       "nextSteps",
       "suggestedNextAppointmentDate",
@@ -125,14 +130,18 @@ describe("Registro de seguimiento (TI2-106)", () => {
   test("la proyección muestra el estado vigente de la atención", () => {
     const record = recordOf({ ...validInput, appointmentStatus: "completed" });
     expect("appointmentStatus" in record).toBe(false);
-    const shared = toSharedFollowUpProjection(record, "no_show_justified");
+    const shared = toSharedFollowUpProjection(record, {
+      status: "no_show_justified",
+      startsAt: STARTS_AT,
+    });
     expect(shared.appointmentStatus).toBe("no_show_justified");
+    expect(shared.appointmentStartsAt).toBe(STARTS_AT);
   });
 
   test("sin fecha sugerida la proyección tampoco inventa la clave", () => {
     const shared = toSharedFollowUpProjection(
       recordOf({ ...validInput, suggestedNextAppointmentDate: undefined }),
-      "completed",
+      completed,
     );
     expect("suggestedNextAppointmentDate" in shared).toBe(false);
   });
@@ -352,6 +361,7 @@ describe("toFollowUpProjection", () => {
     "accompanimentId",
     "agreements",
     "appointmentId",
+    "appointmentStartsAt",
     "appointmentStatus",
     "nextSteps",
     "suggestedNextAppointmentDate",
@@ -361,21 +371,24 @@ describe("toFollowUpProjection", () => {
   ];
 
   test("la vista profesional es la única con la nota interna", () => {
-    const projected = toFollowUpProjection(record, "completed", "professional");
+    const projected = toFollowUpProjection(record, completed, "professional");
     expect(Object.keys(projected).sort()).toEqual([...sharedKeys, "internalNote"].sort());
     expect(projected).toMatchObject({ internalNote: "Nota interna ficticia" });
   });
 
   test("la vista compartida omite la nota", () => {
-    const projected = toFollowUpProjection(record, "completed", "shared");
+    const projected = toFollowUpProjection(record, completed, "shared");
     expect(Object.keys(projected).sort()).toEqual(sharedKeys);
     expect(JSON.stringify(projected)).not.toContain("Nota interna ficticia");
   });
 
   test("la vista minimizada entrega acuerdos, tareas y próximos pasos, sin nota ni vínculo", () => {
-    expect(toFollowUpProjection(record, "no_show", "minimized")).toEqual({
+    expect(
+      toFollowUpProjection(record, { status: "no_show", startsAt: STARTS_AT }, "minimized"),
+    ).toEqual({
       appointmentId: record.appointmentId,
       appointmentStatus: "no_show",
+      appointmentStartsAt: STARTS_AT,
       agreements: [{ description: "Continuar con el plan acordado." }],
       tasks: [
         {
@@ -389,11 +402,12 @@ describe("toFollowUpProjection", () => {
       version: FOLLOW_UP_CONTRACT_VERSION,
       view: "minimized",
     });
-    const minimized = toFollowUpProjection(record, "completed", "minimized");
+    const minimized = toFollowUpProjection(record, completed, "minimized");
     expect(Object.keys(minimized).sort()).toEqual(
       [
         "agreements",
         "appointmentId",
+        "appointmentStartsAt",
         "appointmentStatus",
         "nextSteps",
         "suggestedNextAppointmentDate",
@@ -409,10 +423,10 @@ describe("toFollowUpProjection", () => {
   test("sin fecha ni nota, las claves opcionales no aparecen", () => {
     const bare = recordOf(validInput);
     const { suggestedNextAppointmentDate: _date, internalNote: _note, ...plain } = bare;
-    expect(toFollowUpProjection(plain, "completed", "minimized")).not.toHaveProperty(
+    expect(toFollowUpProjection(plain, completed, "minimized")).not.toHaveProperty(
       "suggestedNextAppointmentDate",
     );
-    expect(toFollowUpProjection(plain, "completed", "professional")).not.toHaveProperty(
+    expect(toFollowUpProjection(plain, completed, "professional")).not.toHaveProperty(
       "internalNote",
     );
   });

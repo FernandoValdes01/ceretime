@@ -40,17 +40,18 @@ Los validadores de salida fijan estas claves: si una proyección trajera otra cl
 
 | Vista          | Quién la recibe                     | Claves                                                                                                                                                           |
 | -------------- | ----------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `professional` | Profesional con asignación activa   | `appointmentId`, `accompanimentId`, `appointmentStatus`, `agreements`, `tasks`, `nextSteps`, `suggestedNextAppointmentDate?`, `internalNote?`, `version`, `view` |
+| `professional` | Profesional con asignación activa   | `appointmentId`, `accompanimentId`, `appointmentStatus`, `appointmentStartsAt`, `agreements`, `tasks`, `nextSteps`, `suggestedNextAppointmentDate?`, `internalNote?`, `version`, `view` |
 | `shared`       | Estudiante dueño del acompañamiento | Las mismas sin `internalNote`                                                                                                                                    |
-| `minimized`    | Practicante con asignación activa   | `appointmentId`, `appointmentStatus`, `agreements`, `tasks`, `nextSteps`, `suggestedNextAppointmentDate?`, `version`, `view`                                       |
+| `minimized`    | Practicante con asignación activa   | `appointmentId`, `appointmentStatus`, `appointmentStartsAt`, `agreements`, `tasks`, `nextSteps`, `suggestedNextAppointmentDate?`, `version`, `view`                                       |
 
-`appointmentStatus` es el estado vigente de la atención, leído al responder. Decisión del 2026-11-15 (TI2-186): gana el diagrama, así que la vista `minimized` incluye acuerdos, tareas y próximos pasos con la misma forma que la vista `shared`. Esto reemplaza, solo para el seguimiento, la minimización de TI2-127, que los omitía porque esos textos pueden mencionar necesidades de acceso. La vista `minimized` mantiene fuera la nota interna y el vínculo con el acompañamiento, que el diagrama no asigna al practicante.
+`appointmentStatus` es el estado vigente de la atención y `appointmentStartsAt`, su inicio en milisegundos desde la época (el atributo `inicio` de ATENCIONES en el MER), ambos leídos de la atención al responder; el seguimiento no guarda una copia. `appointmentStartsAt` se agregó en TI2-166 para que los clientes distingan cada registro del historial por la fecha de su atención; es obligatorio en las tres vistas, y un cliente que no lo use puede ignorarlo. Decisión del 2026-11-15 (TI2-186): gana el diagrama, así que la vista `minimized` incluye acuerdos, tareas y próximos pasos con la misma forma que la vista `shared`. Esto reemplaza, solo para el seguimiento, la minimización de TI2-127, que los omitía porque esos textos pueden mencionar necesidades de acceso. La vista `minimized` mantiene fuera la nota interna y el vínculo con el acompañamiento, que el diagrama no asigna al practicante.
 
 ```json
 {
   "appointmentId": "k57abc...",
   "accompanimentId": "j97def...",
   "appointmentStatus": "completed",
+  "appointmentStartsAt": 1794841200000,
   "agreements": [{ "description": "Recibir los apuntes en formato digital" }],
   "tasks": [
     {
@@ -170,6 +171,8 @@ Estudiante, Practicante y Administrador reciben `unauthorized` en las cuatro. So
 ### Necesidades de acceso versionadas (TI2-156)
 
 `updateAccompanimentNeeds` versiona en `accompanimentNeeds` (NECESIDADES_ACCESO del MER, `validFrom`/`validUntil?`): cierra la vigente con `validUntil` y crea la nueva con `validFrom` en el instante del cambio, además de la copia en `accompaniments.accessNeeds`. Las atenciones se evalúan con la versión vigente a su `startsAt`, así las anteriores conservan lo que regía y no se reescriben. Compara antes/después en la misma mutación y avisa `appointment_needs_updated` solo a los profesionales de las futuras que pasan de compatibles a incompatibles, sin cancelar. Si la lectura de futuras se trunca, responde `conflict` sin escribir. La migración `auditAccompanimentNeeds`/`migrateAccompanimentNeeds` crea la primera versión (`validFrom: 1`) de los acompañamientos sin versiones.
+
+**Formato que envían los clientes (TI2-166).** `accessNeeds` es texto, pero los clientes lo arman con el formato estructurado de TI2-135: las opciones de `ACCESS_NEED_OPTIONS` elegidas y una necesidad libre aparte (`otherAccessNeed`), convertidas con `toStoredAccessNeeds` del dominio, que deja una línea por opción en el orden de la lista y la necesidad libre al final. Es la misma regla que arma el texto del acompañamiento al aceptar una solicitud. Para editar lo vigente, la Web hace el camino inverso: cada línea igual a la etiqueta de una opción la marca, y las demás forman la necesidad libre. Mobile debe usar la misma función para que las dos superficies guarden lo mismo.
 
 ### Estados que llegan a las lecturas
 

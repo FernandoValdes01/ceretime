@@ -257,6 +257,7 @@ const stored: StoredFollowUp = {
     version: "v1",
   },
   appointmentStatus: "completed",
+  appointmentStartsAt: 0,
   internalNoteId: "note-1",
 };
 

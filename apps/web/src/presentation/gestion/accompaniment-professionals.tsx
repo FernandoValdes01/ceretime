@@ -9,7 +9,7 @@ import { publicErrorOf } from "../../infrastructure/convex/public-error.ts";
 import { formatPanelDate } from "../routes/student-panel-labels.ts";
 import { ACCESS_DENIED_MESSAGE, DeniedState, LoadingState } from "../shared/view-states.tsx";
 import { GESTION_FOCUS_VISIBLE } from "./assigned-accompaniments-list.tsx";
-import { isAuthorizationDenial } from "./authorization-denial.ts";
+import { isAuthorizationDenial } from "../shared/authorization-denial.ts";
 import {
   useAccompanimentProfessionals,
   useAssignAccompanimentAccess,
