@@ -592,6 +592,7 @@ describe("selección, confirmación y lectura reactiva (TI2-124)", () => {
     await confirmarCupo();
 
     fireEvent.click(await screen.findByRole("button", { name: "Cancelar esta reserva" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirmar cancelación" }));
 
     expect(await screen.findByRole("heading", { name: "Reserva cancelada" })).toBeDefined();
     expect(backend.callsTo(CANCEL).map((call) => call.args)).toEqual([
@@ -715,7 +716,9 @@ describe("conflicto, fallo técnico, red caída y doble confirmación (TI2-124)"
     backend.takeSlot(ONLINE_SLOT.id);
     renderAt(HORARIOS);
 
-    expect(await screen.findByText("No hay cupos compatibles por ahora.")).toBeDefined();
+    expect(
+      await screen.findByRole("heading", { name: "No hay horarios compatibles por ahora" }),
+    ).toBeDefined();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });
@@ -908,6 +911,7 @@ describe("acceso directo y recursos de otro titular (TI2-124)", () => {
     backend.failNext(CANCEL, denied());
 
     fireEvent.click(screen.getByRole("button", { name: "Cancelar esta reserva" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirmar cancelación" }));
 
     expect(
       await screen.findByRole("heading", { name: "No tienes acceso a esta reserva." }),
