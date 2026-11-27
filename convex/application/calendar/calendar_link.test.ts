@@ -9,6 +9,7 @@ import {
   markCalendarDisconnected,
   revokeCalendarOAuthAccess,
   type CalendarLinkMetadataStore,
+  type CalendarLinkSyncScheduler,
   type CalendarOAuthAccess,
   type CalendarOAuthLinkReader,
 } from "./calendar_link";
@@ -143,6 +144,22 @@ function fakeStore(
   };
 }
 
+function linkSync(): {
+  readonly linkSync: CalendarLinkSyncScheduler & {
+    readonly scheduled: { readonly userId: string; readonly now: number }[];
+  };
+} {
+  const scheduled: { readonly userId: string; readonly now: number }[] = [];
+  return {
+    linkSync: {
+      scheduled,
+      scheduleFutureSync: async (userId, now) => {
+        scheduled.push({ userId, now });
+      },
+    },
+  };
+}
+
 describe("getCalendarLinkStatus", () => {
   test("exige sesión con perfil vigente", async () => {
     for (const tokenIdentifier of [null, "token-missing", "token-inactive"]) {
@@ -217,7 +234,7 @@ describe("confirmCalendarLink", () => {
   test("rechazar la autorización no bloquea: responde desconectado sin error", async () => {
     const store = fakeStore();
     const result = await confirmCalendarLink(
-      { auth: fakeAuth(), oauth: fakeOAuth([]), store, now: () => 3000 },
+      { auth: fakeAuth(), oauth: fakeOAuth([]), store, now: () => 3000, ...linkSync() },
       { tokenIdentifier: "token-student" },
     );
     expect(result).toEqual({ status: "ok", data: { connected: false, status: "not_connected" } });
@@ -232,6 +249,7 @@ describe("confirmCalendarLink", () => {
         oauth: fakeOAuth(["openid", CALENDAR_EVENTS_SCOPE]),
         store,
         now: () => 3000,
+        ...linkSync(),
       },
       { tokenIdentifier: "token-student" },
     );
@@ -243,7 +261,13 @@ describe("confirmCalendarLink", () => {
   test("una persona no vincula la cuenta de otra", async () => {
     const store = fakeStore();
     await confirmCalendarLink(
-      { auth: fakeAuth(), oauth: fakeOAuth([CALENDAR_EVENTS_SCOPE]), store, now: () => 3000 },
+      {
+        auth: fakeAuth(),
+        oauth: fakeOAuth([CALENDAR_EVENTS_SCOPE]),
+        store,
+        now: () => 3000,
+        ...linkSync(),
+      },
       { tokenIdentifier: "token-pro" },
     );
     expect(store.writes).toEqual([{ userId: "user-pro", kind: "connect" }]);
@@ -253,7 +277,13 @@ describe("confirmCalendarLink", () => {
     for (const tokenIdentifier of ["token-intern", "token-admin"]) {
       const store = fakeStore();
       const result = await confirmCalendarLink(
-        { auth: fakeAuth(), oauth: fakeOAuth([CALENDAR_EVENTS_SCOPE]), store, now: () => 3000 },
+        {
+          auth: fakeAuth(),
+          oauth: fakeOAuth([CALENDAR_EVENTS_SCOPE]),
+          store,
+          now: () => 3000,
+          ...linkSync(),
+        },
         { tokenIdentifier },
       );
       expect(result).toEqual({
@@ -272,6 +302,7 @@ describe("confirmCalendarLink", () => {
           oauth: fakeOAuth([CALENDAR_EVENTS_SCOPE]),
           store: fakeStore(),
           now: () => 3000,
+          ...linkSync(),
         },
         { tokenIdentifier },
       );
@@ -289,6 +320,7 @@ describe("confirmCalendarLink", () => {
         oauth: fakeOAuth([CALENDAR_EVENTS_SCOPE]),
         store: fakeStore(),
         now: () => 0,
+        ...linkSync(),
       },
       { tokenIdentifier: "token-student" },
     );
@@ -296,6 +328,38 @@ describe("confirmCalendarLink", () => {
       status: "error",
       error: { code: "conflict", message: "La solicitud entra en conflicto con el estado actual." },
     });
+  });
+
+  test("al vincular programa el recorrido por páginas de las futuras vigentes", async () => {
+    const sync = linkSync();
+    const result = await confirmCalendarLink(
+      {
+        auth: fakeAuth(),
+        oauth: fakeOAuth([CALENDAR_EVENTS_SCOPE]),
+        store: fakeStore(),
+        linkSync: sync.linkSync,
+        now: () => 3000,
+      },
+      { tokenIdentifier: "token-student" },
+    );
+    expect(result.status).toBe("ok");
+    expect(sync.linkSync.scheduled).toEqual([{ userId: "user-student", now: 3000 }]);
+  });
+
+  test("rechazar la autorización no programa nada", async () => {
+    const sync = linkSync();
+    const result = await confirmCalendarLink(
+      {
+        auth: fakeAuth(),
+        oauth: fakeOAuth([]),
+        store: fakeStore(),
+        linkSync: sync.linkSync,
+        now: () => 3000,
+      },
+      { tokenIdentifier: "token-student" },
+    );
+    expect(result).toEqual({ status: "ok", data: { connected: false, status: "not_connected" } });
+    expect(sync.linkSync.scheduled).toHaveLength(0);
   });
 });
 
