@@ -54,12 +54,14 @@ export interface FollowUpRecorder {
 }
 
 /**
- * Registro guardado, sin el texto de la nota. El estado y el acompañamiento
- * vienen de la atención vigente; `internalNoteId` es la única vía a la nota.
+ * Registro guardado, sin el texto de la nota. El estado, el inicio y el
+ * acompañamiento vienen de la atención vigente; `internalNoteId` es la única
+ * vía a la nota.
  */
 export interface StoredFollowUp {
   readonly record: Omit<FollowUpRecord, "internalNote">;
   readonly appointmentStatus: AppointmentStatus;
+  readonly appointmentStartsAt: number;
   readonly internalNoteId?: string;
 }
 

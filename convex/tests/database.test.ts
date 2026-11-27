@@ -3513,10 +3513,17 @@ test("TI2-118: el seguimiento guarda acuerdos y tareas en filas propias y la not
   if (stored === null) throw new Error("El registro guardado debe leerse.");
   expect(stored.record).not.toHaveProperty("internalNote");
   expect(stored.internalNoteId).toBe(tables.notes[0]._id);
-  expect(toSharedFollowUpProjection(stored.record, stored.appointmentStatus)).toEqual({
+  expect(stored.appointmentStartsAt).toBe(TI83_MONDAY_9H);
+  expect(
+    toSharedFollowUpProjection(stored.record, {
+      status: stored.appointmentStatus,
+      startsAt: stored.appointmentStartsAt,
+    }),
+  ).toEqual({
     appointmentId,
     accompanimentId,
     appointmentStatus: "completed",
+    appointmentStartsAt: TI83_MONDAY_9H,
     agreements: input.agreements,
     tasks: input.tasks,
     nextSteps: input.nextSteps,

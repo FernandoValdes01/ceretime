@@ -138,6 +138,25 @@ describe("panel inicial del Estudiante", () => {
     expect(screen.queryByText("Aún no tienes atenciones agendadas.")).toBeNull();
   });
 
+  test("acuerdos, tareas y necesidades llevan a los acompañamientos, sin «Próximamente» (TI2-166)", async () => {
+    mockSession = SESSION;
+    mockRequests = EMPTY_PAGE;
+    mockAccompaniments = EMPTY_PAGE;
+    renderPanel();
+
+    expect(await screen.findByText(greetingText())).toBeDefined();
+    const section = screen.getByRole("region", {
+      name: "Acuerdos, tareas y necesidades de acceso",
+    });
+    expect(section.textContent).not.toMatch(/Próximamente/);
+    expect(screen.queryByText("Aún no tienes acuerdos ni tareas.")).toBeNull();
+    expect(screen.queryByText("Aún no registras necesidades de acceso.")).toBeNull();
+    expect(screen.getByRole("link", { name: "Ver mis acompañamientos" }).getAttribute("href")).toBe(
+      "#acompanamientos",
+    );
+    expect(screen.getByRole("region", { name: "Acompañamientos" }).id).toBe("acompanamientos");
+  });
+
   test("con datos muestra estados con etiquetas en español", async () => {
     mockSession = SESSION;
     mockRequests = {

@@ -77,38 +77,12 @@ export function RequestContentFields({
         <h2 id="request-access-title" className={SECTION_TITLE_CLASS}>
           Condiciones de acceso
         </h2>
-        <ChoiceGroup
-          field="accessNeeds"
-          legend="Necesidades de acceso"
-          required
-          hint={copy.accessNeedsHint}
+        <AccessNeedsFields
+          voice={voice}
+          accessNeedIds={draft.accessNeedIds}
+          otherAccessNeed={draft.otherAccessNeed}
           error={errors.accessNeeds}
-        >
-          {ACCESS_NEED_OPTIONS.map((option) => (
-            <ChoiceOption
-              key={option.id}
-              id={`request-access-need-${option.id}`}
-              type="checkbox"
-              name="accessNeeds"
-              label={option.label}
-              checked={draft.accessNeedIds.includes(option.id)}
-              errorId={errors.accessNeeds === undefined ? undefined : fieldErrorId("accessNeeds")}
-              onChange={(checked) =>
-                onChange({
-                  accessNeedIds: checked
-                    ? [...draft.accessNeedIds, option.id]
-                    : draft.accessNeedIds.filter((id) => id !== option.id),
-                })
-              }
-            />
-          ))}
-        </ChoiceGroup>
-        <TextAreaField
-          id="request-other-access-need"
-          label="Otra necesidad de acceso"
-          hint={copy.otherAccessNeedHint}
-          value={draft.otherAccessNeed}
-          onChange={(value) => onChange({ otherAccessNeed: value })}
+          onChange={onChange}
         />
         <ChoiceGroup
           field="modalityPreference"
@@ -223,6 +197,64 @@ export function RequestContentFields({
           onChange={(value) => onChange({ preferredAccessibleInformationChannel: value })}
         />
       </section>
+    </>
+  );
+}
+
+/**
+ * Necesidades de acceso con el formato de TI2-135: opciones de
+ * `ACCESS_NEED_OPTIONS` y una necesidad libre aparte. Lo usan la solicitud y,
+ * desde TI2-166, la actualización de necesidades del acompañamiento.
+ */
+export function AccessNeedsFields({
+  voice,
+  accessNeedIds,
+  otherAccessNeed,
+  error,
+  onChange,
+}: {
+  voice: RequestFormVoice;
+  accessNeedIds: readonly string[];
+  otherAccessNeed: string;
+  error?: string;
+  onChange: (changes: { accessNeedIds?: string[]; otherAccessNeed?: string }) => void;
+}) {
+  const copy = REQUEST_CONTENT_COPY[voice];
+  return (
+    <>
+      <ChoiceGroup
+        field="accessNeeds"
+        legend="Necesidades de acceso"
+        required
+        hint={copy.accessNeedsHint}
+        error={error}
+      >
+        {ACCESS_NEED_OPTIONS.map((option) => (
+          <ChoiceOption
+            key={option.id}
+            id={`request-access-need-${option.id}`}
+            type="checkbox"
+            name="accessNeeds"
+            label={option.label}
+            checked={accessNeedIds.includes(option.id)}
+            errorId={error === undefined ? undefined : fieldErrorId("accessNeeds")}
+            onChange={(checked) =>
+              onChange({
+                accessNeedIds: checked
+                  ? [...accessNeedIds, option.id]
+                  : accessNeedIds.filter((id) => id !== option.id),
+              })
+            }
+          />
+        ))}
+      </ChoiceGroup>
+      <TextAreaField
+        id="request-other-access-need"
+        label="Otra necesidad de acceso"
+        hint={copy.otherAccessNeedHint}
+        value={otherAccessNeed}
+        onChange={(value) => onChange({ otherAccessNeed: value })}
+      />
     </>
   );
 }

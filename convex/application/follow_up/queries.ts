@@ -57,15 +57,16 @@ async function project(
   stored: StoredFollowUp,
   view: FollowUpView,
 ): Promise<FollowUpProjection> {
+  const appointment = { status: stored.appointmentStatus, startsAt: stored.appointmentStartsAt };
   if (view !== "professional" || stored.internalNoteId === undefined) {
-    return toFollowUpProjection(stored.record, stored.appointmentStatus, view);
+    return toFollowUpProjection(stored.record, appointment, view);
   }
   const internalNote = await reader.readInternalNote(
     stored.internalNoteId,
     stored.record.accompanimentId,
   );
   const record = internalNote === null ? stored.record : { ...stored.record, internalNote };
-  return toFollowUpProjection(record, stored.appointmentStatus, view);
+  return toFollowUpProjection(record, appointment, view);
 }
 
 /**

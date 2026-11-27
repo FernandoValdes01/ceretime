@@ -8,7 +8,9 @@ import { UNAUTHORIZED_ERROR_MESSAGE } from "../../../../../convex/domain/index.t
 import { toCalendarCallbackStatus } from "../../application/calendar/calendar-link.ts";
 import { accompanimentStatusLabel } from "../routes/student-panel-labels.ts";
 import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
+import { AccessNeedsEditor } from "./access-needs-editor.tsx";
 import { StudentAppointmentsSection } from "./student-appointments.tsx";
+import { StudentFollowUpHistory } from "./student-follow-up.tsx";
 import { useOwnAccompanimentDetail } from "./student-accompaniments-data.ts";
 import type { OwnAccompanimentDetail } from "./student-accompaniments-data.ts";
 
@@ -24,8 +26,9 @@ import type { OwnAccompanimentDetail } from "./student-accompaniments-data.ts";
  * minimizada no las trae y la fila se omite sin inventar contenido. Un
  * acompañamiento cerrado conserva su vista en solo lectura. No hay UI, texto
  * oculto ni llamada a `getInternalNotes`: las notas internas no pertenecen al
- * Estudiante. El historial básico se limita a la información disponible del
- * acompañamiento; el aviso final registra ese límite sin fabricar eventos.
+ * Estudiante. Desde TI2-166 muestra el historial de seguimiento del
+ * acompañamiento con la vista `shared`, sin nota interna, y permite
+ * actualizar las necesidades de acceso para las atenciones futuras.
  */
 export function StudentAccompanimentDetailPage({
   accompanimentId,
@@ -140,15 +143,23 @@ function OwnAccompanimentDetailBody({
         {"accessNeeds" in accompaniment ? (
           <div className="py-2">
             <dt className="font-semibold text-on-surface">Necesidades de acceso</dt>
-            <dd className="m-0 text-on-surface">{accompaniment.accessNeeds}</dd>
+            <dd className="m-0 whitespace-pre-line text-on-surface">{accompaniment.accessNeeds}</dd>
           </div>
         ) : null}
       </dl>
+      {/* Cerrado no admite cambios (TI2-156); la vista minimizada no trae las necesidades. */}
+      {!closed && "accessNeeds" in accompaniment ? (
+        <AccessNeedsEditor
+          accompanimentId={accompanimentId}
+          currentAccessNeeds={accompaniment.accessNeeds}
+        />
+      ) : null}
       <StudentAppointmentsSection
         accompanimentId={accompanimentId}
         calendarStatus={calendarStatus}
         readOnly={closed}
       />
+      <StudentFollowUpHistory accompanimentId={accompanimentId} />
     </>
   );
 }

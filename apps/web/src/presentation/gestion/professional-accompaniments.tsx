@@ -18,10 +18,11 @@ import {
   AssignedAccompanimentsList,
   GESTION_FOCUS_VISIBLE,
 } from "./assigned-accompaniments-list.tsx";
-import { isAuthorizationDenial } from "./authorization-denial.ts";
+import { isAuthorizationDenial } from "../shared/authorization-denial.ts";
 import { AccompanimentProfessionalsSection } from "./accompaniment-professionals.tsx";
+import { FollowUpHistory } from "../shared/follow-up/follow-up-record.tsx";
 import { DetailRow } from "./detail-row.tsx";
-import { FollowUpHistory } from "./follow-up-record.tsx";
+import { PROFESSIONAL_FOLLOW_UP_HISTORY } from "./follow-up-history-view.tsx";
 import { useAssignedAccompanimentDetail } from "./practitioner-accompaniments-data.ts";
 import {
   accompanimentActions,
@@ -176,7 +177,7 @@ function AccompanimentDetailBody({ accompanimentId }: { accompanimentId: string 
         </StudentPanelErrorBoundary>
       ) : null}
       <StudentPanelErrorBoundary subject="el historial de seguimiento" level="section">
-        <FollowUpHistory accompanimentId={view._id} />
+        <FollowUpHistory accompanimentId={view._id} view={PROFESSIONAL_FOLLOW_UP_HISTORY} />
       </StudentPanelErrorBoundary>
     </div>
   );
