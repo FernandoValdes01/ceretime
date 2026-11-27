@@ -1,0 +1,81 @@
+name: Imagen Convex
+
+# Publica la imagen de Convex para Kubero (`docker/convex`) cuando cambia, en
+# cualquier rama, para poder preparar la instancia antes de fusionar. Kubero
+# usa la etiqueta del commit, nunca una móvil: reiniciar la app no cambia de
+# versión hasta que alguien elija otra etiqueta.
+on:
+  push:
+    paths:
+      - docker/convex/**
+      - .github/workflows/convex-image.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Construir y publicar imagen Convex
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Iniciar sesión en GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Owner del registro en minúsculas
+        id: owner
+        run: echo "lc=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Construir
+        uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5
+        with:
+          context: docker/convex
+          load: true
+          tags: ghcr.io/${{ steps.owner.outputs.lc }}/ceretime-convex:${{ github.sha }}
+
+      # Antes de publicar, comprueba el proxy: el host de la API llega al
+      # backend (`/version` responde 200) y acepta WebSockets, y el host de
+      # acciones HTTP llega a `3211`, que sin funciones desplegadas responde
+      # 4xx a `/version`. Un 502 o 000 indica que Caddy no llegó al backend.
+      - name: Probar el proxy por hostname
+        env:
+          IMAGE: ghcr.io/${{ steps.owner.outputs.lc }}/ceretime-convex:${{ github.sha }}
+        run: |
+          docker run -d --name convex-smoke -p 8080:8080 \
+            -e CONVEX_CLOUD_ORIGIN=https://api.example.test \
+            -e CONVEX_SITE_ORIGIN=https://site.example.test \
+            -e INSTANCE_SECRET="$(openssl rand -hex 32)" \
+            -e DISABLE_BEACON=true \
+            "$IMAGE"
+          trap 'docker logs convex-smoke; docker rm -f convex-smoke >/dev/null' EXIT
+
+          api_code=000
+          for _ in $(seq 1 30); do
+            api_code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: api.example.test" http://localhost:8080/version || true)
+            [ "$api_code" = "200" ] && break
+            sleep 2
+          done
+          site_code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: site.example.test" http://localhost:8080/version || true)
+          ws_code=$(curl -s -o /dev/null -w "%{http_code}" --http1.1 --max-time 5 \
+            -H "Host: api.example.test" -H "Connection: Upgrade" -H "Upgrade: websocket" \
+            -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+            http://localhost:8080/api/sync || true)
+          echo "API /version: $api_code; acciones HTTP /version: $site_code; WebSocket: $ws_code"
+          [[ "$api_code" == "200" && "$site_code" == 4?? && "$ws_code" == "101" ]]
+
+      - name: Publicar
+        run: docker push "ghcr.io/${{ steps.owner.outputs.lc }}/ceretime-convex:${{ github.sha }}"
+
+      - name: Etiqueta para Kubero
+        run: echo "Imagen \`ghcr.io/${{ steps.owner.outputs.lc }}/ceretime-convex\`, etiqueta \`${{ github.sha }}\`." >> "$GITHUB_STEP_SUMMARY"
