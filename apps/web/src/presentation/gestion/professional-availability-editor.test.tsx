@@ -710,6 +710,7 @@ describe("editor de disponibilidad (TI2-103)", () => {
       "Inicio",
       "Solicitudes",
       "Acompañamientos",
+      "Practicantes",
       "Agenda",
       "Disponibilidad",
     ]);

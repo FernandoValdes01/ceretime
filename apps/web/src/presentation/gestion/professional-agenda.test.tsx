@@ -545,6 +545,7 @@ describe("navegación del portal con agenda (TI2-115)", () => {
       "Inicio",
       "Solicitudes",
       "Acompañamientos",
+      "Practicantes",
       "Agenda",
       "Disponibilidad",
     ]);
