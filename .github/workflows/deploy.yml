@@ -1,0 +1,20 @@
+name: Deploy to Kubero
+
+on:
+  workflow_run:
+    workflows: ["Docker Build"]
+    types:
+      - completed
+    branches:
+      - main
+
+jobs:
+  deploy-kubero:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Redeploy en Kubero
+        run: |
+          curl -s -o /dev/null -w "%{http_code}\n" -X GET \
+            "https://kubero.inf.uct.cl/api/apps/ceretime/production/ceretime/restart" \
+            -H "Authorization: Bearer ${{ secrets.KUBERO_TOKEN }}"
