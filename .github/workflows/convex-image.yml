@@ -44,10 +44,10 @@ jobs:
           load: true
           tags: ghcr.io/${{ steps.owner.outputs.lc }}/ceretime-convex:${{ github.sha }}
 
-      # Antes de publicar, comprueba el proxy: el host de la API llega al
-      # backend (`/version` responde 200) y acepta WebSockets, y el host de
-      # acciones HTTP llega a `3211`, que sin funciones desplegadas responde
-      # 4xx a `/version`. Un 502 o 000 indica que Caddy no llegó al backend.
+      # Antes de publicar, comprueba el proxy. Los dos hosts deben llegar a un
+      # backend vivo (`/version` responde 200; 502 o 000 indican que Caddy no
+      # llegó). Solo el host de la API acepta el WebSocket de `/api/sync`: el
+      # `3211` reenvía todo como acción HTTP, así que ahí no hay WebSocket.
       - name: Probar el proxy por hostname
         env:
           IMAGE: ghcr.io/${{ steps.owner.outputs.lc }}/ceretime-convex:${{ github.sha }}
@@ -67,12 +67,16 @@ jobs:
             sleep 2
           done
           site_code=$(curl -s -o /dev/null -w "%{http_code}" -H "Host: site.example.test" http://localhost:8080/version || true)
-          ws_code=$(curl -s -o /dev/null -w "%{http_code}" --http1.1 --max-time 5 \
-            -H "Host: api.example.test" -H "Connection: Upgrade" -H "Upgrade: websocket" \
-            -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
-            http://localhost:8080/api/sync || true)
-          echo "API /version: $api_code; acciones HTTP /version: $site_code; WebSocket: $ws_code"
-          [[ "$api_code" == "200" && "$site_code" == 4?? && "$ws_code" == "101" ]]
+          ws_status() {
+            curl -s -o /dev/null -w "%{http_code}" --http1.1 --max-time 5 \
+              -H "Host: $1" -H "Connection: Upgrade" -H "Upgrade: websocket" \
+              -H "Sec-WebSocket-Version: 13" -H "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==" \
+              http://localhost:8080/api/sync || true
+          }
+          ws_code=$(ws_status api.example.test)
+          site_ws_code=$(ws_status site.example.test)
+          echo "API: /version $api_code, WebSocket $ws_code. Acciones HTTP: /version $site_code, WebSocket $site_ws_code."
+          [[ "$api_code" == "200" && "$ws_code" == "101" && "$site_code" == "200" && "$site_ws_code" != "101" ]]
 
       - name: Publicar
         run: docker push "ghcr.io/${{ steps.owner.outputs.lc }}/ceretime-convex:${{ github.sha }}"
