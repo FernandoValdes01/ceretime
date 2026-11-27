@@ -885,7 +885,9 @@ describe("Proyecciones de TI2-127 compuestas con la política (TI2-117)", () => 
     for (const context of contexts) {
       const view = getFollowUpView(context);
       if (view === null) continue;
-      const output = JSON.stringify(toFollowUpProjection(record, "completed", view));
+      const output = JSON.stringify(
+        toFollowUpProjection(record, { status: "completed", startsAt: 0 }, view),
+      );
       expect(output.includes(NOTE)).toBe(canReadInternalNote(context));
       checked += 1;
     }
@@ -899,7 +901,11 @@ describe("Proyecciones de TI2-127 compuestas con la política (TI2-117)", () => 
     let checked = 0;
     for (const context of contexts) {
       if (getFollowUpView(context) !== "minimized") continue;
-      const projected = toFollowUpProjection(record, "completed", "minimized");
+      const projected = toFollowUpProjection(
+        record,
+        { status: "completed", startsAt: 0 },
+        "minimized",
+      );
       const output = JSON.stringify(projected);
       for (const text of ["marcador-acuerdo", "marcador-tarea", "marcador-pasos"]) {
         expect(output.includes(text)).toBe(true);

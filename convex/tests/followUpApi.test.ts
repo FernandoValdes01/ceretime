@@ -248,6 +248,7 @@ const SHARED_KEYS = [
   "accompanimentId",
   "agreements",
   "appointmentId",
+  "appointmentStartsAt",
   "appointmentStatus",
   "nextSteps",
   "suggestedNextAppointmentDate",
@@ -261,6 +262,7 @@ const PROFESSIONAL_KEYS = [...SHARED_KEYS, "internalNote"].sort();
 const MINIMIZED_KEYS = [
   "agreements",
   "appointmentId",
+  "appointmentStartsAt",
   "appointmentStatus",
   "nextSteps",
   "suggestedNextAppointmentDate",
@@ -678,6 +680,7 @@ describe("TI2-146 API: lectura por atención", () => {
       appointmentId,
       accompanimentId: scenario.accompanimentId,
       appointmentStatus: "completed",
+      appointmentStartsAt: MONDAY_9H,
       internalNote: INTERNAL_NOTE,
       view: "professional",
     });
@@ -687,6 +690,7 @@ describe("TI2-146 API: lectura por atención", () => {
     expect(intern).toEqual({
       appointmentId,
       appointmentStatus: "completed",
+      appointmentStartsAt: MONDAY_9H,
       agreements: [{ description: "Recibir los apuntes en formato digital" }],
       tasks: [
         {
