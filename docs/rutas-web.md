@@ -28,8 +28,8 @@ Cada área define su árbol en un archivo propio. `router.tsx` solo compone la r
 | --- | --- | --- |
 | `root-route.ts` | Raíz | Envoltorio común, 404 y destino desconocido |
 | `public-routes.ts` | Pública | `/`, `/login`, `/denegado` y `/privacidad` (aviso de privacidad, sin sesión) |
-| `student-routes.ts` | Estudiante | `/estudiante`, `/estudiante/solicitudes`, `/estudiante/solicitudes/$requestId`, `/estudiante/horarios`, `/estudiante/reservar`, `/estudiante/atenciones`, `/estudiante/atenciones/$appointmentId`, `/estudiante/acompanamientos/$accompanimentId`, `/estudiante/privacidad` y `/estudiante/privacidad/$requestId` |
-| `professional-routes.ts` | Profesional | `/profesional`, `/profesional/solicitudes`, `/profesional/solicitudes/$requestId`, `/profesional/solicitudes/registrar`, `/profesional/disponibilidad`, `/profesional/agenda` y `/profesional/agenda/$appointmentId` |
+| `student-routes.ts` | Estudiante | `/estudiante`, `/estudiante/solicitudes`, `/estudiante/solicitudes/$requestId`, `/estudiante/horarios`, `/estudiante/reservar`, `/estudiante/atenciones`, `/estudiante/atenciones/$appointmentId`, `/estudiante/acompanamientos/$accompanimentId`, `/estudiante/avisos`, `/estudiante/privacidad` y `/estudiante/privacidad/$requestId` |
+| `professional-routes.ts` | Profesional | `/profesional`, `/profesional/solicitudes`, `/profesional/solicitudes/$requestId`, `/profesional/solicitudes/registrar`, `/profesional/disponibilidad`, `/profesional/agenda`, `/profesional/agenda/$appointmentId` y `/profesional/avisos` |
 | `practitioner-routes.ts` | Practicante | `/practicante`, `/practicante/acompanamientos` y `/practicante/acompanamientos/$accompanimentId` |
 | `admin-routes.ts` | Administrador | `/administrador`, `/administrador/cuentas`, `/administrador/espacios`, `/administrador/privacidad` y `/administrador/privacidad/$requestId` |
 
@@ -41,8 +41,8 @@ Las URL y las guardias vigentes no cambian: cada layout conserva su `RequireStud
 
 | Portal | Enlaces |
 | --- | --- |
-| Estudiante | Inicio, Solicitudes, Horarios, Atenciones y Privacidad |
-| Profesional | Inicio, Solicitudes, Agenda y Disponibilidad |
+| Estudiante | Inicio, Solicitudes, Horarios, Atenciones, Avisos y Privacidad |
+| Profesional | Inicio, Solicitudes, Acompañamientos, Agenda, Disponibilidad y Avisos |
 | Practicante | Inicio y Acompañamientos |
 | Administrador | Inicio, Cuentas, Espacios y Privacidad |
 
