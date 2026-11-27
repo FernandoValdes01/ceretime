@@ -5,8 +5,46 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Un despliegue a la vez y en orden: cancelar uno a medias podría dejar Convex
+# actualizado sin la imagen Web que lo acompaña.
+concurrency:
+  group: docker-build
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
 jobs:
+  convex-deploy:
+    name: Desplegar Convex
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descargar el repositorio
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Instalar Bun
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version-file: package.json
+
+      - name: Instalar dependencias
+        run: bun install --frozen-lockfile
+
+      # La deploy key elige el deployment de destino; debe ser el mismo al que
+      # apuntan las variables VITE_* con que se construye la imagen.
+      - name: Desplegar funciones de Convex
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          if [ -z "$CONVEX_DEPLOY_KEY" ]; then
+            echo "::error::Falta el secret CONVEX_DEPLOY_KEY."
+            exit 1
+          fi
+          bunx convex deploy
+
   build:
+    name: Construir y publicar imagen Web
+    needs: convex-deploy
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -23,7 +61,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: rallencastro
+      - name: Owner del registro en minúsculas
         id: owner
         run: echo "lc=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
 
@@ -31,5 +69,10 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
+          file: apps/web/Dockerfile
           push: true
+          build-args: |
+            VITE_CONVEX_URL=${{ vars.VITE_CONVEX_URL }}
+            VITE_CONVEX_SITE_URL=${{ vars.VITE_CONVEX_SITE_URL }}
+            VITE_SITE_URL=${{ vars.VITE_SITE_URL }}
           tags: ghcr.io/${{ steps.owner.outputs.lc }}/ceretime:latest
