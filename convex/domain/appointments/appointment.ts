@@ -103,8 +103,10 @@ export interface Appointment {
    */
   readonly originalStartAt?: number;
   /**
-   * Motivo de cancelación: obligatorio para CERETI, opcional para el
-   * estudiante. La persistencia lo refleja en `cancelReason` (TI2-107).
+   * Motivo de cancelación. Es opcional para CERETI y para el Estudiante,
+   * salvo que el Estudiante cancele sin un aviso persistido de cambio de sala
+   * o de condiciones: esa excepción la decide Aplicación con el aviso real.
+   * La persistencia lo refleja en `cancelReason` (TI2-107).
    */
   readonly cancelReason?: string;
   /** Justificación entregada por el Estudiante (TI2-119): explicación operativa, sin diagnósticos. */
@@ -113,6 +115,8 @@ export interface Appointment {
   readonly justificationSubmittedAt?: number;
   /** Revisión del Profesional asignado: `pending`, `accepted` o `rejected`. */
   readonly justificationReview?: JustificationReview;
+  /** Explicación del Profesional al rechazar; ausente si aceptó la justificación. */
+  readonly justificationReviewExplanation?: string;
   /** Constancia de recepción del respaldo por canal institucional: no hay archivo. */
   readonly supportingDocumentReceived?: boolean;
   readonly status: AppointmentStatus;
@@ -122,7 +126,6 @@ export interface Appointment {
 /**
  * Transición declarada de la atención.
  *
- * `requiresReason` exige motivo no vacío (cancelación CERETI);
  * `requiresReschedule` exige fecha efectiva nueva (`newStartAt`/`newEndAt`).
  * Cualquier par ausente es inválido, incluidos saltos, retrocesos y salidas
  * desde estados terminales.
@@ -130,7 +133,6 @@ export interface Appointment {
 export type AppointmentStateTransition = {
   readonly from: AppointmentStatus;
   readonly to: AppointmentStatus;
-  readonly requiresReason: boolean;
   readonly requiresReschedule: boolean;
 };
 
@@ -144,33 +146,18 @@ export type AppointmentStateTransition = {
  * automática. Los demás estados son terminales.
  */
 export const APPOINTMENT_TRANSITIONS = [
-  { from: "scheduled", to: "completed", requiresReason: false, requiresReschedule: false },
-  {
-    from: "scheduled",
-    to: "cancelled_by_student",
-    requiresReason: false,
-    requiresReschedule: false,
-  },
-  { from: "scheduled", to: "cancelled_by_cereti", requiresReason: true, requiresReschedule: false },
-  { from: "scheduled", to: "rescheduled", requiresReason: false, requiresReschedule: true },
-  { from: "scheduled", to: "no_show", requiresReason: false, requiresReschedule: false },
-  { from: "rescheduled", to: "completed", requiresReason: false, requiresReschedule: false },
-  {
-    from: "rescheduled",
-    to: "cancelled_by_student",
-    requiresReason: false,
-    requiresReschedule: false,
-  },
-  {
-    from: "rescheduled",
-    to: "cancelled_by_cereti",
-    requiresReason: true,
-    requiresReschedule: false,
-  },
-  { from: "rescheduled", to: "rescheduled", requiresReason: false, requiresReschedule: true },
-  { from: "rescheduled", to: "no_show", requiresReason: false, requiresReschedule: false },
-  { from: "no_show", to: "no_show_justified", requiresReason: false, requiresReschedule: false },
-  { from: "no_show", to: "no_show_unjustified", requiresReason: false, requiresReschedule: false },
+  { from: "scheduled", to: "completed", requiresReschedule: false },
+  { from: "scheduled", to: "cancelled_by_student", requiresReschedule: false },
+  { from: "scheduled", to: "cancelled_by_cereti", requiresReschedule: false },
+  { from: "scheduled", to: "rescheduled", requiresReschedule: true },
+  { from: "scheduled", to: "no_show", requiresReschedule: false },
+  { from: "rescheduled", to: "completed", requiresReschedule: false },
+  { from: "rescheduled", to: "cancelled_by_student", requiresReschedule: false },
+  { from: "rescheduled", to: "cancelled_by_cereti", requiresReschedule: false },
+  { from: "rescheduled", to: "rescheduled", requiresReschedule: true },
+  { from: "rescheduled", to: "no_show", requiresReschedule: false },
+  { from: "no_show", to: "no_show_justified", requiresReschedule: false },
+  { from: "no_show", to: "no_show_unjustified", requiresReschedule: false },
 ] as const satisfies readonly AppointmentStateTransition[];
 
 /**
@@ -216,8 +203,8 @@ export const APPOINTMENT_REJECTION_CAUSES = [
   "actor_required",
   "occurred_at_invalid",
   "current_start_invalid",
-  "reason_required",
   "occurred_before_start",
+  "reschedule_after_start",
   "reschedule_required",
   "reschedule_invalid",
 ] as const;
@@ -290,15 +277,16 @@ const PAST_EVENT_TARGETS: ReadonlySet<AppointmentStatus> = new Set([
  *
  * Reglas temporales, todas puras como el fin posterior al inicio: la fecha
  * vigente siempre debe ser válida; realización e inasistencia exigen
- * `occurredAt` no anterior al inicio; reagendar exige inicio nuevo distinto
- * y no anterior al instante del registro (no se mueve al pasado).
+ * `occurredAt` no anterior al inicio; reagendar exige inicio nuevo distinto,
+ * no anterior al instante del registro (no se mueve al pasado) y solo antes
+ * de que la atención haya comenzado, conservando la reserva vigente.
  *
  * Al reagendar, `originalStartAt` conserva la primera fecha y no se
  * sobrescribe en reagendamientos encadenados; la fecha efectiva viaja
  * aparte y el retorno solo trae lo que un reagendamiento puede producir
  * (sin `cancelReason`: ninguna transición con reagendamiento es
- * cancelación). El motivo es obligatorio solo para la cancelación CERETI y
- * opcional para la del estudiante.
+ * cancelación). El motivo es opcional para ambas cancelaciones; que el
+ * Estudiante lo necesite salvo un aviso persistido lo decide Aplicación.
  */
 export function transitionAppointment(
   attempt: AppointmentTransitionAttempt,
@@ -318,12 +306,13 @@ export function transitionAppointment(
   }
 
   const reason = attempt.reason?.trim();
-  if (transition.requiresReason && !reason) {
-    return { status: "rejected", cause: "reason_required" };
-  }
 
   if (PAST_EVENT_TARGETS.has(transition.to) && attempt.occurredAt < attempt.currentStartAt) {
     return { status: "rejected", cause: "occurred_before_start" };
+  }
+
+  if (transition.requiresReschedule && attempt.occurredAt >= attempt.currentStartAt) {
+    return { status: "rejected", cause: "reschedule_after_start" };
   }
 
   const change: AppointmentStateChange = {

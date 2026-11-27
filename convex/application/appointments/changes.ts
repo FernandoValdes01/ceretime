@@ -99,6 +99,7 @@ export interface StoredAppointmentForChange {
   readonly justificationExplanation?: string;
   readonly justificationSubmittedAt?: number;
   readonly justificationReview?: JustificationReview;
+  readonly justificationReviewExplanation?: string;
   readonly supportingDocumentReceived?: boolean;
   /** Profesionales que acompañan al responsable (TI2-142); ausente si no hay. */
   readonly additionalProfessionalIds?: readonly string[];
@@ -131,6 +132,7 @@ export interface AppointmentTransitionPersister {
       readonly justificationExplanation?: string;
       readonly justificationSubmittedAt?: number;
       readonly justificationReview?: JustificationReview;
+      readonly justificationReviewExplanation?: string;
       readonly supportingDocumentReceived?: boolean;
     },
   ): Promise<void>;
@@ -145,6 +147,11 @@ export interface AppointmentTransitionPersister {
  */
 export type AppointmentChangeClock = () => number;
 
+/** Puerto que comprueba la excepción persistida de cancelación del Estudiante. */
+export interface AppointmentCancellationNoticeReader {
+  hasException(appointmentId: string, studentId: string): Promise<boolean>;
+}
+
 /** Dependencias de la cancelación, todas por puerto. */
 export interface CancelAppointmentDeps {
   readonly auth: AuthorizationReader;
@@ -153,6 +160,7 @@ export interface CancelAppointmentDeps {
   readonly audit: AppointmentAuditRecorder;
   readonly notifications: NotificationEventRecorder;
   readonly calendarSync: CalendarSyncScheduler;
+  readonly notices: AppointmentCancellationNoticeReader;
   readonly now?: AppointmentChangeClock;
 }
 
@@ -328,11 +336,20 @@ export async function cancelAppointment(
   });
   if (grant.status === "error") return denied();
 
+  // El Estudiante solo puede cancelar sin motivo cuando existe un aviso persistido
+  // de cambio de sala o de condiciones dirigido a él para esta atención. La
+  // excepción la decide el backend con el aviso real; el cliente no la declara.
+  const reason = input.reason?.trim();
+  if (grant.data.actor === "student" && (reason === undefined || reason === "")) {
+    const hasException = await deps.notices.hasException(stored.id, stored.studentId);
+    if (!hasException) return conflict();
+  }
+
   const cancelled = await cancelAuthorizedAppointment(deps, stored, {
     target: grant.data.target,
     actorId: grant.data.callerId,
     occurredAt: occurredNow(deps),
-    ...(input.reason === undefined ? {} : { reason: input.reason }),
+    ...(reason === undefined || reason === "" ? {} : { reason }),
   });
   return cancelled ? okResult({ appointmentId: stored.id }) : conflict();
 }
@@ -615,6 +632,8 @@ export interface ReviewAppointmentJustificationInput {
   readonly tokenIdentifier: string | null;
   readonly appointmentId: string;
   readonly review: JustificationDecision;
+  /** Explicación del Profesional al rechazar; obligatoria si `review === "rejected"`. */
+  readonly explanation?: string;
 }
 
 /**
@@ -644,10 +663,19 @@ export async function reviewAppointmentJustification(
   });
   if (grant.status === "error") return denied();
 
+  const reviewExplanation = input.explanation?.trim();
+  const hasSubmission = stored.justificationSubmittedAt !== undefined;
+  if (
+    input.review === "rejected" &&
+    hasSubmission &&
+    (reviewExplanation === undefined || reviewExplanation === "")
+  ) {
+    return conflict();
+  }
+
   if (stored.status !== NO_SHOW_PENDING_STATE) return conflict();
 
   const reviewedAt = occurredNow(deps);
-  const hasSubmission = stored.justificationSubmittedAt !== undefined;
   if (hasSubmission) {
     if (stored.justificationReview !== "pending") return conflict();
   } else {
@@ -671,6 +699,9 @@ export async function reviewAppointmentJustification(
   await deps.persister.persistAppointmentTransition(stored.id, {
     status: outcome.change.to,
     ...(hasSubmission ? { justificationReview: input.review } : {}),
+    ...(input.review === "rejected" && reviewExplanation !== undefined
+      ? { justificationReviewExplanation: reviewExplanation }
+      : {}),
     ...(outcome.originalStartAt === undefined ? {} : { originalStartsAt: outcome.originalStartAt }),
   });
   await deps.notifications.record(

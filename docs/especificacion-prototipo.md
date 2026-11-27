@@ -136,7 +136,7 @@ Las modalidades son:
 - Presencial, con campus, edificio, piso, sala, condiciones de acceso e instrucciones compatibles con lector de pantalla.
 - En línea, con un enlace privado y una plataforma que permita subtítulos o interpretación cuando corresponda.
 
-Una atención puede quedar realizada, cancelada por el estudiante, cancelada por CERETI, reagendada o registrar una inasistencia. Reagendar conserva la fecha original. CERETI debe indicar un motivo al cancelar; para el estudiante es opcional. No hay sanciones automáticas.
+Una atención puede quedar realizada, cancelada por el estudiante, cancelada por CERETI, reagendada o registrar una inasistencia. Reagendar conserva la fecha original. El estudiante justifica su cancelación salvo cuando responde a un cambio de sala o condiciones que el sistema le notificó; el profesional cancela sin motivo obligatorio. No hay sanciones automáticas.
 
 Después de una inasistencia existe un plazo de cinco días hábiles. El estudiante entrega una explicación accesible. Si existe un certificado u otro respaldo sensible, se entrega por un canal institucional autorizado y el sistema sólo registra su recepción y revisión. Al vencer el plazo o rechazarse la explicación, la inasistencia queda sin justificar.
 

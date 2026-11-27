@@ -678,7 +678,7 @@ test("Reagendar atención conserva fecha original (TI2-107)", async () => {
     from: "scheduled",
     to: "rescheduled",
     actorId: pro,
-    occurredAt: TI84_SLOT_END,
+    occurredAt: TI84_SLOT_START - 1000,
     currentStartAt: TI84_SLOT_START,
     newStartAt: movedStart,
     newEndAt: movedEnd,
@@ -769,7 +769,7 @@ test("Cambiar solo la sala no marca reagendamiento y dos reagendas conservan la 
     from: "scheduled",
     to: "rescheduled",
     actorId: pro,
-    occurredAt: TI84_SLOT_END,
+    occurredAt: TI84_SLOT_START - 1000,
     currentStartAt: TI84_SLOT_START,
     newStartAt: firstMoveStart,
     newEndAt: TI84_SLOT_END + 86_400_000,
@@ -803,7 +803,7 @@ test("Cambiar solo la sala no marca reagendamiento y dos reagendas conservan la 
     from: "rescheduled",
     to: "rescheduled",
     actorId: pro,
-    occurredAt: TI84_SLOT_END,
+    occurredAt: TI84_SLOT_START - 1000,
     currentStartAt: firstMoveStart,
     currentOriginalStartAt: TI84_SLOT_START,
     newStartAt: secondMoveStart,
@@ -852,25 +852,6 @@ test("Cancelar atención conserva historial y motivo (TI2-107)", async () => {
   });
   if (!isOkResult(created)) throw new Error("Se esperaba ocupar el cupo");
 
-  // La cancelación de CERETI sin motivo la rechaza la política de TI2-93 vía
-  // el caso de uso de TI2-107, con el código estable de conflicto y sin
-  // escribir nada en la fila.
-  const rejected = await t.run(async (ctx) => {
-    return await applyAppointmentTransition(appointmentTransitionRepository(ctx), {
-      appointmentId: created.data.appointmentId,
-      to: "cancelled_by_cereti",
-      actorId: pro,
-      occurredAt: TI84_SLOT_START,
-    });
-  });
-  expect(rejected).toEqual(errResult(conflictError()));
-  const intact = await t.run(async (ctx) => {
-    return await ctx.db.get(created.data.appointmentId);
-  });
-  expect(intact?.status).toBe("scheduled");
-  expect(intact?.cancelReason).toBeUndefined();
-
-  // Cancelar por CERETI con motivo: el caso de uso aplica la política y
   // persiste su resultado
   const cancelled = await t.run(async (ctx) => {
     return await applyAppointmentTransition(appointmentTransitionRepository(ctx), {
@@ -2394,6 +2375,7 @@ async function cancelTi109(
       audit: appointmentAuditRecorder(ctx),
       notifications: notificationEventRecorder(ctx),
       calendarSync: { scheduleSync: async () => undefined },
+      notices: { hasException: async () => false },
       appointments: appointmentChangeReader(ctx),
       persister: appointmentTransitionPersister(ctx, input.transitions),
       now: () => TI109_NOW,
@@ -3402,7 +3384,8 @@ test("TI2-120 API: dos cancelaciones de la misma atención dejan un solo estado 
       slot,
     });
 
-    const byStudent = () => ti120Cancel(t, studentSubject, appointmentId);
+    const byStudent = () =>
+      ti120Cancel(t, studentSubject, appointmentId, "Motivo ficticio del estudiante");
     const byCereti = () => ti120Cancel(t, proSubject, appointmentId, "Motivo ficticio de CERETI");
     const [won, lost] = await ti120Race(
       studentFirst ? [byStudent, byCereti] : [byCereti, byStudent],
@@ -3413,7 +3396,9 @@ test("TI2-120 API: dos cancelaciones de la misma atención dejan un solo estado 
     const status = studentFirst ? "cancelled_by_student" : "cancelled_by_cereti";
     const row = await ti120Get(t, appointmentId);
     expect(row).toMatchObject({ status, startsAt: slot.startAt, endsAt: slot.endAt });
-    expect(row?.cancelReason).toBe(studentFirst ? undefined : "Motivo ficticio de CERETI");
+    expect(row?.cancelReason).toBe(
+      studentFirst ? "Motivo ficticio del estudiante" : "Motivo ficticio de CERETI",
+    );
     expect(await ti120Audit(t)).toEqual([
       { action: "cancelled", actorId: studentFirst ? student : pro, appointmentId, result: status },
     ]);
@@ -3445,7 +3430,7 @@ test("TI2-120 API: cancelar libera solo su cupo y no toca la atención de otro e
   });
   const neighborBefore = await ti120Get(t, neighborAppointment);
 
-  expect(await ti120Cancel(t, "ti120-free-est-a", ownerAppointment)).toEqual({
+  expect(await ti120Cancel(t, "ti120-free-est-a", ownerAppointment, "Motivo ficticio")).toEqual({
     appointmentId: ownerAppointment,
   });
   // La fila cancelada se conserva en estado terminal; la del otro estudiante no cambia.

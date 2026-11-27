@@ -401,6 +401,7 @@ export default defineSchema({
     justificationExplanation: v.optional(v.string()),
     justificationSubmittedAt: v.optional(v.number()),
     justificationReview: v.optional(justificationReviewUnion),
+    justificationReviewExplanation: v.optional(v.string()),
     supportingDocumentReceived: v.optional(v.boolean()),
     // Referencia del acceso privado de la atención en línea (TI2-138),
     // `urlPrivada?` de ATENCIONES. Opcional porque las atenciones presenciales

@@ -133,26 +133,7 @@ describe("Política de transición de la atención (TI2-93)", () => {
     expect(studentCancel.cancelReason).toBeUndefined();
   });
 
-  test("cancelación CERETI exige motivo y la del estudiante lo conserva cuando viene", () => {
-    const missing = transitionAppointment({
-      from: "scheduled",
-      to: "cancelled_by_cereti",
-      actorId: "profesional-ficticio-1",
-      occurredAt: 1000,
-      currentStartAt: 2000,
-    });
-    expect(missing).toEqual({ status: "rejected", cause: "reason_required" });
-
-    const blank = transitionAppointment({
-      from: "scheduled",
-      to: "cancelled_by_cereti",
-      actorId: "profesional-ficticio-1",
-      occurredAt: 1000,
-      reason: "   ",
-      currentStartAt: 2000,
-    });
-    expect(blank).toEqual({ status: "rejected", cause: "reason_required" });
-
+  test("la cancelación conserva el motivo cuando viene", () => {
     const cereti = transitionAppointment({
       from: "scheduled",
       to: "cancelled_by_cereti",
@@ -912,20 +893,6 @@ describe("Invariantes límite de la atención (TI2-117)", () => {
     }
   });
 
-  test("la cancelación CERETI exige motivo también después de reagendar", () => {
-    // Detecta una fila desde `rescheduled` que no pida el motivo.
-    const base = attempt("rescheduled", "cancelled_by_cereti");
-    const { reason: _omitted, ...withoutReason } = base;
-    expect(transitionAppointment(withoutReason)).toEqual({
-      status: "rejected",
-      cause: "reason_required",
-    });
-    expect(transitionAppointment({ ...base, reason: "   " })).toEqual({
-      status: "rejected",
-      cause: "reason_required",
-    });
-  });
-
   test("la fecha original sobrevive a reagendar tres veces y a la cancelación", () => {
     // Detecta que un reagendamiento encadenado guarde la fecha intermedia como original.
     let from: AppointmentStatus = "scheduled";
@@ -1013,7 +980,7 @@ describe("Invariantes límite de la atención (TI2-117)", () => {
     // Detecta un `<` en la validación del fin, que aceptaría una atención de cero minutos.
     expect(
       transitionAppointment(
-        attempt("scheduled", "rescheduled", { newStartAt: 5000, newEndAt: 5000 }),
+        attempt("scheduled", "rescheduled", { occurredAt: 1000, newStartAt: 5000, newEndAt: 5000 }),
       ),
     ).toEqual({ status: "rejected", cause: "reschedule_invalid" });
   });

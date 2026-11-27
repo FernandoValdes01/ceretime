@@ -178,7 +178,7 @@ const noCompatibility: CompatibilitySpaceSource = {
 const NOW = Date.UTC(2026, 9, 26, 12);
 
 /** Inicio y fin vigentes antes del cambio, a las 09:00 UTC del mismo día. */
-const CURRENT_START = Date.UTC(2026, 9, 26, 9);
+const CURRENT_START = Date.UTC(2026, 9, 26, 15);
 const CURRENT_END = Date.UTC(2026, 9, 26, 10);
 
 /** Primer destino: mismo día a las 13:00 UTC, después del instante fijo. */
@@ -201,6 +201,9 @@ interface ChangeWorld {
   readonly audits: AppointmentAuditEvent[];
   readonly notifications: NotificationEventRecorder;
   readonly notices: NotificationEvent[];
+  readonly cancellationNoticeReader: {
+    hasException(appointmentId: string, studentId: string): Promise<boolean>;
+  };
   readonly transitions: Array<{
     readonly appointmentId: string;
     readonly fields: Parameters<AppointmentTransitionPersister["persistAppointmentTransition"]>[1];
@@ -211,7 +214,11 @@ interface ChangeWorld {
  * Fila mutable con lector y persister conectados: el persister guarda el
  * estado, el motivo y la fecha original, como el adaptador de TI2-107.
  */
-function changeWorld(overrides: Partial<WorldRow> = {}): ChangeWorld {
+function changeWorld(
+  overrides: Partial<WorldRow> & { hasCancellationException?: boolean } = {},
+): ChangeWorld {
+  const { hasCancellationException: exceptionFlag, ...rowOverrides } = overrides;
+  let hasCancellationException = exceptionFlag === true;
   const row: WorldRow = {
     id: "appointment-1",
     accompanimentId: "acc-1",
@@ -220,7 +227,7 @@ function changeWorld(overrides: Partial<WorldRow> = {}): ChangeWorld {
     status: "scheduled",
     startAt: CURRENT_START,
     endAt: CURRENT_END,
-    ...overrides,
+    ...rowOverrides,
   };
   const transitions: ChangeWorld["transitions"] = [];
   const reader: AppointmentChangeReader = {
@@ -253,7 +260,20 @@ function changeWorld(overrides: Partial<WorldRow> = {}): ChangeWorld {
       notices.push(...events);
     },
   };
-  return { row, reader, persister, audit, audits, notifications, notices, transitions };
+  const cancellationNoticeReader = {
+    hasException: async () => hasCancellationException,
+  };
+  return {
+    row,
+    reader,
+    persister,
+    audit,
+    audits,
+    notifications,
+    notices,
+    transitions,
+    cancellationNoticeReader,
+  };
 }
 
 const OK_OCCUPATION: OccupySlotResult = {
@@ -313,6 +333,7 @@ function cancelDeps(auth: AuthorizationReader, world: ChangeWorld): CancelAppoin
     audit: world.audit,
     notifications: world.notifications,
     calendarSync: fakeCalendarSync(),
+    notices: world.cancellationNoticeReader,
     now: () => NOW,
   };
 }
@@ -414,8 +435,8 @@ describe("cancelación de una atención (TI2-109)", () => {
     });
   });
 
-  test("el Estudiante puede cancelar sin motivo y no se guarda un motivo vacío", async () => {
-    const world = changeWorld();
+  test("el Estudiante cancela sin motivo si existe un aviso persistido de cambio", async () => {
+    const world = changeWorld({ hasCancellationException: true });
 
     const withoutReason = await cancelAppointment(cancelDeps(authorizedAuth(), world), {
       tokenIdentifier: "token-student",
@@ -426,6 +447,21 @@ describe("cancelación de una atención (TI2-109)", () => {
     expect(world.transitions).toEqual([
       { appointmentId: "appointment-1", fields: { status: "cancelled_by_student" } },
     ]);
+  });
+
+  test("el Estudiante que cancela sin aviso persistido requiere motivo", async () => {
+    const world = changeWorld();
+
+    const withoutReason = await cancelAppointment(cancelDeps(authorizedAuth(), world), {
+      tokenIdentifier: "token-student",
+      appointmentId: "appointment-1",
+    });
+
+    expect(withoutReason).toEqual({
+      status: "error",
+      error: { code: "conflict", message: "La solicitud entra en conflicto con el estado actual." },
+    });
+    expect(world.transitions).toHaveLength(0);
   });
 
   test("la cancelación conserva la fecha original de un reagendamiento previo", async () => {
@@ -446,7 +482,7 @@ describe("cancelación de una atención (TI2-109)", () => {
     expect(world.row.originalStartAt).toBe(originalStartAt);
   });
 
-  test("el Profesional de la atención cancela como CERETI y el motivo es obligatorio", async () => {
+  test("el Profesional de la atención cancela como CERETI con o sin motivo", async () => {
     const withReason = changeWorld();
     const result = await cancelAppointment(cancelDeps(authorizedAuth(), withReason), {
       tokenIdentifier: "token-pro",
@@ -459,17 +495,15 @@ describe("cancelación de una atención (TI2-109)", () => {
       cancelReason: "Profesional sin disponibilidad",
     });
 
-    for (const reason of [undefined, "", "   "]) {
-      const world = changeWorld();
-      const rejected = await cancelAppointment(cancelDeps(authorizedAuth(), world), {
-        tokenIdentifier: "token-pro",
-        appointmentId: "appointment-1",
-        ...(reason === undefined ? {} : { reason }),
-      });
-      expect(rejected).toEqual(CONFLICT);
-      expect(world.transitions).toHaveLength(0);
-      expect(world.row.status).toBe("scheduled");
-    }
+    const withoutReason = changeWorld();
+    const result2 = await cancelAppointment(cancelDeps(authorizedAuth(), withoutReason), {
+      tokenIdentifier: "token-pro",
+      appointmentId: "appointment-1",
+    });
+    expect(result2).toEqual(OK_APPOINTMENT);
+    expect(withoutReason.transitions[0]?.fields).toEqual({
+      status: "cancelled_by_cereti",
+    });
   });
 
   describe("Justificación de inasistencia (TI2-119)", () => {
@@ -606,6 +640,7 @@ describe("cancelación de una atención (TI2-109)", () => {
           tokenIdentifier: "token-pro",
           appointmentId: "appointment-1",
           review: "rejected",
+          explanation: "Explicacion del rechazo",
         },
       );
 
@@ -1116,11 +1151,14 @@ describe("registro de atención e inasistencia (TI2-110)", () => {
   test("el Profesional de la atención registra la realización sin crear otra atención", async () => {
     const world = changeWorld();
 
-    const result = await recordAppointmentAttendance(recordDeps(authorizedAuth(), world), {
-      tokenIdentifier: "token-pro",
-      appointmentId: "appointment-1",
-      outcome: "completed",
-    });
+    const result = await recordAppointmentAttendance(
+      recordDeps(authorizedAuth(), world, CURRENT_START),
+      {
+        tokenIdentifier: "token-pro",
+        appointmentId: "appointment-1",
+        outcome: "completed",
+      },
+    );
 
     expect(result).toEqual(OK_APPOINTMENT);
     expect(world.transitions).toEqual([
@@ -1137,11 +1175,14 @@ describe("registro de atención e inasistencia (TI2-110)", () => {
   test("el Profesional registra la inasistencia pendiente de justificación", async () => {
     const world = changeWorld();
 
-    const result = await recordAppointmentAttendance(recordDeps(authorizedAuth(), world), {
-      tokenIdentifier: "token-pro",
-      appointmentId: "appointment-1",
-      outcome: "no_show",
-    });
+    const result = await recordAppointmentAttendance(
+      recordDeps(authorizedAuth(), world, CURRENT_START),
+      {
+        tokenIdentifier: "token-pro",
+        appointmentId: "appointment-1",
+        outcome: "no_show",
+      },
+    );
 
     expect(result).toEqual(OK_APPOINTMENT);
     expect(world.transitions).toEqual([
@@ -1154,11 +1195,14 @@ describe("registro de atención e inasistencia (TI2-110)", () => {
     const originalStartAt = Date.UTC(2026, 8, 1, 9);
     const world = changeWorld({ status: "rescheduled", originalStartAt });
 
-    const result = await recordAppointmentAttendance(recordDeps(authorizedAuth(), world), {
-      tokenIdentifier: "token-pro",
-      appointmentId: "appointment-1",
-      outcome: "completed",
-    });
+    const result = await recordAppointmentAttendance(
+      recordDeps(authorizedAuth(), world, CURRENT_START),
+      {
+        tokenIdentifier: "token-pro",
+        appointmentId: "appointment-1",
+        outcome: "completed",
+      },
+    );
 
     expect(result).toEqual(OK_APPOINTMENT);
     expect(world.transitions[0]?.fields).toEqual({
@@ -1327,7 +1371,7 @@ describe("registro de atención e inasistencia (TI2-110)", () => {
 
   test("una entrada inválida se rechaza antes de leer o persistir", async () => {
     const world = changeWorld();
-    const deps = recordDeps(authorizedAuth(), world);
+    const deps = recordDeps(authorizedAuth(), world, CURRENT_START);
 
     expect(
       await recordAppointmentAttendance(deps, {
@@ -1389,7 +1433,7 @@ describe("auditoría de cambios de agenda (TI2-128)", () => {
 
     const attended = changeWorld();
     requireOk(
-      await recordAppointmentAttendance(recordDeps(authorizedAuth(), attended), {
+      await recordAppointmentAttendance(recordDeps(authorizedAuth(), attended, CURRENT_START), {
         tokenIdentifier: "token-pro",
         appointmentId: "appointment-1",
         outcome: "no_show",
@@ -1401,7 +1445,7 @@ describe("auditoría de cambios de agenda (TI2-128)", () => {
         actorId: "user-pro",
         appointmentId: "appointment-1",
         result: "no_show",
-        occurredAt: NOW,
+        occurredAt: CURRENT_START,
       },
     ]);
   });
@@ -1419,7 +1463,7 @@ describe("auditoría de cambios de agenda (TI2-128)", () => {
     const withoutReason = changeWorld();
     expect(
       await cancelAppointment(cancelDeps(authorizedAuth(), withoutReason), {
-        tokenIdentifier: "token-pro",
+        tokenIdentifier: "token-student",
         appointmentId: "appointment-1",
       }),
     ).toEqual(CONFLICT);
@@ -1436,7 +1480,7 @@ describe("auditoría de cambios de agenda (TI2-128)", () => {
 
     const byStudent = changeWorld();
     expect(
-      await recordAppointmentAttendance(recordDeps(authorizedAuth(), byStudent), {
+      await recordAppointmentAttendance(recordDeps(authorizedAuth(), byStudent, CURRENT_START), {
         tokenIdentifier: "token-student",
         appointmentId: "appointment-1",
         outcome: "completed",
@@ -1457,7 +1501,11 @@ describe("auditoría de cambios de agenda (TI2-128)", () => {
     };
 
     await expect(
-      cancelAppointment(deps, { tokenIdentifier: "token-student", appointmentId: "appointment-1" }),
+      cancelAppointment(deps, {
+        tokenIdentifier: "token-student",
+        appointmentId: "appointment-1",
+        reason: "Motivo",
+      }),
     ).rejects.toThrow("Referencia inválida");
   });
 });

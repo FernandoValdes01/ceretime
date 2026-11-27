@@ -458,7 +458,10 @@ test(
     ).toStrictEqual(CONFLICT);
 
     // Cancelada la atención, el enlace deja de entregarse y no se cambia.
-    await asStudent.mutation(api.presentation.appointments.cancelAppointment, read);
+    await asStudent.mutation(api.presentation.appointments.cancelAppointment, {
+      ...read,
+      reason: "Motivo ficticio",
+    });
     expect(await asStudent.query(get, read)).toEqual({ status: "not_applicable", version: "v1" });
     expect(await publicError(asResponsible.mutation(set, { ...read, link: LINK }))).toStrictEqual(
       CONFLICT,

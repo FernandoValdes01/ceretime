@@ -436,6 +436,7 @@ test("TI2-121 API: cancelar devuelve solo appointmentId y libera el cupo", async
 
   const result = await asStudent.mutation(api.presentation.appointments.cancelAppointment, {
     appointmentId,
+    reason: "Motivo ficticio",
     version: APPOINTMENT_CONTRACT_VERSION,
   });
   expectOnlyAppointmentId(result, appointmentId);
@@ -446,7 +447,7 @@ test("TI2-121 API: cancelar devuelve solo appointmentId y libera el cupo", async
     startsAt: origin.startAt,
     endsAt: origin.endAt,
   });
-  expect(row).not.toHaveProperty("cancelReason");
+  expect(row.cancelReason).toBe("Motivo ficticio");
   expect(row).not.toHaveProperty("originalStartsAt");
 
   const otherStudent = await seedUser(t, {
@@ -510,17 +511,16 @@ test("TI2-121 API: el motivo del Estudiante se recorta y uno en blanco no se gua
     cancelReason: "Motivo ficticio",
   });
 
-  expectOnlyAppointmentId(
-    await asStudent.mutation(api.presentation.appointments.cancelAppointment, {
+  await expectPublicError(
+    asStudent.mutation(api.presentation.appointments.cancelAppointment, {
       appointmentId: blankReasonId,
       reason: "   ",
       version: APPOINTMENT_CONTRACT_VERSION,
     }),
-    blankReasonId,
+    "conflict",
   );
   const blankRow = await getAppointment(t, blankReasonId);
-  expect(blankRow).toMatchObject({ status: "cancelled_by_student" });
-  expect(blankRow).not.toHaveProperty("cancelReason");
+  expect(blankRow).toMatchObject({ status: "scheduled" });
 });
 
 test("TI2-121 API: CERETI exige motivo con texto y conserva la fecha original", async () => {
@@ -538,17 +538,6 @@ test("TI2-121 API: CERETI exige motivo con texto y conserva la fecha original", 
     originalStartsAt,
   });
   const asPro = t.withIdentity(agenda.proIdentity);
-  const before = await getAppointment(t, appointmentId);
-
-  await expectPublicError(
-    asPro.mutation(api.presentation.appointments.cancelAppointment, {
-      appointmentId,
-      reason: "   ",
-      version: APPOINTMENT_CONTRACT_VERSION,
-    }),
-    "conflict",
-  );
-  expect(await getAppointment(t, appointmentId)).toEqual(before);
 
   expectOnlyAppointmentId(
     await asPro.mutation(api.presentation.appointments.cancelAppointment, {
@@ -2815,6 +2804,7 @@ test("TI2-128 API: el actor sale de la sesión y el cliente no puede declararlo"
 
   await asStudent.mutation(api.presentation.appointments.cancelAppointment, {
     appointmentId,
+    reason: "Motivo ficticio",
     version: APPOINTMENT_CONTRACT_VERSION,
   });
   const rows = await readAuditRows(t);
@@ -2858,14 +2848,6 @@ test("TI2-128 API: denegaciones y conflictos abortan sin evento ni cambio", asyn
       version: APPOINTMENT_CONTRACT_VERSION,
     }),
     "unauthorized",
-  );
-  await expectPublicError(
-    t.withIdentity(agenda.proIdentity).mutation(api.presentation.appointments.cancelAppointment, {
-      appointmentId,
-      reason: "   ",
-      version: APPOINTMENT_CONTRACT_VERSION,
-    }),
-    "conflict",
   );
   await expectPublicError(
     t
@@ -2914,6 +2896,7 @@ test("TI2-128 API: un evento escrito en una transacción que aborta se descarta 
           persister: appointmentTransitionRepository(ctx).persister,
           notifications: notificationEventRecorder(ctx),
           calendarSync: { scheduleSync: async () => undefined },
+          notices: { hasException: async () => false },
           audit: {
             recordAppointmentAudit: async (event) => {
               await recorder.recordAppointmentAudit(event);
@@ -2921,7 +2904,11 @@ test("TI2-128 API: un evento escrito en una transacción que aborta se descarta 
             },
           },
         },
-        { tokenIdentifier: agenda.studentIdentity.tokenIdentifier, appointmentId },
+        {
+          tokenIdentifier: agenda.studentIdentity.tokenIdentifier,
+          appointmentId,
+          reason: "Motivo ficticio",
+        },
       );
     }),
   ).rejects.toThrow("Fallo posterior ficticio");
@@ -3034,6 +3021,7 @@ test("TI2-119 API: el rechazo deja la inasistencia sin justificar y sin sanción
     await asPro.mutation(api.presentation.appointments.reviewAppointmentJustification, {
       appointmentId,
       review: "rejected",
+      explanation: "Explicacion del rechazo",
       version: APPOINTMENT_CONTRACT_VERSION,
     }),
     appointmentId,
@@ -3092,6 +3080,7 @@ test("TI2-119 API: el plazo vencido rechaza la entrega y el Profesional cierra s
     await asPro.mutation(api.presentation.appointments.reviewAppointmentJustification, {
       appointmentId,
       review: "rejected",
+      explanation: "Explicacion del rechazo",
       version: APPOINTMENT_CONTRACT_VERSION,
     }),
     appointmentId,
@@ -3291,6 +3280,7 @@ test("TI2-119 API: recursos ajenos, roles y cuentas sin vigencia se deniegan sin
       .mutation(api.presentation.appointments.reviewAppointmentJustification, {
         appointmentId: inactiveProAppointment,
         review: "rejected",
+        explanation: "Explicacion del rechazo",
         version: APPOINTMENT_CONTRACT_VERSION,
       }),
     "unauthorized",
