@@ -27,7 +27,7 @@ import {
   type PrivacyRequestView,
 } from "./privacy-data.ts";
 import { privacyActionErrorMessage } from "./privacy-errors.ts";
-import { privacyKindDescription } from "./privacy-notice.ts";
+import { PRIVACY_PENDING_KINDS_NOTICE, privacyKindDescription } from "./privacy-notice.ts";
 import { PrivacyRequestSummary } from "./privacy-request-summary.tsx";
 
 /**
@@ -59,8 +59,11 @@ export function StudentPrivacyPage() {
         </h1>
         <p className="m-0 text-base text-on-surface-variant">
           Ejerce tus derechos sobre tus datos personales y sigue cada solicitud. Antes de presentar,
-          puedes leer el <Link to="/privacidad">aviso de privacidad</Link>.
+          puedes leer el aviso de privacidad.
         </p>
+        <Link to="/privacidad" className={LINK_CLASS}>
+          Leer el aviso de privacidad
+        </Link>
       </div>
       <SubmitPrivacyRequestForm />
       <StudentPanelErrorBoundary subject="tus solicitudes de privacidad" level="section">
@@ -77,11 +80,13 @@ function SubmitPrivacyRequestForm() {
   const [error, setError] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<PrivacyRequestView | null>(null);
   const [pending, setPending] = useState(false);
+  const firstKindRef = useRef<HTMLInputElement>(null);
 
   async function onSubmit() {
     if (pending) return;
     if (kind === null) {
       setFieldError("Elige el derecho que quieres ejercer.");
+      firstKindRef.current?.focus();
       return;
     }
     setPending(true);
@@ -121,12 +126,13 @@ function SubmitPrivacyRequestForm() {
           <legend className="mb-1 p-0 text-base font-semibold text-on-surface">
             ¿Qué derecho quieres ejercer?
           </legend>
-          {SUBMITTABLE_PRIVACY_REQUEST_KINDS.map((option) => (
+          {SUBMITTABLE_PRIVACY_REQUEST_KINDS.map((option, index) => (
             <label
               key={option}
               className="flex min-h-[44px] cursor-pointer items-start gap-3 rounded-lg border border-border-low p-3"
             >
               <input
+                ref={index === 0 ? firstKindRef : undefined}
                 type="radio"
                 name="privacy-kind"
                 value={option}
@@ -144,8 +150,15 @@ function SubmitPrivacyRequestForm() {
               </span>
             </label>
           ))}
+          {PRIVACY_PENDING_KINDS_NOTICE === null ? null : (
+            <p className="m-0 text-base text-on-surface-variant">{PRIVACY_PENDING_KINDS_NOTICE}</p>
+          )}
           {fieldError === null ? null : (
-            <p id="student-privacy-kind-error" className="m-0 font-semibold text-error">
+            <p
+              id="student-privacy-kind-error"
+              role="alert"
+              className="m-0 font-semibold text-error"
+            >
               {fieldError}
             </p>
           )}

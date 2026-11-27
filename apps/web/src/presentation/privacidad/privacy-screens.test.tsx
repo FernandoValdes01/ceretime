@@ -152,7 +152,13 @@ describe("Estudiante", () => {
     await renderInRouter(<StudentPrivacyPage />);
 
     fireEvent.click(screen.getByRole("button", { name: "Presentar la solicitud" }));
-    expect(screen.getByText("Elige el derecho que quieres ejercer.")).toBeDefined();
+    expect(screen.getByRole("alert").textContent).toBe("Elige el derecho que quieres ejercer.");
+    expect(document.activeElement).toBe(screen.getByRole("radio", { name: /Acceso/ }));
+    expect(
+      screen
+        .getByRole("group", { name: "¿Qué derecho quieres ejercer?" })
+        .getAttribute("aria-describedby"),
+    ).toBe("student-privacy-kind-error");
     expect(store.submit).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("radio", { name: /Rectificación/ }));
@@ -160,6 +166,16 @@ describe("Estudiante", () => {
     await waitFor(() => expect(store.submit).toHaveBeenCalledWith("rectification"));
     expect(await screen.findByText("Recibimos tu solicitud de rectificación.")).toBeDefined();
     expect(screen.getByText(/Te responderemos hasta el .*2 de diciembre de 2026/)).toBeDefined();
+  });
+
+  test("dice qué derechos todavía no se presentan y enlaza el aviso como enlace", async () => {
+    await renderInRouter(<StudentPrivacyPage />);
+    expect(
+      screen.getByText("Oposición y bloqueo todavía no se presentan desde la aplicación."),
+    ).toBeDefined();
+    const link = screen.getByRole("link", { name: "Leer el aviso de privacidad" });
+    expect(link.getAttribute("href")).toBe("/privacidad");
+    expect(link.className).toContain("underline");
   });
 
   test("un rechazo del Backend muestra su mensaje público, no el del SDK", async () => {
@@ -221,6 +237,19 @@ describe("Estudiante", () => {
     expect(screen.getByText(/conserva los datos/)).toBeDefined();
   });
 
+  test("una denegación sin constancia ya explica el reclamo, sin el paso interno", async () => {
+    store.request = solicitud({
+      status: "resolved",
+      response: { outcome: "denied", reasons: "Fundamento ficticio", respondedAt: 0 },
+    });
+    await renderInRouter(<StudentPrivacyRequestDetailPage requestId="pr-1" />);
+    expect(screen.getByText("Reclamo ante la Agencia")).toBeDefined();
+    expect(
+      screen.getByText(/30 días hábiles siguientes a la notificación de esta respuesta/),
+    ).toBeDefined();
+    expect(screen.queryByText("Pendiente de registrar.")).toBeNull();
+  });
+
   test("una concesión no muestra el plazo para reclamar", async () => {
     store.request = solicitud({
       status: "resolved",
@@ -268,10 +297,19 @@ describe("Administrador", () => {
     await renderInRouter(<AdminPrivacyRequestDetailPage requestId="pr-1" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Resolver la solicitud" }));
-    expect(screen.getByText("Elige el resultado de la respuesta.")).toBeDefined();
+    expect(screen.getByRole("alert").textContent).toBe("Elige el resultado de la respuesta.");
+    expect(screen.getByRole("group", { name: "Resultado" }).getAttribute("aria-describedby")).toBe(
+      "privacy-outcome-error",
+    );
+    expect(screen.getByLabelText("Fundamento").getAttribute("aria-describedby")).toBeNull();
+    expect(document.activeElement).toBe(screen.getByRole("radio", { name: "Concedida" }));
     fireEvent.click(screen.getByRole("radio", { name: "Denegada" }));
     fireEvent.click(screen.getByRole("button", { name: "Resolver la solicitud" }));
-    expect(screen.getByText("Escribe el fundamento de la respuesta.")).toBeDefined();
+    expect(screen.getByRole("alert").textContent).toBe("Escribe el fundamento de la respuesta.");
+    const reasons = screen.getByLabelText("Fundamento");
+    expect(reasons.getAttribute("aria-describedby")).toBe("privacy-reasons-error");
+    expect(reasons.getAttribute("aria-invalid")).toBe("true");
+    expect(document.activeElement).toBe(reasons);
     expect(store.resolve).not.toHaveBeenCalled();
 
     fireEvent.change(screen.getByLabelText("Fundamento"), {
@@ -331,6 +369,16 @@ describe("Administrador", () => {
     store.record.mockResolvedValue(undefined);
     await renderInRouter(<AdminPrivacyRequestDetailPage requestId="pr-1" />);
     expect(screen.getByText("Pendiente de registrar.")).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Registrar el envío" }));
+    const folio = screen.getByLabelText("Folio o referencia");
+    expect(screen.getByRole("alert").textContent).toBe(
+      "Escribe el folio o la referencia del envío.",
+    );
+    expect(folio.getAttribute("aria-describedby")).toBe(
+      "privacy-delivery-hint privacy-delivery-error",
+    );
+    expect(document.activeElement).toBe(folio);
+    expect(store.record).not.toHaveBeenCalled();
     fireEvent.change(screen.getByLabelText("Canal"), { target: { value: "email" } });
     fireEvent.change(screen.getByLabelText("Folio o referencia"), {
       target: { value: "FOLIO-1" },
