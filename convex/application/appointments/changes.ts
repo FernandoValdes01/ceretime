@@ -99,6 +99,7 @@ export interface StoredAppointmentForChange {
   readonly justificationExplanation?: string;
   readonly justificationSubmittedAt?: number;
   readonly justificationReview?: JustificationReview;
+  readonly justificationReviewExplanation?: string;
   readonly supportingDocumentReceived?: boolean;
   /** Profesionales que acompañan al responsable (TI2-142); ausente si no hay. */
   readonly additionalProfessionalIds?: readonly string[];
@@ -131,6 +132,7 @@ export interface AppointmentTransitionPersister {
       readonly justificationExplanation?: string;
       readonly justificationSubmittedAt?: number;
       readonly justificationReview?: JustificationReview;
+      readonly justificationReviewExplanation?: string;
       readonly supportingDocumentReceived?: boolean;
     },
   ): Promise<void>;
@@ -623,6 +625,8 @@ export interface ReviewAppointmentJustificationInput {
   readonly tokenIdentifier: string | null;
   readonly appointmentId: string;
   readonly review: JustificationDecision;
+  /** Explicación del Profesional al rechazar; obligatoria si review es rejected con entrega. */
+  readonly explanation?: string;
 }
 
 /**
@@ -658,6 +662,14 @@ export async function reviewAppointmentJustification(
 
   const reviewedAt = occurredNow(deps);
   const hasSubmission = stored.justificationSubmittedAt !== undefined;
+  const reviewExplanation = input.explanation?.trim();
+  if (
+    input.review === "rejected" &&
+    hasSubmission &&
+    (reviewExplanation === undefined || reviewExplanation === "")
+  ) {
+    return conflict();
+  }
   if (hasSubmission) {
     if (stored.justificationReview !== "pending") return conflict();
   } else {
@@ -681,6 +693,9 @@ export async function reviewAppointmentJustification(
   await deps.persister.persistAppointmentTransition(stored.id, {
     status: outcome.change.to,
     ...(hasSubmission ? { justificationReview: input.review } : {}),
+    ...(input.review === "rejected" && reviewExplanation
+      ? { justificationReviewExplanation: reviewExplanation }
+      : {}),
     ...(outcome.originalStartAt === undefined ? {} : { originalStartsAt: outcome.originalStartAt }),
   });
   await deps.notifications.record(

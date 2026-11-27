@@ -113,6 +113,8 @@ export interface Appointment {
   readonly justificationSubmittedAt?: number;
   /** Revisión del Profesional asignado: `pending`, `accepted` o `rejected`. */
   readonly justificationReview?: JustificationReview;
+  /** Explicación del Profesional al rechazar; ausente si aceptó la justificación. */
+  readonly justificationReviewExplanation?: string;
   /** Constancia de recepción del respaldo por canal institucional: no hay archivo. */
   readonly supportingDocumentReceived?: boolean;
   readonly status: AppointmentStatus;
@@ -218,6 +220,8 @@ export const APPOINTMENT_REJECTION_CAUSES = [
   "current_start_invalid",
   "reason_required",
   "occurred_before_start",
+  "cancel_after_start",
+  "reschedule_after_start",
   "reschedule_required",
   "reschedule_invalid",
 ] as const;
@@ -298,7 +302,8 @@ const PAST_EVENT_TARGETS: ReadonlySet<AppointmentStatus> = new Set([
  * aparte y el retorno solo trae lo que un reagendamiento puede producir
  * (sin `cancelReason`: ninguna transición con reagendamiento es
  * cancelación). El motivo es obligatorio solo para la cancelación CERETI y
- * opcional para la del estudiante.
+ * opcional para la del estudiante. Cancelar y reagendar solo proceden antes
+ * del inicio de la atención.
  */
 export function transitionAppointment(
   attempt: AppointmentTransitionAttempt,
@@ -326,6 +331,16 @@ export function transitionAppointment(
     return { status: "rejected", cause: "occurred_before_start" };
   }
 
+  const isCancel =
+    transition.to === "cancelled_by_student" || transition.to === "cancelled_by_cereti";
+  if (isCancel && attempt.occurredAt >= attempt.currentStartAt) {
+    return { status: "rejected", cause: "cancel_after_start" };
+  }
+
+  if (transition.requiresReschedule && attempt.occurredAt >= attempt.currentStartAt) {
+    return { status: "rejected", cause: "reschedule_after_start" };
+  }
+
   const change: AppointmentStateChange = {
     from: transition.from,
     to: transition.to,
@@ -335,8 +350,6 @@ export function transitionAppointment(
   };
 
   if (!transition.requiresReschedule) {
-    const isCancel =
-      transition.to === "cancelled_by_student" || transition.to === "cancelled_by_cereti";
     const preserved =
       attempt.currentOriginalStartAt !== undefined && isValidInstant(attempt.currentOriginalStartAt)
         ? { originalStartAt: attempt.currentOriginalStartAt }

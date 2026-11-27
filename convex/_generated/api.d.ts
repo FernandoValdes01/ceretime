@@ -9,6 +9,7 @@
  */
 
 import type * as application_accompaniments_commands from "../application/accompaniments/commands.js";
+import type * as application_accompaniments_interns from "../application/accompaniments/interns.js";
 import type * as application_accompaniments_needs from "../application/accompaniments/needs.js";
 import type * as application_accompaniments_professionals from "../application/accompaniments/professionals.js";
 import type * as application_accompaniments_queries from "../application/accompaniments/queries.js";
@@ -144,6 +145,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   "application/accompaniments/commands": typeof application_accompaniments_commands;
+  "application/accompaniments/interns": typeof application_accompaniments_interns;
   "application/accompaniments/needs": typeof application_accompaniments_needs;
   "application/accompaniments/professionals": typeof application_accompaniments_professionals;
   "application/accompaniments/queries": typeof application_accompaniments_queries;

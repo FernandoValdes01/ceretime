@@ -14,6 +14,7 @@ import {
   listOwnedAccompanimentsUseCase,
 } from "../application/accompaniments/queries";
 import { listAccompanimentProfessionals as listAccompanimentProfessionalsUseCase } from "../application/accompaniments/professionals";
+import { listAccompanimentInterns as listAccompanimentInternsUseCase } from "../application/accompaniments/interns";
 import {
   closeAccompaniment as closeAccompanimentUseCase,
   pauseAccompaniment as pauseAccompanimentUseCase,
@@ -23,6 +24,7 @@ import {
 import { mutation, query, type MutationCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import {
+  accompanimentInternsReader,
   accompanimentNeedsAtDateReader,
   accompanimentNeedsWriter,
   accompanimentProfessionalsReader,
@@ -187,6 +189,43 @@ export const listAccompanimentProfessionals = query({
     const identity = await ctx.auth.getUserIdentity();
     const result = unwrapApiResult(
       await listAccompanimentProfessionalsUseCase(accompanimentProfessionalsReader(ctx), {
+        tokenIdentifier: identity?.tokenIdentifier ?? null,
+        accompanimentId: args.accompanimentId,
+      }),
+    );
+    return {
+      ...result,
+      assigned: [...result.assigned],
+      assignable: [...result.assignable],
+    };
+  },
+});
+
+/**
+ * Practicantes asignados al acompañamiento y los que se le pueden asignar,
+ * con su nombre y su vigencia acordada (TI2-170). Solo el profesional de
+ * personal asignado; el cambio se hace con `assignAccompanimentAccess`,
+ * `updateAccompanimentAccess` y `revokeAccompanimentAccess`.
+ */
+export const listAccompanimentInterns = query({
+  args: { accompanimentId: v.id("accompaniments") },
+  returns: v.object({
+    assigned: v.array(
+      v.object({
+        userId: v.id("users"),
+        fullName: v.string(),
+        assignedAt: v.optional(v.number()),
+        validFrom: v.optional(v.number()),
+        validUntil: v.optional(v.number()),
+      }),
+    ),
+    assignable: v.array(v.object({ userId: v.id("users"), fullName: v.string() })),
+    assignableComplete: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    const result = unwrapApiResult(
+      await listAccompanimentInternsUseCase(accompanimentInternsReader(ctx), {
         tokenIdentifier: identity?.tokenIdentifier ?? null,
         accompanimentId: args.accompanimentId,
       }),
