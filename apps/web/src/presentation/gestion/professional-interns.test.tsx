@@ -169,17 +169,14 @@ describe("habilitación de practicantes (TI2-170)", () => {
     expect(screen.queryByRole("button", { name: "Reintentar" })).toBeNull();
   });
 
-  test("una cuenta habilitada no ofrece habilitar", async () => {
+  test("una cuenta habilitada no ofrece habilitar ni muestra acciones", async () => {
     internPage = pagina([cuenta({ institutionalStatus: "enabled" })]);
     renderAt("/profesional/practicantes");
 
     await screen.findByText("Practicante Uno Ficticio");
-    const menu = await screen.findByRole("button", {
-      name: "Acciones para Practicante Uno Ficticio",
-    });
-    fireEvent.click(menu);
-    await waitFor(() => expect(screen.getByRole("menu")).toBeDefined());
-    expect(screen.queryByRole("menuitem", { name: "Habilitar cuenta" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Acciones para Practicante Uno Ficticio" }),
+    ).toBeNull();
   });
 });
 

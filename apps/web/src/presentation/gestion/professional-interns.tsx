@@ -307,6 +307,7 @@ function InternAccountRow({
   }
 
   const busy = pendingAction;
+  const canEnable = canEnableIntern(account.institutionalStatus);
 
   return (
     <li tabIndex={-1}>
@@ -319,20 +320,18 @@ function InternAccountRow({
           Estado: {institutionalLabel} · Cuenta: {vigenteLabel}
         </p>
         <div className="admin-list__actions">
-          <RowMenu
-            label={`Acciones para ${account.fullName}`}
-            disabled={busy}
-            items={
-              canEnableIntern(account.institutionalStatus)
-                ? [
-                    {
-                      label: pendingAction ? "Habilitando…" : "Habilitar cuenta",
-                      onSelect: () => void runEnable(),
-                    },
-                  ]
-                : []
-            }
-          />
+          {canEnable ? (
+            <RowMenu
+              label={`Acciones para ${account.fullName}`}
+              disabled={busy}
+              items={[
+                {
+                  label: pendingAction ? "Habilitando…" : "Habilitar cuenta",
+                  onSelect: () => void runEnable(),
+                },
+              ]}
+            />
+          ) : null}
         </div>
         {actionError !== null ? (
           <p role="alert" className="admin-list__feedback student-portal__error">
