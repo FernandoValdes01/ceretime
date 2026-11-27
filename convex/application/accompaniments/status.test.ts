@@ -82,6 +82,9 @@ function fakeDeps(
         notices.push(...events);
       },
     },
+    calendarSync: {
+      scheduleSync: async () => undefined,
+    },
     now: () => NOW,
   };
   return { deps, changes, persisted, audited, notices };

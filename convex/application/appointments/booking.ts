@@ -17,6 +17,7 @@ import {
   type ApiResult,
 } from "../../domain/errors/api_error";
 import { notificationEventsForCreation } from "../../domain/notifications/notification";
+import type { CalendarSyncScheduler } from "../calendar/sync";
 import type { ModalityPreference } from "../../domain/requests/request";
 import { assessCompatibility } from "../../domain/spaces/compatibility";
 import {
@@ -111,6 +112,7 @@ export interface BookAppointmentDeps extends SlotSelectionDeps {
   readonly occupier: AppointmentOccupier;
   readonly audit: AppointmentAuditRecorder;
   readonly notifications: NotificationEventRecorder;
+  readonly calendarSync: CalendarSyncScheduler;
   /** Reloj del servidor para la auditoría y el aviso; las pruebas lo fijan. */
   readonly now?: () => number;
 }
@@ -426,5 +428,6 @@ export async function bookAppointment(
       grant.data.callerId,
     ),
   );
+  await deps.calendarSync.scheduleSync(occupied.data.appointmentId);
   return occupied;
 }

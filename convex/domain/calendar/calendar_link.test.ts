@@ -61,11 +61,12 @@ describe("Vínculo con Calendar y estado de sincronización (TI2-145)", () => {
     expect({ linkedAt: 1000 } satisfies CalendarConnectionMetadata).toEqual({ linkedAt: 1000 });
   });
 
-  test("la sincronización distingue pendiente, sincronizado y error", () => {
-    expect([...CALENDAR_SYNC_STATUS_VALUES]).toEqual(["pending", "synced", "error"]);
+  test("la sincronización distingue pendiente, sincronizado, error y sin vínculo", () => {
+    expect([...CALENDAR_SYNC_STATUS_VALUES]).toEqual(["pending", "synced", "error", "not_linked"]);
     expect(isCalendarSyncStatus("pending")).toBe(true);
     expect(isCalendarSyncStatus("synced")).toBe(true);
     expect(isCalendarSyncStatus("error")).toBe(true);
+    expect(isCalendarSyncStatus("not_linked")).toBe(true);
     expect(isCalendarSyncStatus("connected")).toBe(false);
     expect([...CALENDAR_SYNC_ERROR_CODE_VALUES]).toEqual(["not_connected", "unavailable"]);
     expect(isCalendarSyncErrorCode("not_connected")).toBe(true);

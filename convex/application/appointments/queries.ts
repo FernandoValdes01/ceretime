@@ -22,6 +22,10 @@ import {
   unauthorizedError,
   type ApiResult,
 } from "../../domain/errors/api_error";
+import type {
+  CalendarSyncErrorCode,
+  CalendarSyncStatus,
+} from "../../domain/calendar/calendar_link";
 import {
   authorizeAppointmentRead,
   type AuthorizableProfile,
@@ -370,6 +374,14 @@ export interface AppointmentCalendarSummary {
   readonly modality: ModalityPreference;
   readonly calendarAdded: boolean;
   readonly calendarNeedsUpdate: boolean;
+  /**
+   * Estado de sincronización automática (TI2-162), ausente en filas anteriores
+   * a TI2-145: `pending` no pide nada cuando nadie vinculó, `synced` refleja
+   * el horario vigente y `error` trae el código genérico (`not_connected` pide
+   * volver a vincular, `unavailable` permite reintentar).
+   */
+  readonly calendarSyncStatus?: CalendarSyncStatus;
+  readonly calendarSyncErrorCode?: CalendarSyncErrorCode;
 }
 
 /** Lectura acotada por acompañamiento, ordenada de la más reciente a la más antigua. */

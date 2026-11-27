@@ -295,6 +295,16 @@ type ChangeRescheduleDeps = Omit<RescheduleAppointmentDeps, "occupier"> & {
   readonly occupier: ChangeOccupier;
 };
 
+function fakeCalendarSync() {
+  const scheduled: string[] = [];
+  return {
+    scheduled,
+    scheduleSync: async (appointmentId: string) => {
+      scheduled.push(appointmentId);
+    },
+  };
+}
+
 function cancelDeps(auth: AuthorizationReader, world: ChangeWorld): CancelAppointmentDeps {
   return {
     auth,
@@ -302,6 +312,7 @@ function cancelDeps(auth: AuthorizationReader, world: ChangeWorld): CancelAppoin
     persister: world.persister,
     audit: world.audit,
     notifications: world.notifications,
+    calendarSync: fakeCalendarSync(),
     now: () => NOW,
   };
 }
@@ -332,6 +343,7 @@ function rescheduleDeps(
     persister: world.persister,
     audit: world.audit,
     notifications: world.notifications,
+    calendarSync: fakeCalendarSync(),
     occupier: fakeOccupier(world),
     availability: fakeAvailability([
       ...dailyOnlineBlocks("user-pro"),

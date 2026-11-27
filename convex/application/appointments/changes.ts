@@ -42,6 +42,7 @@ import {
 } from "./booking";
 import type { NotificationEventRecorder } from "../notifications/ports";
 import type { AppointmentOccupier } from "./occupancy";
+import type { CalendarSyncScheduler } from "../calendar/sync";
 
 /**
  * Casos de uso de cambio de una atención: cancelación y reagendamiento
@@ -149,6 +150,7 @@ export interface CancelAppointmentDeps {
   readonly persister: AppointmentTransitionPersister;
   readonly audit: AppointmentAuditRecorder;
   readonly notifications: NotificationEventRecorder;
+  readonly calendarSync: CalendarSyncScheduler;
   readonly now?: AppointmentChangeClock;
 }
 
@@ -167,6 +169,7 @@ export interface RescheduleAppointmentDeps extends SlotSelectionDeps {
   readonly occupier: AppointmentOccupier;
   readonly audit: AppointmentAuditRecorder;
   readonly notifications: NotificationEventRecorder;
+  readonly calendarSync: CalendarSyncScheduler;
   readonly now?: AppointmentChangeClock;
 }
 
@@ -258,7 +261,7 @@ export type CancellableAppointment = NotifiableAppointment &
  * cuando la política rechaza el cambio, y entonces no escribe nada.
  */
 export async function cancelAuthorizedAppointment(
-  deps: Pick<CancelAppointmentDeps, "persister" | "audit" | "notifications">,
+  deps: Pick<CancelAppointmentDeps, "persister" | "audit" | "notifications" | "calendarSync">,
   stored: CancellableAppointment,
   cancellation: {
     readonly target: AppointmentCancellationTarget;
@@ -295,6 +298,7 @@ export async function cancelAuthorizedAppointment(
   await deps.notifications.record(
     notificationEventsForTransition(toNotificationSubject(stored), outcome.change),
   );
+  await deps.calendarSync.scheduleSync(stored.id);
   return true;
 }
 
@@ -463,6 +467,7 @@ export async function rescheduleAppointment(
       outcome.change,
     ),
   );
+  await deps.calendarSync.scheduleSync(occupied.data.appointmentId);
   return okResult({ appointmentId: occupied.data.appointmentId });
 }
 

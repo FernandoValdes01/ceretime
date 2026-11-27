@@ -3395,7 +3395,9 @@ test("TI2-145: la atención guarda pendiente, sincronizado o error con sus inten
 
   expect(await t.run(async (ctx) => await readCalendarSyncState(ctx, appointmentId))).toBeNull();
 
-  const pending = await t.run(async (ctx) => await markCalendarSyncPending(ctx, appointmentId));
+  const pending = await t.run(
+    async (ctx) => await markCalendarSyncPending(ctx, appointmentId, TI83_MONDAY),
+  );
   expect(pending).toEqual({ status: "recorded", attempts: 0 });
   expect(await t.run(async (ctx) => await readCalendarSyncState(ctx, appointmentId))).toEqual({
     status: "pending",
@@ -3419,7 +3421,7 @@ test("TI2-145: la atención guarda pendiente, sincronizado o error con sus inten
   });
 
   // Volver a encolar no cuenta un intento y limpia el error anterior.
-  await t.run(async (ctx) => await markCalendarSyncPending(ctx, appointmentId));
+  await t.run(async (ctx) => await markCalendarSyncPending(ctx, appointmentId, TI83_MONDAY + 15));
   expect(await t.run(async (ctx) => await readCalendarSyncState(ctx, appointmentId))).toEqual({
     status: "pending",
     attempts: 1,

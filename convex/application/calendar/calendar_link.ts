@@ -172,6 +172,18 @@ export async function getCalendarLinkStatus(
 }
 
 /**
+ * Programa el recorrido por páginas de todas las atenciones futuras vigentes
+ * de quien vincula (TI2-162).
+ *
+ * La confirmación del vínculo solo programa el arranque para seguir liviana;
+ * el recorrido en segundo plano pagina por estudiante, responsable y
+ * adicional hasta agotar sin truncar.
+ */
+export interface CalendarLinkSyncScheduler {
+  scheduleFutureSync(userId: string, now: number): Promise<void>;
+}
+
+/**
  * Confirma el retorno OAuth y registra los metadatos del vínculo propio.
  *
  * Solo Estudiante y Profesional (RF-27, `calendar:link`): otros roles reciben
@@ -179,13 +191,16 @@ export async function getCalendarLinkStatus(
  * rechazó la autorización responde `connected: false` sin error, así reservar
  * sigue disponible. La referencia de cuenta se resuelve en el servidor, nunca
  * llega del cliente. Un instante inválido responde `conflict` con el código
- * común.
+ * común. Al vincular programa el recorrido por páginas de las atenciones
+ * futuras vigentes, para retomar las que quedaron sin vínculo sin truncar ni
+ * recorrer todo cada 5 minutos.
  */
 export async function confirmCalendarLink(
   deps: {
     readonly auth: AuthorizationReader;
     readonly oauth: CalendarOAuthLinkReader;
     readonly store: CalendarLinkMetadataStore;
+    readonly linkSync: CalendarLinkSyncScheduler;
     readonly now: () => number;
   },
   input: { readonly tokenIdentifier: string | null },
@@ -208,6 +223,7 @@ export async function confirmCalendarLink(
   if (stored.status === "invalid_reference") return errResult(unauthorizedError());
   const metadata = await deps.store.readMetadata(profile._id);
   const linkedAt = metadata?.linkedAt ?? now;
+  await deps.linkSync.scheduleFutureSync(profile._id, now);
   return okResult({ connected: true as const, linkedAt, status: stored.status });
 }
 

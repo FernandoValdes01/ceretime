@@ -910,6 +910,7 @@ test("TI2-122 API: reagendar actualiza el .ics y deja obsoleto el evento anterio
       modality: "online",
       calendarAdded: false,
       calendarNeedsUpdate: true,
+      calendarSyncStatus: "pending",
     },
   ]);
 
@@ -2912,6 +2913,7 @@ test("TI2-128 API: un evento escrito en una transacción que aborta se descarta 
           appointments: appointmentChangeReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
           notifications: notificationEventRecorder(ctx),
+          calendarSync: { scheduleSync: async () => undefined },
           audit: {
             recordAppointmentAudit: async (event) => {
               await recorder.recordAppointmentAudit(event);

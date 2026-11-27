@@ -25,9 +25,12 @@ import {
  * `pending` significa que la atención todavía no tiene un evento confirmado;
  * `synced`, que el evento refleja su horario vigente; `error`, que el último
  * intento falló y queda el código para decidir si se reintenta o se pide
- * volver a vincular la cuenta.
+ * volver a vincular la cuenta. `not_linked` significa que ningún participante
+ * vinculó Calendar: estado terminal que no pide nada y que el reintento no
+ * vuelve a programar; si alguien vincula después, la confirmación del vínculo
+ * programa las atenciones futuras vigentes.
  */
-export const CALENDAR_SYNC_STATUS_VALUES = ["pending", "synced", "error"] as const;
+export const CALENDAR_SYNC_STATUS_VALUES = ["pending", "synced", "error", "not_linked"] as const;
 
 export type CalendarSyncStatus = (typeof CALENDAR_SYNC_STATUS_VALUES)[number];
 
