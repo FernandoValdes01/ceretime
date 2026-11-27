@@ -1,0 +1,29 @@
+# Servidor de la Web en la imagen Docker. Reproduce `vercel.json`: entrega el
+# archivo pedido y, si no existe, `index.html`, para que el router resuelva la
+# ruta en el cliente.
+server {
+    listen ${PORT};
+    server_name _;
+    root /usr/share/nginx/html;
+    server_tokens off;
+
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+
+    # `add_header` no se hereda en un `location` que declara los suyos, así
+    # que cada bloque incluye las cabeceras generadas desde `vercel.json`.
+
+    # Vite agrega un hash al nombre de cada asset: se cachean sin expirar.
+    location /assets/ {
+        include /etc/nginx/security-headers.conf;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+        try_files $uri =404;
+    }
+
+    # `index.html` y `push-sw.js` se revalidan para recibir cada despliegue.
+    location / {
+        include /etc/nginx/security-headers.conf;
+        add_header Cache-Control "no-cache" always;
+        try_files $uri /index.html;
+    }
+}

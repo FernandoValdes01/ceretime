@@ -19,6 +19,7 @@ import {
 } from "../appointments/changes";
 import type { AppointmentAuditRecorder } from "../appointments/audit";
 import type { NotificationEventRecorder } from "../notifications/ports";
+import type { CalendarSyncScheduler } from "../calendar/sync";
 import {
   authorizeAccompanimentStatusChange,
   type AuthorizationReader,
@@ -80,6 +81,7 @@ export interface CloseAccompanimentDeps extends ChangeAccompanimentStatusDeps {
   readonly persister: AppointmentTransitionPersister;
   readonly audit: AppointmentAuditRecorder;
   readonly notifications: NotificationEventRecorder;
+  readonly calendarSync: CalendarSyncScheduler;
 }
 
 /** Entrada de pausar, reactivar y la vista previa: identidad y acompañamiento. */

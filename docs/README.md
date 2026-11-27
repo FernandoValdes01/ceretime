@@ -19,7 +19,7 @@ Este índice distingue el diseño acordado, las guías para trabajar y la eviden
 - [Dataset ficticio](dataset-ficticio.md): datos de prueba, carga y límites de los perfiles.
 - [Guía Mobile](../apps/mobile/README.md) y [guía Web](../apps/web/README.md): ejecución y verificaciones por aplicación.
 - [Google Calendar](integraciones/google-calendar.md): integración por atención y alternativa `.ics`.
-- [CI y protecciones](operaciones/ci-protections.md), [validación de builds](operaciones/ci-build-validation.md) y [despliegue Web](operaciones/vercel-deployment.md): configuración y operación del proyecto.
+- [CI y protecciones](operaciones/ci-protections.md), [validación de builds](operaciones/ci-build-validation.md) y [despliegue Web](operaciones/vercel-deployment.md) y [imagen Docker](operaciones/docker-deployment.md): configuración y operación del proyecto.
 - [Issues](agents/issue-tracker.md), [pull requests](agents/pull-requests.md) y [PR apiladas](agents/r2d2-stacked-prs.md): coordinación del equipo.
 - [Estándares de código](../CODING_STANDARDS.md) y [patrones](../patterns/README.md): reglas compartidas, comprobaciones y ejemplos para implementar y revisar.
 

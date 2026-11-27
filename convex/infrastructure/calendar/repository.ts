@@ -163,12 +163,17 @@ export type CalendarSyncRecordResult =
  * Marca la atención como pendiente de sincronizar sin contar un intento.
  *
  * La usa la operación que confirma una reserva o un cambio (TI2-162) antes de
- * llamar a Google; conserva los intentos acumulados y limpia el error previo.
+ * llamar a Google; conserva los intentos acumulados, limpia el error previo y
+ * reinicia los fallos seguidos porque el cambio es nuevo. Guarda
+ * `scheduledAt` para que el reintento no programe otro despacho mientras este
+ * sigue en curso.
  */
 export async function markCalendarSyncPending(
   ctx: MutationCtx,
   appointmentId: Id<"appointments">,
+  scheduledAt: number,
 ): Promise<CalendarSyncRecordResult> {
+  assertInstant(scheduledAt, "La programación de Calendar requiere un instante epoch válido.");
   const normalized = ctx.db.normalizeId("appointments", appointmentId);
   if (normalized === null) return { status: "invalid_reference" };
   const appointment = await ctx.db.get(normalized);
@@ -176,6 +181,8 @@ export async function markCalendarSyncPending(
   await ctx.db.patch(normalized, {
     calendarSyncStatus: "pending",
     calendarSyncErrorCode: undefined,
+    calendarSyncScheduledAt: scheduledAt,
+    calendarSyncFailures: 0,
   });
   return { status: "recorded", attempts: appointment.calendarSyncAttempts ?? 0 };
 }

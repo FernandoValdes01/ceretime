@@ -956,6 +956,15 @@ export function appointmentListReader(ctx: DbReader) {
           modality: row.modality,
           calendarAdded: referenceIsCurrent,
           calendarNeedsUpdate: row.calendarEventId !== undefined && !referenceIsCurrent,
+          // Estado de sincronización automática (TI2-162): ausente en filas
+          // anteriores a TI2-145; `pending` no pide nada cuando nadie vinculó
+          // y `error/not_connected` pide volver a vincular.
+          ...(row.calendarSyncStatus === undefined
+            ? {}
+            : { calendarSyncStatus: row.calendarSyncStatus }),
+          ...(row.calendarSyncErrorCode === undefined
+            ? {}
+            : { calendarSyncErrorCode: row.calendarSyncErrorCode }),
         };
       });
     },
@@ -963,12 +972,15 @@ export function appointmentListReader(ctx: DbReader) {
 }
 
 /**
- * Guarda la referencia del evento creado o actualizado por TI2-122. Solo la
- * llama la mutación interna que compone la acción después de un resultado
- * exitoso del proveedor; un reintento con el mismo identificador determinista
- * no duplica el evento aunque esta escritura se repita. El horario guardado es
- * el que realmente tiene el evento: al reagendar la atención después, la
- * referencia conserva el horario anterior y queda obsoleta.
+ * Guarda la referencia del evento creado o actualizado por TI2-122 y TI2-162.
+ * Solo la llama la mutación interna que compone la acción después de un
+ * resultado exitoso del proveedor; un reintento con el mismo identificador
+ * determinista no duplica el evento aunque esta escritura se repita. El
+ * horario guardado es el que realmente tiene el evento: al reagendar la
+ * atención después, la referencia conserva el horario anterior y queda
+ * obsoleta. `ownerId` guarda de qué calendario es el evento (el `subject` de
+ * Better Auth que lo creó) para que actualizar y eliminar usen siempre ese
+ * calendario; cuando llega, reemplaza al anterior.
  */
 export async function recordCalendarEvent(
   ctx: MutationCtx,
@@ -978,6 +990,7 @@ export async function recordCalendarEvent(
     readonly addedAt: number;
     readonly startsAt: number;
     readonly endsAt: number;
+    readonly ownerId?: string;
   },
 ): Promise<void> {
   await ctx.db.patch(appointmentId, {
@@ -985,6 +998,7 @@ export async function recordCalendarEvent(
     calendarEventAddedAt: input.addedAt,
     calendarEventStartsAt: input.startsAt,
     calendarEventEndsAt: input.endsAt,
+    ...(input.ownerId === undefined ? {} : { calendarEventOwnerId: input.ownerId }),
   });
 }
 

@@ -29,6 +29,7 @@ import type * as application_availability_availability from "../application/avai
 import type * as application_availability_ports from "../application/availability/ports.js";
 import type * as application_calendar_calendar from "../application/calendar/calendar.js";
 import type * as application_calendar_calendar_link from "../application/calendar/calendar_link.js";
+import type * as application_calendar_sync from "../application/calendar/sync.js";
 import type * as application_follow_up_commands from "../application/follow_up/commands.js";
 import type * as application_follow_up_ports from "../application/follow_up/ports.js";
 import type * as application_follow_up_queries from "../application/follow_up/queries.js";
@@ -103,6 +104,7 @@ import type * as infrastructure_auth_google_providers from "../infrastructure/au
 import type * as infrastructure_availability_repository from "../infrastructure/availability/repository.js";
 import type * as infrastructure_calendar_google_calendar from "../infrastructure/calendar/google_calendar.js";
 import type * as infrastructure_calendar_repository from "../infrastructure/calendar/repository.js";
+import type * as infrastructure_calendar_sync_scheduler from "../infrastructure/calendar/sync_scheduler.js";
 import type * as infrastructure_follow_up_repository from "../infrastructure/follow_up/repository.js";
 import type * as infrastructure_notifications_gmail_sender from "../infrastructure/notifications/gmail_sender.js";
 import type * as infrastructure_notifications_repository from "../infrastructure/notifications/repository.js";
@@ -160,6 +162,7 @@ declare const fullApi: ApiFromModules<{
   "application/availability/ports": typeof application_availability_ports;
   "application/calendar/calendar": typeof application_calendar_calendar;
   "application/calendar/calendar_link": typeof application_calendar_calendar_link;
+  "application/calendar/sync": typeof application_calendar_sync;
   "application/follow_up/commands": typeof application_follow_up_commands;
   "application/follow_up/ports": typeof application_follow_up_ports;
   "application/follow_up/queries": typeof application_follow_up_queries;
@@ -234,6 +237,7 @@ declare const fullApi: ApiFromModules<{
   "infrastructure/availability/repository": typeof infrastructure_availability_repository;
   "infrastructure/calendar/google_calendar": typeof infrastructure_calendar_google_calendar;
   "infrastructure/calendar/repository": typeof infrastructure_calendar_repository;
+  "infrastructure/calendar/sync_scheduler": typeof infrastructure_calendar_sync_scheduler;
   "infrastructure/follow_up/repository": typeof infrastructure_follow_up_repository;
   "infrastructure/notifications/gmail_sender": typeof infrastructure_notifications_gmail_sender;
   "infrastructure/notifications/repository": typeof infrastructure_notifications_repository;
