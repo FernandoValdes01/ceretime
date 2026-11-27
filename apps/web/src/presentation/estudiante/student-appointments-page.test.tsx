@@ -5,7 +5,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createAppRouter } from "../routes/router.tsx";
 import type { WebSessionRole, WebSessionState } from "../session/session-state.ts";
 import type { AgendaAppointment } from "../../application/agenda/agenda-port.ts";
-import type { Space } from "../../../../../convex/domain/index.ts";
+import { justificationDeadlineFor, type Space } from "../../../../../convex/domain/index.ts";
+import { formatCivilDateWithYear } from "../shared/date-format.ts";
 import { formatAppointmentInstant } from "./agenda-labels.ts";
 
 /**
@@ -33,6 +34,9 @@ let mockedPair:
 const listAppointmentsMock = vi.fn();
 const getAppointmentMock = vi.fn();
 const listSpacesMock = vi.fn();
+const cancelReservationMock = vi.fn();
+const submitJustificationMock = vi.fn();
+const getOnlineAccessMock = vi.fn();
 
 vi.mock("convex/react", () => ({ useQuery: () => mockedSession }));
 
@@ -47,6 +51,9 @@ vi.mock("./schedule-search-data.ts", async (importOriginal) => ({
     listAppointments: listAppointmentsMock,
     getAppointment: getAppointmentMock,
     listSpaces: listSpacesMock,
+    cancelReservation: cancelReservationMock,
+    submitAppointmentJustification: submitJustificationMock,
+    getOnlineAccess: getOnlineAccessMock,
   }),
 }));
 
@@ -213,6 +220,10 @@ beforeEach(() => {
   listAppointmentsMock.mockReset();
   getAppointmentMock.mockReset();
   listSpacesMock.mockReset();
+  cancelReservationMock.mockReset();
+  submitJustificationMock.mockReset();
+  getOnlineAccessMock.mockReset();
+  getOnlineAccessMock.mockResolvedValue({ status: "pending" });
   listAppointmentsMock.mockResolvedValue({
     status: "ok",
     appointments: ATENCIONES_FICTICIAS,
@@ -423,12 +434,19 @@ describe("detalle de la atención (TI2-114)", () => {
     expect(screen.queryByText("Jornada de capacitación del equipo.")).toBeNull();
   });
 
-  test("la inasistencia llega por texto sin plazo de justificación calculado", async () => {
+  test("la inasistencia vencida muestra su plazo del dominio y no ofrece entregar (TI2-163)", async () => {
     comoEstudiante();
     renderAt("/estudiante/atenciones/at-est-6");
 
     expect(await screen.findByText("Inasistencia pendiente")).toBeDefined();
-    expect(screen.queryByText(/días|hábil|plazo/iu)).toBeNull();
+    const plazo = justificationDeadlineFor(Date.UTC(2026, 8, 14, 14, 0)).deadlineDate;
+    expect(
+      screen.getByText(
+        new RegExp(`Plazo para justificar: hasta el ${formatCivilDateWithYear(plazo)}`),
+      ),
+    ).toBeDefined();
+    expect(screen.getByText(/El plazo venció sin una entrega/)).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Enviar justificación" })).toBeNull();
   });
 
   test("atención ajena o desconocida llega como denegación sin filtrar existencia", async () => {
@@ -487,7 +505,9 @@ describe("detalle de la atención (TI2-114)", () => {
     expect(document.activeElement).toBe(
       screen.getByRole("heading", { name: "Detalle de la atención" }),
     );
-    expect(await screen.findByText(/Sala 101/)).toBeDefined();
+    expect(
+      await screen.findByText("Campus San Juan Pablo II · Edificio A · Piso 1 · Sala 101"),
+    ).toBeDefined();
     expect(screen.queryByText(AVISO_SALA)).toBeNull();
   });
 
@@ -499,6 +519,222 @@ describe("detalle de la atención (TI2-114)", () => {
     expect(await screen.findByText("Reagendada")).toBeDefined();
     await waitFor(() => expect(listSpacesMock).toHaveBeenCalled());
     expect(screen.queryByText(AVISO_SALA)).toBeNull();
+  });
+});
+
+/**
+ * Atenciones relativas al reloj de la prueba (TI2-163): cambiar y cancelar
+ * solo se ofrecen antes del inicio y la justificación depende del plazo.
+ */
+const HORA = 3_600_000;
+
+function atencionFutura(overrides: Partial<AgendaAppointment> = {}): AgendaAppointment {
+  const startAt = Date.now() + 72 * HORA;
+  return {
+    id: "at-futura",
+    accompanimentId: "acompanamiento-1",
+    status: "scheduled",
+    modality: "inPerson",
+    spaceId: "esp-1",
+    startAt,
+    endAt: startAt + HORA,
+    ...overrides,
+  };
+}
+
+function conAtencion(appointment: AgendaAppointment) {
+  getAppointmentMock.mockResolvedValue({ status: "ok", appointment });
+}
+
+describe("cómo llegar, cambio, cancelación y justificación (TI2-163)", () => {
+  test("una atención presencial próxima muestra cómo llegar y el cambio de horario", async () => {
+    comoEstudiante();
+    conAtencion(atencionFutura());
+    renderAt("/estudiante/atenciones/at-futura");
+
+    const llegar = await screen.findByRole("region", { name: "Cómo llegar" });
+    expect(within(llegar).getByText("Acceso con rampa.")).toBeDefined();
+    expect(within(llegar).getByText("Entrar por el acceso principal.")).toBeDefined();
+    // La sala ya aparece en «Espacio»: cómo llegar no la repite.
+    expect(within(llegar).queryByText("Lugar")).toBeNull();
+    expect(screen.getByRole("link", { name: "Cambiar horario" }).getAttribute("href")).toBe(
+      "/estudiante/horarios?accompanimentId=acompanamiento-1&rescheduleAppointmentId=at-futura",
+    );
+    expect(getOnlineAccessMock).not.toHaveBeenCalled();
+  });
+
+  test("cancelar pide confirmar, envía el motivo opcional y anuncia el resultado", async () => {
+    comoEstudiante();
+    const atencion = atencionFutura();
+    getAppointmentMock
+      .mockResolvedValueOnce({ status: "ok", appointment: atencion })
+      .mockResolvedValue({
+        status: "ok",
+        appointment: { ...atencion, status: "cancelled_by_student" },
+      });
+    cancelReservationMock.mockResolvedValue({ status: "cancelled" });
+    renderAt("/estudiante/atenciones/at-futura");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Cancelar la atención" }));
+    const motivo = screen.getByRole("textbox", { name: "Motivo (opcional)" });
+    expect(motivo.hasAttribute("required")).toBe(false);
+    fireEvent.change(motivo, { target: { value: "  Tengo una evaluación a esa hora.  " } });
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar cancelación" }));
+
+    const aviso = await screen.findByText("Cancelaste la atención. El horario quedó libre.");
+    await waitFor(() => expect(document.activeElement).toBe(aviso));
+    expect(cancelReservationMock).toHaveBeenCalledWith({
+      reservationId: "at-futura",
+      reason: "Tengo una evaluación a esa hora.",
+    });
+    expect(await screen.findByText("Cancelada por el Estudiante")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Cancelar la atención" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Cambiar horario" })).toBeNull();
+  });
+
+  test("una cancelación fallida conserva la atención y el motivo escrito", async () => {
+    comoEstudiante();
+    conAtencion(atencionFutura());
+    cancelReservationMock.mockResolvedValue({
+      status: "error",
+      error: { code: "conflict", message: "La operación no se pudo completar." },
+    });
+    renderAt("/estudiante/atenciones/at-futura");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Cancelar la atención" }));
+    fireEvent.change(screen.getByRole("textbox", { name: "Motivo (opcional)" }), {
+      target: { value: "Viaje" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar cancelación" }));
+
+    const alerta = await screen.findByRole("alert");
+    expect(alerta.textContent).toContain("La operación no se pudo completar.");
+    expect(alerta.textContent).toContain("Tu atención sigue reservada.");
+    expect(screen.getByText("Programada")).toBeDefined();
+    expect(screen.getByRole("textbox", { name: "Motivo (opcional)" })).toHaveProperty(
+      "value",
+      "Viaje",
+    );
+  });
+
+  test("volver sin cancelar devuelve el foco al botón", async () => {
+    comoEstudiante();
+    conAtencion(atencionFutura());
+    renderAt("/estudiante/atenciones/at-futura");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Cancelar la atención" }));
+    expect(document.activeElement).toBe(
+      screen.getByRole("heading", { name: "¿Cancelar esta atención?" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Volver sin cancelar" }));
+    await waitFor(() =>
+      expect(document.activeElement).toBe(
+        screen.getByRole("button", { name: "Cancelar la atención" }),
+      ),
+    );
+    expect(cancelReservationMock).not.toHaveBeenCalled();
+  });
+
+  test("una atención ya iniciada no ofrece cambiar ni cancelar", async () => {
+    comoEstudiante();
+    conAtencion(atencionFutura({ startAt: Date.now() - HORA, endAt: Date.now() + HORA }));
+    renderAt("/estudiante/atenciones/at-futura");
+
+    expect(await screen.findByText("Programada")).toBeDefined();
+    expect(screen.queryByRole("link", { name: "Cambiar horario" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Cancelar la atención" })).toBeNull();
+  });
+
+  test("la atención en línea muestra el enlace privado solo cuando está disponible", async () => {
+    comoEstudiante();
+    conAtencion(atencionFutura({ modality: "online", spaceId: undefined }));
+    getOnlineAccessMock.mockResolvedValue({
+      status: "available",
+      link: "https://meet.google.com/sol-casa-pan",
+    });
+    renderAt("/estudiante/atenciones/at-futura");
+
+    const enlace = await screen.findByRole("link", { name: /Entrar a la atención en línea/ });
+    expect(enlace.getAttribute("href")).toBe("https://meet.google.com/sol-casa-pan");
+    expect(enlace.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(getOnlineAccessMock).toHaveBeenCalledWith("at-futura");
+  });
+
+  test("la atención en línea sin enlace explica que llegará antes de la atención", async () => {
+    comoEstudiante();
+    conAtencion(atencionFutura({ modality: "online", spaceId: undefined }));
+    renderAt("/estudiante/atenciones/at-futura");
+
+    expect(await screen.findByText(/agregará el enlace privado/)).toBeDefined();
+    expect(screen.queryByRole("link", { name: /Entrar a la atención en línea/ })).toBeNull();
+  });
+
+  test("la inasistencia dentro del plazo exige la explicación y envía la recepción del respaldo", async () => {
+    comoEstudiante();
+    const inasistencia = atencionFutura({
+      status: "no_show",
+      startAt: Date.now() - 2 * HORA,
+      endAt: Date.now() - HORA,
+    });
+    getAppointmentMock
+      .mockResolvedValueOnce({ status: "ok", appointment: inasistencia })
+      .mockResolvedValue({
+        status: "ok",
+        appointment: {
+          ...inasistencia,
+          justificationExplanation: "Se suspendió el transporte.",
+          justificationSubmittedAt: Date.now(),
+          justificationReview: "pending",
+          supportingDocumentReceived: true,
+        },
+      });
+    submitJustificationMock.mockResolvedValue({ status: "submitted" });
+    renderAt("/estudiante/atenciones/at-futura");
+
+    fireEvent.click(await screen.findByRole("button", { name: "Enviar justificación" }));
+    const motivoInasistencia = screen.getByRole("textbox", { name: "Por qué no pudiste asistir" });
+    expect(motivoInasistencia.getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getByText("Escribe por qué no pudiste asistir.")).toBeDefined();
+    expect(submitJustificationMock).not.toHaveBeenCalled();
+
+    fireEvent.change(motivoInasistencia, { target: { value: "Se suspendió el transporte." } });
+    fireEvent.click(screen.getByRole("checkbox", { name: /Ya entregué un respaldo/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Enviar justificación" }));
+
+    expect(
+      await screen.findByText("Enviamos tu justificación. Tu profesional la revisará."),
+    ).toBeDefined();
+    expect(submitJustificationMock).toHaveBeenCalledWith({
+      appointmentId: "at-futura",
+      explanation: "Se suspendió el transporte.",
+      supportingDocumentReceived: true,
+    });
+    expect(await screen.findByText("En revisión por tu profesional")).toBeDefined();
+    expect(screen.getByText(/Informaste que lo entregaste/)).toBeDefined();
+  });
+
+  test("una justificación rechazada muestra la recepción y la explicación del rechazo", async () => {
+    comoEstudiante();
+    conAtencion(
+      atencionFutura({
+        status: "no_show_unjustified",
+        startAt: Date.UTC(2026, 9, 5, 14, 0),
+        endAt: Date.UTC(2026, 9, 5, 15, 0),
+        justificationExplanation: "Me enfermé.",
+        justificationSubmittedAt: Date.UTC(2026, 9, 6, 12, 0),
+        justificationReview: "rejected",
+        justificationReviewExplanation: "Falta el respaldo del canal oficial.",
+        supportingDocumentReceived: false,
+      }),
+    );
+    renderAt("/estudiante/atenciones/at-futura");
+
+    expect(await screen.findByText("Rechazada")).toBeDefined();
+    expect(screen.getByText("Falta el respaldo del canal oficial.")).toBeDefined();
+    expect(
+      screen.getByText(`Recibida el ${formatAppointmentInstant(Date.UTC(2026, 9, 6, 12, 0))}`),
+    ).toBeDefined();
+    expect(screen.getByText("No informaste un respaldo.")).toBeDefined();
   });
 });
 

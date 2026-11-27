@@ -19,6 +19,17 @@ import {
 import { DeniedState, EmptyState, ErrorState, LoadingState } from "../shared/view-states.tsx";
 import { StudentAppointmentFollowUp } from "./student-follow-up.tsx";
 import type { AgendaAppointment } from "../../application/agenda/agenda-port.ts";
+import { AppointmentAccess } from "./appointment-access.tsx";
+import { AppointmentJustification } from "./appointment-justification.tsx";
+import { CancelAppointmentForm } from "./cancel-appointment-form.tsx";
+import {
+  isAppointmentUpcoming,
+  justificationSituationOf,
+  studentAppointmentChanges,
+  type StudentAppointmentChanges,
+} from "./student-appointment-changes.ts";
+import { PRIMARY_LINK_CLASS, SECTION_TITLE_CLASS } from "./student-page-classes.ts";
+import { useNow } from "../shared/use-now.ts";
 
 /**
  * Foco visible de 3px según DESIGN.md, compartido por enlaces y acciones.
@@ -58,8 +69,8 @@ const PERIODO_LISTA = `los últimos ${AGENDA_DAYS_BEFORE} días y los próximos 
  * API por TI2-123: el Backend entrega solo las atenciones propias dentro de
  * la ventana de lectura del adaptador. Los estados textuales de Realizada,
  * Cancelada e Inasistencia salen de las etiquetas compartidas de la agenda
- * estudiantil, y ni el plazo de justificación (TI2-94) ni su presentación
- * o revisión (TI2-119) se calculan o muestran acá.
+ * estudiantil. El detalle (TI2-163) suma cómo llegar, el acceso en línea, el
+ * cambio de horario, la cancelación y la justificación de la inasistencia.
  */
 export function StudentAppointmentsPage() {
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -241,6 +252,8 @@ function AppointmentRowContent({
  * atención fuera de la ventana de la lista sigue disponible por su
  * identificador. El detalle corresponde a la vista `shared` de TI2-112: no
  * muestra el motivo de cancelación, que queda en la vista del Profesional.
+ * Recargar muestra lo mismo que la lista: ambas leen la misma atención del
+ * Backend.
  */
 export function StudentAppointmentDetailPage({ appointmentId }: { appointmentId: string }) {
   const headingRef = useRef<HTMLHeadingElement>(null);
@@ -296,8 +309,21 @@ function AppointmentDetailBody({
   onRetry: () => void;
   onFocusTitle: () => void;
 }) {
-  const result = useStudentAppointment(appointmentId, attempt);
+  // Relectura tras un cambio propio: conserva lo mostrado mientras llega la
+  // respuesta, así la atención anterior sigue a la vista si el cambio falla.
+  const [revision, setRevision] = useState(0);
+  const [notice, setNotice] = useState<string | null>(null);
+  const noticeRef = useRef<HTMLParagraphElement>(null);
+  const result = useStudentAppointment(appointmentId, attempt, revision);
   const spaceLabels = useSpaceLabels();
+  const nowMs = useNow();
+
+  useEffect(() => {
+    // El formulario que tenía el foco desaparece tras el cambio: el aviso lo recibe.
+    if (notice !== null) {
+      noticeRef.current?.focus();
+    }
+  }, [notice]);
 
   if (result === undefined) {
     return <LoadingState label="Cargando la atención…" />;
@@ -313,9 +339,28 @@ function AppointmentDetailBody({
 
   const shown = result.appointment;
   const spaceLabel = spaceLabelOf(shown, spaceLabels.labels);
+  const changes = studentAppointmentChanges(shown, nowMs);
+  const justification = justificationSituationOf(shown, nowMs);
+
+  function afterChange(message: string) {
+    setNotice(message);
+    setRevision((value) => value + 1);
+  }
 
   return (
-    <>
+    // DESIGN.md: texto alineado a la izquierda; el bloque de compatibilidad de
+    // `index.css` centra `#root` y las instrucciones de llegada son párrafos largos.
+    <div className="text-left">
+      {notice === null ? null : (
+        <p
+          ref={noticeRef}
+          tabIndex={-1}
+          role="status"
+          className="rounded-lg border-t-4 border-primary bg-surface-container-low p-4"
+        >
+          {notice}
+        </p>
+      )}
       <dl className="m-0 divide-y divide-(--ct-line)">
         <DetailRow label="Estado">{appointmentStatusLabel(shown.status)}</DetailRow>
         <DetailRow label="Fecha y hora">
@@ -332,8 +377,75 @@ function AppointmentDetailBody({
       {isSpaceUnresolved(shown, spaceLabels) ? (
         <SpaceNotice spaceLabels={spaceLabels} onFocusTitle={onFocusTitle} />
       ) : null}
+      <AppointmentAccess
+        appointment={shown}
+        space={shown.spaceId === undefined ? undefined : spaceLabels.spaces.get(shown.spaceId)}
+        active={isAppointmentUpcoming(shown.status)}
+      />
+      <AppointmentChangeActions
+        appointment={shown}
+        changes={changes}
+        onCancelled={() => afterChange("Cancelaste la atención. El horario quedó libre.")}
+      />
+      {justification.kind === "none" ? null : (
+        <AppointmentJustification
+          appointmentId={shown.id}
+          situation={justification}
+          onSubmitted={() => afterChange("Enviamos tu justificación. Tu profesional la revisará.")}
+        />
+      )}
       <StudentAppointmentFollowUp appointmentId={shown.id} appointmentStatus={shown.status} />
-    </>
+    </div>
+  );
+}
+
+/**
+ * Reagendar y cancelar (TI2-163). Reagendar usa la misma búsqueda y la misma
+ * confirmación de la reserva; la atención conserva su horario hasta que se
+ * confirma el cambio.
+ */
+function AppointmentChangeActions({
+  appointment,
+  changes,
+  onCancelled,
+}: {
+  appointment: AgendaAppointment;
+  changes: StudentAppointmentChanges;
+  onCancelled: () => void;
+}) {
+  const canReschedule = changes.canReschedule && appointment.accompanimentId !== undefined;
+  if (!canReschedule && changes.cancellation === null) {
+    return null;
+  }
+  return (
+    <section aria-labelledby="appointment-changes-title" className="mt-6 flex flex-col gap-3">
+      <h2 id="appointment-changes-title" className={SECTION_TITLE_CLASS}>
+        Cambiar o cancelar
+      </h2>
+      <p className="m-0">Puedes hacerlo hasta antes del inicio de la atención.</p>
+      <div className="flex flex-col gap-3">
+        {canReschedule ? (
+          <Link
+            to="/estudiante/horarios"
+            search={{
+              accompanimentId: appointment.accompanimentId,
+              rescheduleAppointmentId: appointment.id,
+            }}
+            className={PRIMARY_LINK_CLASS}
+          >
+            Cambiar horario
+          </Link>
+        ) : null}
+        {changes.cancellation === null ? null : (
+          <CancelAppointmentForm
+            appointmentId={appointment.id}
+            cancellation={changes.cancellation}
+            triggerLabel="Cancelar la atención"
+            onCancelled={onCancelled}
+          />
+        )}
+      </div>
+    </section>
   );
 }
 
