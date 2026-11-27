@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { CONFLICT_ERROR_CODE } from "../../../../../../convex/domain/index.ts";
 import { publicErrorOf } from "../../../infrastructure/convex/public-error.ts";
 import { isAuthorizationDenial } from "../authorization-denial.ts";
-import { formatCivilDateWithYear } from "../date-format.ts";
+import { formatAgendaDate, formatCivilDateWithYear } from "../date-format.ts";
 import { DeniedState, EmptyState, LoadingState } from "../view-states.tsx";
 import {
   useFollowUpHistory,
@@ -300,10 +300,11 @@ function FollowUpHistoryPageItems({
           {page.items.map((record) => (
             <li key={record.appointmentId} className="rounded-lg border border-border-low p-4">
               <article
-                aria-label={`Seguimiento de una atención ${view.appointmentStatusLabel(record.appointmentStatus).toLowerCase()}`}
+                aria-label={`Seguimiento de la atención del ${formatAgendaDate(record.appointmentStartsAt)}`}
               >
                 <p className="m-0 text-lg font-semibold">
-                  Atención: {view.appointmentStatusLabel(record.appointmentStatus)}
+                  Atención del {formatAgendaDate(record.appointmentStartsAt)} ·{" "}
+                  {view.appointmentStatusLabel(record.appointmentStatus)}
                 </p>
                 {view.renderAppointmentLink(record.appointmentId)}
                 <FollowUpRecordContent record={record} audience={view.audience} />

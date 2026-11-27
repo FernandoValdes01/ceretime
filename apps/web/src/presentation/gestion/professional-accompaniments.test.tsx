@@ -212,6 +212,8 @@ function seguimiento(appointmentId: string, internalNote?: string): FollowUpReco
     appointmentId,
     accompanimentId: "acc-1",
     appointmentStatus: "completed",
+    // Lunes 16-11-2026, 10:00 en Santiago.
+    appointmentStartsAt: Date.UTC(2026, 10, 16, 13),
     agreements: [{ description: "Acuerdo ficticio" }],
     tasks: [{ description: "Tarea ficticia", responsible: "student", status: "pending" }],
     nextSteps: "Próximos pasos ficticios",

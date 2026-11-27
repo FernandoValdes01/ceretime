@@ -54,6 +54,8 @@ function registro(): FollowUpRecordView {
     appointmentId: "apt-1",
     accompanimentId: "acc-1",
     appointmentStatus: "completed",
+    // Lunes 16-11-2026, 10:00 en Santiago.
+    appointmentStartsAt: Date.UTC(2026, 10, 16, 13),
     agreements: [{ description: "Acuerdo ficticio" }],
     tasks: [],
     nextSteps: "Próximos pasos ficticios",

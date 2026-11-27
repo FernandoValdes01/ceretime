@@ -65,6 +65,8 @@ function registro(overrides: Partial<FollowUpRecordView> = {}): FollowUpRecordVi
     appointmentId: "apt-1",
     accompanimentId: "acc-1",
     appointmentStatus: "completed",
+    // Lunes 16-11-2026, 10:00 en Santiago.
+    appointmentStartsAt: Date.UTC(2026, 10, 16, 13),
     agreements: [{ description: "Acuerdo ficticio" }],
     tasks: [{ description: "Tarea ficticia", responsible: "student", status: "pending" }],
     nextSteps: "Próximos pasos ficticios",
@@ -177,6 +179,29 @@ describe("historial de seguimiento del acompañamiento", () => {
     expect(screen.getByRole("link", { name: "Ver la atención" }).getAttribute("href")).toBe(
       "/estudiante/atenciones/apt-1",
     );
+  });
+
+  test("cada seguimiento del historial se distingue por la fecha de su atención", async () => {
+    store.history.set(
+      "acc-1",
+      pagina([
+        registro({ appointmentId: "apt-2", appointmentStartsAt: Date.UTC(2026, 10, 23, 13) }),
+        registro(),
+      ]),
+    );
+    await renderInRouter(<StudentFollowUpHistory accompanimentId="acc-1" />);
+
+    expect(
+      await screen.findByText("Atención del lunes, 23 de noviembre de 2026 · Realizada"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Atención del lunes, 16 de noviembre de 2026 · Realizada"),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("article", {
+        name: "Seguimiento de la atención del lunes, 16 de noviembre de 2026",
+      }),
+    ).toBeTruthy();
   });
 
   test("sin seguimientos explica quién los registra", async () => {
