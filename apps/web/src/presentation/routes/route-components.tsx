@@ -16,6 +16,7 @@ import {
   ProfessionalAccompanimentsPage,
 } from "../gestion/professional-accompaniments.tsx";
 import { ProfessionalAvailabilityPage } from "../gestion/professional-availability-editor.tsx";
+import { ProfessionalInternsPage } from "../gestion/professional-interns.tsx";
 import { StudentAccompanimentDetailPage } from "../estudiante/student-accompaniments.tsx";
 import {
   StudentAppointmentDetailPage,
@@ -261,6 +262,11 @@ export function ProfessionalAgendaDetailRouteComponent() {
   useDocumentTitle("Detalle de la atención");
   const { appointmentId } = professionalAgendaDetailApi.useParams();
   return <ProfessionalAgendaDetailPage appointmentId={appointmentId} />;
+}
+
+export function ProfessionalPracticantesRouteComponent() {
+  useDocumentTitle("Practicantes");
+  return <ProfessionalInternsPage />;
 }
 
 export function PractitionerLayoutRouteComponent() {

@@ -20,6 +20,7 @@ import {
 } from "./assigned-accompaniments-list.tsx";
 import { isAuthorizationDenial } from "./authorization-denial.ts";
 import { AccompanimentProfessionalsSection } from "./accompaniment-professionals.tsx";
+import { AccompanimentInternsSection } from "./accompaniment-interns.tsx";
 import { DetailRow } from "./detail-row.tsx";
 import { FollowUpHistory } from "./follow-up-record.tsx";
 import { useAssignedAccompanimentDetail } from "./practitioner-accompaniments-data.ts";
@@ -32,15 +33,16 @@ import {
 } from "./professional-accompaniments-data.ts";
 
 /**
- * Acompañamientos del Profesional (TI2-165).
+ * Acompañamientos del Profesional (TI2-165, TI2-170).
  *
  * El listado reutiliza el del Practicante sobre `listAssignedAccompaniments`:
  * cada fila muestra solo el objetivo y el estado y abre su propio detalle,
  * así varios acompañamientos se recorren sin mezclarse. El detalle agrega
  * pausar, reactivar y cerrar con las operaciones de TI2-152, el cambio de
- * profesionales y el historial de seguimiento en solo lectura; la autorización
- * y la política de estados las decide el Backend, y un acompañamiento
- * cerrado no ofrece ninguna acción.
+ * profesionales, la gestión de practicantes (TI2-170) y el historial de
+ * seguimiento en solo lectura; la autorización y la política de estados las
+ * decide el Backend, y un acompañamiento cerrado no ofrece asignaciones
+ * nuevas, solo retiros.
  */
 
 const PROFESSIONAL_DENIED_HINT = "Si crees que deberías verlo, consulta con CERETI.";
@@ -173,6 +175,11 @@ function AccompanimentDetailBody({ accompanimentId }: { accompanimentId: string 
       {view.view === "full" ? (
         <StudentPanelErrorBoundary subject="los profesionales del acompañamiento" level="section">
           <AccompanimentProfessionalsSection accompanimentId={view._id} status={view.status} />
+        </StudentPanelErrorBoundary>
+      ) : null}
+      {view.view === "full" ? (
+        <StudentPanelErrorBoundary subject="los practicantes del acompañamiento" level="section">
+          <AccompanimentInternsSection accompanimentId={view._id} status={view.status} />
         </StudentPanelErrorBoundary>
       ) : null}
       <StudentPanelErrorBoundary subject="el historial de seguimiento" level="section">

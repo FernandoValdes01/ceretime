@@ -124,6 +124,20 @@ La vigencia acordada (`validFrom`/`validUntil`) es opcional, solo para Practican
 
 El practicante asignado lee la vista minimizada (`_id`, `status`, `objective`, `view`) y no escribe ni ve notas internas: asignar, modificar o revocar por su parte responde `unauthorized` y `getInternalNotes` también. La cuenta de prueba lee vista completa solo en lo asignado y vigente, sin acceso general por dominio institucional.
 
+## Gestión desde la Web del Profesional — TI2-170
+
+| Operación | Argumentos | Devuelve | Quién | Denegación |
+| --- | --- | --- | --- | --- |
+| `presentation/accounts.listInternAccounts` | `paginationOpts` (`numItems` entero entre 1 y 100) | Página de cuentas practicantes con detalle mínimo | Profesional de personal vigente o Administrador vigente | `unauthorized` sin permiso; `numItems` fuera de rango falla con error de regla |
+| `presentation/accompaniments.listAccompanimentInterns` | `accompanimentId` | `{assigned, assignable, assignableComplete}` | Profesional de personal, habilitado y vigente, con asignación profesional activa sobre ese acompañamiento | `unauthorized` sin ese permiso, sin revelar si el acompañamiento existe; `conflict` si el acompañamiento supera las 200 asignaciones leídas |
+
+- `assigned`: practicantes con asignación activa y vigente, cada uno con `userId`, `fullName`, `assignedAt?`, `validFrom?` y `validUntil?`, ordenados por nombre.
+- `assignable`: practicantes habilitados y vigentes que todavía no están asignados, con `userId` y `fullName`, ordenados por nombre. No incluye cuentas de prueba ni cuentas inhabilitadas.
+- `assignableComplete`: `false` si había más de 100 perfiles practicantes y la lista de asignables no los revisó todos.
+- No entrega correo ni estado de las cuentas.
+
+La Web del Profesional habilita con `enableIntern`, asigna con `assignAccompanimentAccess` (`assignedRole: "intern"` con `validFrom?`/`validUntil?` opcionales), modifica la vigencia con `updateAccompanimentAccess` (`null` quita el extremo) y retira con `revokeAccompanimentAccess`. Un acompañamiento cerrado no admite conceder ni modificar (`conflict`); retirar sigue permitido. Quien se retira pierde el acceso en la consulta siguiente aunque conserve el enlace: la vista del practicante reemplaza el contenido por el aviso de acceso denegado (TI2-116).
+
 ## Ejemplos TI2-140 para Web
 
 ```ts

@@ -718,6 +718,42 @@ export function accompanimentNeedsAtDateReader(ctx: DbReader) {
 }
 
 /**
+ * Asignaciones practicantes activas y vigentes de un acompañamiento (TI2-170),
+ * o `null` si el acompañamiento supera el tope de filas leídas: así la lista
+ * nunca se recorta en silencio.
+ */
+export async function listActiveInternAssignments(
+  ctx: DbReader,
+  accompanimentId: Id<"accompaniments">,
+  now: number = Date.now(),
+): Promise<Doc<"accompanimentAssignments">[] | null> {
+  const rows = await ctx.db
+    .query("accompanimentAssignments")
+    .withIndex("by_accompaniment_and_user_and_status_and_assigned_role", (q) =>
+      q.eq("accompanimentId", accompanimentId),
+    )
+    .take(MAX_ASSIGNMENTS_PER_ACCOMPANIMENT + 1);
+  if (rows.length > MAX_ASSIGNMENTS_PER_ACCOMPANIMENT) return null;
+  return rows.filter(
+    (row) =>
+      row.status === "active" &&
+      row.assignedRole === "intern" &&
+      isAssignmentWithinValidity(row, now),
+  );
+}
+
+/**
+ * Perfiles con rol practicante, hasta `limit` más uno para saber si quedan
+ * más. Quien llama decide cuáles se pueden asignar.
+ */
+export async function takeInternProfiles(ctx: DbReader, limit: number): Promise<Doc<"users">[]> {
+  return await ctx.db
+    .query("users")
+    .withIndex("by_role", (q) => q.eq("role", "intern"))
+    .take(limit + 1);
+}
+
+/**
  * Lecturas de los profesionales de un acompañamiento (puerto
  * `AccompanimentProfessionalsReader`, TI2-165). Un identificador de otra
  * tabla responde igual que uno inexistente.
@@ -750,5 +786,42 @@ export function accompanimentProfessionalsReader(ctx: DbReader) {
       }));
     },
     takeProfessionalProfiles: (limit: number) => takeProfessionalProfiles(ctx, limit),
+  };
+}
+
+/**
+ * Lecturas de los practicantes de un acompañamiento (puerto
+ * `AccompanimentInternsReader`, TI2-170). Un identificador de otra tabla
+ * responde igual que uno inexistente.
+ */
+export function accompanimentInternsReader(ctx: DbReader) {
+  return {
+    findProfileByTokenIdentifier: (tokenIdentifier: string) =>
+      findProfileByTokenIdentifier(ctx, tokenIdentifier),
+    getProfile: (userId: Id<"users">) => getUserById(ctx, userId),
+    getAccompanimentStatus: async (accompanimentId: string) => {
+      const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+      if (id === null) return null;
+      return (await getAccompanimentById(ctx, id))?.status ?? null;
+    },
+    hasActiveProfessionalAssignment: async (accompanimentId: string, userId: Id<"users">) => {
+      const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+      if (id === null) return false;
+      const rows = await findActiveAssignmentsForUser(ctx, id, userId);
+      return rows.some((row) => row.assignedRole === "professional");
+    },
+    listActiveInternAssignments: async (accompanimentId: string) => {
+      const id = ctx.db.normalizeId("accompaniments", accompanimentId);
+      if (id === null) return [];
+      const rows = await listActiveInternAssignments(ctx, id);
+      if (rows === null) return null;
+      return rows.map((row) => ({
+        userId: row.userId,
+        ...(row.grantedAt === undefined ? {} : { assignedAt: row.grantedAt }),
+        ...(row.validFrom === undefined ? {} : { validFrom: row.validFrom }),
+        ...(row.validUntil === undefined ? {} : { validUntil: row.validUntil }),
+      }));
+    },
+    takeInternProfiles: (limit: number) => takeInternProfiles(ctx, limit),
   };
 }

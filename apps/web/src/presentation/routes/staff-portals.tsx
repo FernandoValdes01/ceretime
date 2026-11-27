@@ -3,7 +3,7 @@ import { AppShell } from "./app-shell.tsx";
 
 /**
  * Portales del personal con cuenta institucional (TI2-20, TI2-103, TI2-04,
- * TI2-116, TI2-133, TI2-169).
+ * TI2-116, TI2-133, TI2-169, TI2-170).
  *
  * La estructura, la navegación por rol y el cierre de sesión viven en
  * `AppShell`; cada portal solo fija su área. Las vistas funcionales (bandejas,
@@ -15,7 +15,8 @@ import { AppShell } from "./app-shell.tsx";
  * lista ni lee esos recursos). El portal del Practicante enlaza solo su
  * listado de acompañamientos asignados (TI2-116), en solo lectura; el Backend
  * decide qué acompañamientos incluye. El portal del Profesional enlaza
- * solicitudes (TI2-91), agenda (TI2-115) y disponibilidad (TI2-103).
+ * solicitudes (TI2-91), acompañamientos (TI2-165), practicantes (TI2-170),
+ * agenda (TI2-115) y disponibilidad (TI2-103).
  */
 
 export function ProfessionalLayout() {
@@ -35,6 +36,10 @@ export function ProfessionalHome() {
     <section aria-labelledby="professional-home-title">
       <h1 id="professional-home-title">Portal del Profesional</h1>
       <p>Tus solicitudes y acompañamientos asignados estarán disponibles aquí.</p>
+      <p>
+        Habilita practicantes y asigna acompañamientos desde{" "}
+        <Link to="/profesional/practicantes">Practicantes</Link>.
+      </p>
     </section>
   );
 }
