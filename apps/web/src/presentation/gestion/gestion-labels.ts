@@ -59,8 +59,8 @@ const APPOINTMENT_REJECTION_MESSAGES: Record<AppointmentRejectionCause, string> 
   actor_required: "No se pudo identificar quién registra el cambio.",
   occurred_at_invalid: "El registro no trae un instante válido.",
   current_start_invalid: "La atención no trae una fecha de inicio válida.",
-  reason_required: "El motivo es obligatorio para este cambio.",
   occurred_before_start: "No se puede registrar este cambio antes de la hora de la atención.",
+  reschedule_after_start: "No se puede reagendar una atenci\u00f3n ya iniciada.",
   reschedule_required: "Reagendar requiere la nueva fecha de la atención.",
   reschedule_invalid: "La nueva fecha del reagendamiento es inválida.",
 };

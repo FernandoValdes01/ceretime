@@ -58,9 +58,6 @@ const GESTION_FIELD = `min-h-[44px] w-full min-w-0 box-border rounded-[0.5rem] b
 // El color del borde va solo en una clase: dos en el mismo elemento compiten
 // por el orden del CSS generado y el rojo del error podría no aplicarse.
 const GESTION_FIELD_CLASS = `${GESTION_FIELD} border-outline`;
-const GESTION_TEXTAREA = `${GESTION_FIELD} min-h-32 resize-y`;
-const GESTION_TEXTAREA_CLASS = `${GESTION_TEXTAREA} border-outline`;
-const GESTION_TEXTAREA_ERROR_CLASS = `${GESTION_TEXTAREA} border-error`;
 
 /**
  * Fila de atención como tarjeta enlazada: la fecha encabeza en negrita, el
@@ -338,8 +335,6 @@ function StatusChangeSection({
 }) {
   const options = statusChangeOptions(appointment.status);
   const [selectedTo, setSelectedTo] = useState("");
-  const [reason, setReason] = useState("");
-  const [fieldError, setFieldError] = useState<string | null>(null);
   const [resultError, setResultError] = useState<string | null>(null);
   const [denied, setDenied] = useState(false);
   const [pending, setPending] = useState(false);
@@ -357,7 +352,6 @@ function StatusChangeSection({
   );
 
   function clearFeedback() {
-    setFieldError(null);
     setResultError(null);
     setDenied(false);
     setConfirmedLabel(null);
@@ -369,23 +363,16 @@ function StatusChangeSection({
       return;
     }
     clearFeedback();
-    const reasonText = reason.trim();
-    if (selected.requiresReason && reasonText === "") {
-      setFieldError("El motivo es obligatorio para este cambio.");
-      return;
-    }
     setPending(true);
     try {
       const outcome = await getAgendaPort().changeAppointmentStatus({
         appointmentId: appointment.id,
         to: selected.to,
-        ...(selected.requiresReason ? { reason: reasonText } : {}),
       });
       if (outcome.status === "changed") {
         onChanged(outcome.appointment);
         setConfirmedLabel(selected.label);
         setSelectedTo("");
-        setReason("");
       } else if (outcome.status === "rejected") {
         setResultError(appointmentRejectionMessage(outcome.cause));
       } else if (outcome.status === "denied") {
@@ -446,30 +433,6 @@ function StatusChangeSection({
               ))}
             </select>
           </div>
-          {selected?.requiresReason ? (
-            <div>
-              <label htmlFor="status-change-reason" className={GESTION_LABEL}>
-                Motivo (obligatorio)
-              </label>
-              <textarea
-                className={
-                  fieldError !== null ? GESTION_TEXTAREA_ERROR_CLASS : GESTION_TEXTAREA_CLASS
-                }
-                rows={4}
-                id="status-change-reason"
-                value={reason}
-                onChange={(event) => setReason(event.target.value)}
-                aria-invalid={fieldError !== null}
-                aria-describedby={fieldError !== null ? "status-change-reason-error" : undefined}
-                disabled={pending}
-              />
-              {fieldError !== null ? (
-                <p id="status-change-reason-error" role="alert" className="student-portal__error">
-                  {fieldError}
-                </p>
-              ) : null}
-            </div>
-          ) : null}
           {denied ? (
             <p role="alert" className="student-portal__error">
               {ACCESS_DENIED_MESSAGE}

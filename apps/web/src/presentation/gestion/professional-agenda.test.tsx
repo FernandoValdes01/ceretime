@@ -368,25 +368,18 @@ describe("detalle de la atención (TI2-115)", () => {
     expect(screen.getByText("Realizada")).toBeDefined();
   });
 
-  test("cancelación por CERETI muestra el motivo obligatorio y lo exige", async () => {
+  test("cancelaci\u00f3n por CERETI se registra sin motivo obligatorio", async () => {
     comoProfesional();
     renderAt("/profesional/agenda/aten-ficticio-1");
 
-    expect(await screen.findByRole("heading", { name: "Detalle de la atención" })).toBeDefined();
+    expect(
+      await screen.findByRole("heading", { name: "Detalle de la atenci\u00f3n" }),
+    ).toBeDefined();
 
-    expect(screen.queryByLabelText("Motivo (obligatorio)")).toBeNull();
     fireEvent.change(screen.getByLabelText("Cambiar a"), {
       target: { value: "cancelled_by_cereti" },
     });
 
-    const motivo = screen.getByLabelText("Motivo (obligatorio)");
-    fireEvent.click(screen.getByRole("button", { name: "Registrar cambio" }));
-    expect(await screen.findByText("El motivo es obligatorio para este cambio.")).toBeDefined();
-    // El rojo no compite con el borde normal: se aplica una sola clase de color.
-    expect(motivo.className).toContain("border-error");
-    expect(motivo.className).not.toContain("border-outline");
-
-    fireEvent.change(motivo, { target: { value: "Bloqueo de la sala." } });
     fireEvent.click(screen.getByRole("button", { name: "Registrar cambio" }));
 
     expect(await screen.findByRole("heading", { name: "Cambio registrado" })).toBeDefined();

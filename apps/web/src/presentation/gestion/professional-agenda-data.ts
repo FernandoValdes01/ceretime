@@ -138,8 +138,6 @@ export type StatusChangeOption = {
   readonly to: AppointmentStatus;
   /** Etiqueta operativa de la vista. */
   readonly label: string;
-  /** El destino de dominio exige motivo (cancelación por CERETI). */
-  readonly requiresReason: boolean;
 };
 
 /**
@@ -165,6 +163,5 @@ export function statusChangeOptions(from: AppointmentStatus): ReadonlyArray<Stat
   ).map((transition) => ({
     to: transition.to,
     label: appointmentChangeLabel(transition.to),
-    requiresReason: transition.requiresReason,
   }));
 }
