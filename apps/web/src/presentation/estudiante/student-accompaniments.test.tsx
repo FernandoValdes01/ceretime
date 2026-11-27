@@ -669,7 +669,11 @@ describe("actualización de necesidades de acceso (TI2-166)", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Guardar para mis próximas atenciones" }));
 
-    expect(await screen.findByText(/el acompañamiento cambió/i)).toBeDefined();
+    expect(
+      await screen.findByText(
+        "No pudimos actualizar tus necesidades. Recarga la página y vuelve a intentarlo.",
+      ),
+    ).toBeDefined();
     expect(
       (screen.getByRole("checkbox", { name: "Comunicación escrita" }) as HTMLInputElement).checked,
     ).toBe(true);

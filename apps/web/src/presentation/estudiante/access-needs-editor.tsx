@@ -34,7 +34,7 @@ function saveErrorMessage(error: unknown): string {
   const code = publicErrorOf(error)?.code;
   if (code === UNAUTHORIZED_ERROR_CODE) return ACCESS_DENIED_MESSAGE;
   if (code === CONFLICT_ERROR_CODE) {
-    return "No pudimos actualizar tus necesidades porque el acompañamiento cambió. Recarga la página y vuelve a intentarlo.";
+    return "No pudimos actualizar tus necesidades. Recarga la página y vuelve a intentarlo.";
   }
   return "No pudimos actualizar tus necesidades. Inténtalo de nuevo.";
 }
