@@ -28,6 +28,9 @@ const SEARCH_SLOTS = "presentation/availability:searchSlots";
 const LIST_BOOKABLE = "presentation/availability:listBookableProfessionals";
 const BOOK_APPOINTMENT = "presentation/appointments:bookAppointment";
 const LIST_SPACES = "presentation/spaces:listSpaces";
+const RESCHEDULE_APPOINTMENT = "presentation/appointments:rescheduleAppointment";
+const SUBMIT_JUSTIFICATION = "presentation/appointments:submitAppointmentJustification";
+const GET_ONLINE_ACCESS = "presentation/appointments:getOnlineAccess";
 
 /** 2026-10-31 09:00 en America/Santiago (UTC-3 en esa fecha). */
 const NOW = Date.UTC(2026, 9, 31, 12, 0);
@@ -941,6 +944,202 @@ describe("búsqueda y reserva del Estudiante contra la API (TI2-123)", () => {
 
     await expect(fake.adapter().cancelReservation({ reservationId: "ajena" })).resolves.toEqual({
       status: "denied",
+    });
+  });
+
+  test("cancelar con motivo lo envía tal cual a la mutación (TI2-163)", async () => {
+    const fake = createFakeClient({
+      mutation: { [CANCEL_APPOINTMENT]: () => ({ appointmentId: "aten-9" }) },
+    });
+
+    await fake.adapter().cancelReservation({ reservationId: "aten-9", reason: "Viaje" });
+
+    expect(fake.calls[0]?.args).toEqual({
+      appointmentId: "aten-9",
+      reason: "Viaje",
+      version: "v1",
+    });
+  });
+
+  test("el cupo presencial trae la ubicación y el acceso de su sala (TI2-163)", async () => {
+    const LOCATION = {
+      campus: "San Juan Pablo II",
+      building: "A",
+      floor: "1",
+      room: "101",
+      accessConditions: "Rampa en la entrada.",
+      arrivalInstructions: "Primera puerta a la derecha.",
+    };
+    const fake = createFakeClient({
+      query: {
+        [SEARCH_SLOTS]: () => slotsPage([{ ...SLOT_IN_PERSON, space: LOCATION }]),
+        [LIST_SPACES]: () => page([SPACE]),
+      },
+    });
+
+    const result = await fake.adapter().searchSlots({ modality: "all", context: CONTEXT });
+
+    expect(result).toEqual({
+      status: "ok",
+      slots: [{ ...IN_PERSON, spaceLabel: expect.stringContaining("101"), space: LOCATION }],
+    });
+  });
+
+  test("reagendar envía el cupo elegido con la forma de la reserva (TI2-163)", async () => {
+    const fake = createFakeClient({
+      mutation: { [RESCHEDULE_APPOINTMENT]: () => ({ appointmentId: "aten-9" }) },
+    });
+
+    const result = await fake
+      .adapter()
+      .rescheduleAppointment({ appointmentId: "aten-9", slot: { ...SLOT_IN_PERSON } });
+
+    expect(fake.calls).toEqual([
+      {
+        name: RESCHEDULE_APPOINTMENT,
+        kind: "mutation",
+        args: {
+          appointmentId: "aten-9",
+          professionalId: "pro-1",
+          modality: "inPerson",
+          spaceId: "esp-1",
+          startAt: SLOT_IN_PERSON.startAt,
+          endAt: SLOT_IN_PERSON.endAt,
+          version: "v1",
+        },
+      },
+    ]);
+    expect(result).toEqual({ status: "rescheduled", appointmentId: "aten-9" });
+  });
+
+  test.each([
+    ["conflicto", publicError("conflict", "Conflicto"), { status: "conflict", code: "conflict" }],
+    [
+      "falta de cupo",
+      publicError("no_availability", "Sin cupo"),
+      { status: "no_availability", code: "no_availability" },
+    ],
+    ["denegación", publicError("unauthorized", "No autorizado"), { status: "denied" }],
+  ])("reagendar traduce %s (TI2-163)", async (_name, handler, expected) => {
+    const fake = createFakeClient({ mutation: { [RESCHEDULE_APPOINTMENT]: handler } });
+
+    await expect(
+      fake.adapter().rescheduleAppointment({ appointmentId: "aten-9", slot: { ...SLOT_ONLINE } }),
+    ).resolves.toEqual(expected);
+  });
+
+  test("un fallo técnico al reagendar usa un mensaje seguro (TI2-163)", async () => {
+    const fake = createFakeClient({
+      mutation: {
+        [RESCHEDULE_APPOINTMENT]: () => {
+          throw new Error("detalle interno");
+        },
+      },
+    });
+
+    const result = await fake
+      .adapter()
+      .rescheduleAppointment({ appointmentId: "aten-9", slot: { ...SLOT_ONLINE } });
+
+    expect(result).toMatchObject({
+      status: "error",
+      error: { message: "No pudimos cambiar el horario. Inténtalo de nuevo." },
+    });
+    expect(JSON.stringify(result)).not.toContain("detalle interno");
+  });
+
+  test("la justificación envía la explicación y la recepción del respaldo (TI2-163)", async () => {
+    const fake = createFakeClient({
+      mutation: { [SUBMIT_JUSTIFICATION]: () => ({ appointmentId: "aten-9" }) },
+    });
+
+    const result = await fake.adapter().submitAppointmentJustification({
+      appointmentId: "aten-9",
+      explanation: "Se suspendió el transporte.",
+      supportingDocumentReceived: true,
+    });
+
+    expect(result).toEqual({ status: "submitted" });
+    expect(fake.calls[0]?.args).toEqual({
+      appointmentId: "aten-9",
+      explanation: "Se suspendió el transporte.",
+      supportingDocumentReceived: true,
+      version: "v1",
+    });
+  });
+
+  test("una justificación fuera de plazo conserva el error público (TI2-163)", async () => {
+    const fake = createFakeClient({
+      mutation: { [SUBMIT_JUSTIFICATION]: publicError("conflict", "Conflicto público") },
+    });
+
+    await expect(
+      fake.adapter().submitAppointmentJustification({
+        appointmentId: "aten-9",
+        explanation: "Tarde",
+        supportingDocumentReceived: false,
+      }),
+    ).resolves.toEqual({
+      status: "error",
+      error: { code: "conflict", message: "Conflicto público" },
+    });
+  });
+
+  test.each([
+    [{ status: "pending", version: "v1" }, { status: "pending" }],
+    [
+      { status: "available", link: "https://meet.google.com/sol-casa-pan", version: "v1" },
+      { status: "available", link: "https://meet.google.com/sol-casa-pan" },
+    ],
+    [{ status: "not_applicable", version: "v1" }, { status: "not_applicable" }],
+  ])("el acceso en línea traduce %o (TI2-163)", async (view, expected) => {
+    const fake = createFakeClient({ query: { [GET_ONLINE_ACCESS]: () => view } });
+
+    await expect(fake.adapter().getOnlineAccess("aten-9")).resolves.toEqual(expected);
+    expect(fake.calls[0]?.args).toEqual({ appointmentId: "aten-9", version: "v1" });
+  });
+
+  test("el acceso en línea de quien no participa responde denegación (TI2-163)", async () => {
+    const fake = createFakeClient({
+      query: { [GET_ONLINE_ACCESS]: publicError("unauthorized", "No autorizado") },
+    });
+
+    await expect(fake.adapter().getOnlineAccess("ajena")).resolves.toEqual({ status: "denied" });
+  });
+});
+
+describe("vista del Estudiante con justificación (TI2-163)", () => {
+  test("el detalle compartido trae el acompañamiento y la revisión, sin motivo profesional", async () => {
+    const shared = {
+      ...fullProjection(),
+      status: "no_show",
+      justificationExplanation: "Se suspendió el transporte.",
+      justificationSubmittedAt: Date.UTC(2026, 4, 13, 12, 0),
+      justificationReview: "rejected",
+      justificationReviewExplanation: "Falta el respaldo.",
+      supportingDocumentReceived: false,
+      view: "shared",
+    };
+    const fake = createFakeClient({ query: { [GET_APPOINTMENT]: () => shared } });
+
+    const result = await fake.adapter().getAppointment("aten-1");
+
+    expect(result).toEqual({
+      status: "ok",
+      appointment: {
+        id: "aten-1",
+        accompanimentId: "acompanamiento-1",
+        status: "no_show",
+        modality: "inPerson",
+        spaceId: "esp-1",
+        startAt: shared.startAt,
+        endAt: shared.endAt,
+        justificationExplanation: "Se suspendió el transporte.",
+        justificationSubmittedAt: shared.justificationSubmittedAt,
+        justificationReview: "rejected",
+        justificationReviewExplanation: "Falta el respaldo.",
+        supportingDocumentReceived: false,
+      },
     });
   });
 });

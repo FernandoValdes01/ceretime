@@ -22,6 +22,9 @@ import {
   type ListAppointmentsResult,
   type ListAvailabilityResult,
   type ListSpacesResult,
+  type OnlineAccessResult,
+  type RescheduleAppointmentInput,
+  type RescheduleAppointmentResult,
   type ReserveSlotInput,
   type ReserveSlotResult,
   type SaveBlockInput,
@@ -34,6 +37,8 @@ import {
   type SetSpaceActiveResult,
   type SlotModalityFilter,
   type SlotSearchResult,
+  type SubmitAppointmentJustificationInput,
+  type SubmitAppointmentJustificationResult,
 } from "../../application/agenda/agenda-port.ts";
 
 /**
@@ -377,6 +382,35 @@ export function createFictitiousAgendaAdapter(): AgendaPort {
       return input.reservationId.startsWith(FICTIONAL_RESERVATION_PREFIX)
         ? { status: "cancelled" }
         : { status: "denied" };
+    },
+    // Cambio de horario, justificación y acceso en línea simulados (TI2-163):
+    // solo para pruebas aisladas. Responden con la forma del contrato sin
+    // persistir, revalidar cupos ni decidir plazos: el adaptador Convex usa la
+    // API real.
+    async rescheduleAppointment(
+      input: RescheduleAppointmentInput,
+    ): Promise<RescheduleAppointmentResult> {
+      if (!appointments.some((item) => item.id === input.appointmentId)) {
+        return { status: "denied" };
+      }
+      if (FICTIONAL_CONFLICTING_SLOT_IDS.includes(input.slot.id)) {
+        return { status: "conflict", code: CONFLICT_ERROR_CODE };
+      }
+      return { status: "rescheduled", appointmentId: input.appointmentId };
+    },
+    async submitAppointmentJustification(
+      input: SubmitAppointmentJustificationInput,
+    ): Promise<SubmitAppointmentJustificationResult> {
+      return appointments.some((item) => item.id === input.appointmentId)
+        ? { status: "submitted" }
+        : { status: "denied" };
+    },
+    async getOnlineAccess(appointmentId: string): Promise<OnlineAccessResult> {
+      const found = appointments.find((item) => item.id === appointmentId);
+      if (found === undefined) {
+        return { status: "denied" };
+      }
+      return found.modality === "online" ? { status: "pending" } : { status: "not_applicable" };
     },
     async listAvailability(): Promise<ListAvailabilityResult> {
       return { status: "ok", blocks: FICTIONAL_BLOCKS, exceptions: FICTIONAL_EXCEPTIONS };

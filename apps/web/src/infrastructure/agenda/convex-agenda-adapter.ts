@@ -31,6 +31,9 @@ import type {
   ListAppointmentsResult,
   ListAvailabilityResult,
   ListSpacesResult,
+  OnlineAccessResult,
+  RescheduleAppointmentInput,
+  RescheduleAppointmentResult,
   ReserveSlotInput,
   ReserveSlotResult,
   SaveBlockInput,
@@ -43,6 +46,8 @@ import type {
   SetSpaceActiveResult,
   SlotSearchFilter,
   SlotSearchResult,
+  SubmitAppointmentJustificationInput,
+  SubmitAppointmentJustificationResult,
 } from "../../application/agenda/agenda-port.ts";
 import { publicErrorOf } from "../convex/public-error.ts";
 
@@ -113,6 +118,9 @@ const MISSING_CONTEXT_MESSAGE = "No pudimos identificar tu acompañamiento. Vuel
 const SEARCH_SLOTS_FALLBACK = "No pudimos cargar los horarios. Inténtalo de nuevo.";
 const RESERVE_SLOT_FALLBACK = "No pudimos confirmar la reserva. Inténtalo de nuevo.";
 const CANCEL_RESERVATION_FALLBACK = "No pudimos cancelar la reserva. Inténtalo de nuevo.";
+const RESCHEDULE_FALLBACK = "No pudimos cambiar el horario. Inténtalo de nuevo.";
+const SUBMIT_JUSTIFICATION_FALLBACK = "No pudimos enviar la justificación. Inténtalo de nuevo.";
+const LOAD_ONLINE_ACCESS_FALLBACK = "No pudimos cargar el acceso en línea. Inténtalo de nuevo.";
 const BOOKING_PROFESSIONAL_FALLBACK = "No pudimos cargar tu acompañamiento. Inténtalo de nuevo.";
 
 const LOAD_AVAILABILITY_FALLBACK = "No pudimos cargar la disponibilidad. Inténtalo de nuevo.";
@@ -210,21 +218,43 @@ function appointmentsArgs(nowMs: number): AppointmentsArgs {
 
 /** Recorta una proyección a la representación de la agenda, sin inventar campos. */
 function toAgendaAppointment(projection: AppointmentProjection): AgendaAppointment {
-  return {
+  const base = {
     id: projection.id,
     status: projection.status,
     modality: projection.modality,
     startAt: projection.startAt,
     endAt: projection.endAt,
-    ...("spaceId" in projection && projection.spaceId !== undefined
-      ? { spaceId: projection.spaceId }
-      : {}),
-    ...("originalStartAt" in projection && projection.originalStartAt !== undefined
-      ? { originalStartAt: projection.originalStartAt }
-      : {}),
+  };
+  // La vista minimizada del Practicante no trae vínculos, fechas originales ni
+  // justificación: se responde solo lo común.
+  if (projection.view === "minimized") {
+    return base;
+  }
+  return {
+    ...base,
+    accompanimentId: projection.accompanimentId,
+    ...(projection.spaceId === undefined ? {} : { spaceId: projection.spaceId }),
+    ...(projection.originalStartAt === undefined
+      ? {}
+      : { originalStartAt: projection.originalStartAt }),
     ...("cancelReason" in projection && projection.cancelReason !== undefined
       ? { cancelReason: projection.cancelReason }
       : {}),
+    ...(projection.justificationExplanation === undefined
+      ? {}
+      : { justificationExplanation: projection.justificationExplanation }),
+    ...(projection.justificationSubmittedAt === undefined
+      ? {}
+      : { justificationSubmittedAt: projection.justificationSubmittedAt }),
+    ...(projection.justificationReview === undefined
+      ? {}
+      : { justificationReview: projection.justificationReview }),
+    ...(projection.justificationReviewExplanation === undefined
+      ? {}
+      : { justificationReviewExplanation: projection.justificationReviewExplanation }),
+    ...(projection.supportingDocumentReceived === undefined
+      ? {}
+      : { supportingDocumentReceived: projection.supportingDocumentReceived }),
   };
 }
 
@@ -279,9 +309,13 @@ function mapSearchError(error: unknown): SlotSearchResult {
 
 /**
  * Lee `data.code` antes de clasificar: un fallo técnico lleva código `conflict`
- * en `classifyError` y no debe presentarse como un conflicto de reserva.
+ * en `classifyError` y no debe presentarse como un conflicto de reserva. La
+ * reserva y el cambio de horario comparten los mismos desenlaces.
  */
-function mapReserveError(error: unknown): ReserveSlotResult {
+function mapSlotCommandError(
+  error: unknown,
+  fallbackMessage: string,
+): Exclude<ReserveSlotResult, { status: "confirmed" }> {
   const code = publicErrorOf(error)?.code;
   if (code === CONFLICT_ERROR_CODE) {
     return { status: "conflict", code: CONFLICT_ERROR_CODE };
@@ -289,7 +323,7 @@ function mapReserveError(error: unknown): ReserveSlotResult {
   if (code === NO_AVAILABILITY_ERROR_CODE) {
     return { status: "no_availability", code: NO_AVAILABILITY_ERROR_CODE };
   }
-  const classified = classifyError(error, RESERVE_SLOT_FALLBACK);
+  const classified = classifyError(error, fallbackMessage);
   return "denied" in classified
     ? { status: "denied" }
     : { status: "error", error: classified.error };
@@ -458,6 +492,7 @@ export function createConvexAgendaAdapter(
           modality: slot.modality,
           ...(slot.spaceId === undefined ? {} : { spaceId: slot.spaceId }),
           ...(spaceLabel === undefined ? {} : { spaceLabel }),
+          ...(slot.space === undefined ? {} : { space: slot.space }),
         };
       });
       return { status: "ok", slots };
@@ -501,7 +536,7 @@ export function createConvexAgendaAdapter(
         },
       };
     } catch (error) {
-      return mapReserveError(error);
+      return mapSlotCommandError(error, RESERVE_SLOT_FALLBACK);
     }
   }
 
@@ -511,11 +546,78 @@ export function createConvexAgendaAdapter(
     try {
       await client.mutation(api.presentation.appointments.cancelAppointment, {
         appointmentId: input.reservationId,
+        ...(input.reason === undefined ? {} : { reason: input.reason }),
         version: APPOINTMENT_CONTRACT_VERSION,
       });
       return { status: "cancelled" };
     } catch (error) {
       return mapCancelError(error);
+    }
+  }
+
+  /**
+   * Cambio de horario (TI2-121, TI2-163): envía el cupo elegido con la misma
+   * forma que la reserva. El Backend revalida cupo, compatibilidad y cruces, y
+   * si responde error la atención conserva su horario anterior.
+   */
+  async function rescheduleAppointment(
+    input: RescheduleAppointmentInput,
+  ): Promise<RescheduleAppointmentResult> {
+    const { slot } = input;
+    try {
+      const { appointmentId } = await client.mutation(
+        api.presentation.appointments.rescheduleAppointment,
+        {
+          appointmentId: input.appointmentId,
+          professionalId: slot.professionalId,
+          modality: slot.modality,
+          ...(slot.spaceId === undefined ? {} : { spaceId: slot.spaceId }),
+          startAt: slot.startAt,
+          endAt: slot.endAt,
+          version: APPOINTMENT_CONTRACT_VERSION,
+        },
+      );
+      return { status: "rescheduled", appointmentId };
+    } catch (error) {
+      return mapSlotCommandError(error, RESCHEDULE_FALLBACK);
+    }
+  }
+
+  /** Entrega de la justificación de una inasistencia (TI2-119). */
+  async function submitAppointmentJustification(
+    input: SubmitAppointmentJustificationInput,
+  ): Promise<SubmitAppointmentJustificationResult> {
+    try {
+      await client.mutation(api.presentation.appointments.submitAppointmentJustification, {
+        appointmentId: input.appointmentId,
+        explanation: input.explanation,
+        supportingDocumentReceived: input.supportingDocumentReceived,
+        version: APPOINTMENT_CONTRACT_VERSION,
+      });
+      return { status: "submitted" };
+    } catch (error) {
+      const classified = classifyError(error, SUBMIT_JUSTIFICATION_FALLBACK);
+      return "denied" in classified
+        ? { status: "denied" }
+        : { status: "error", error: classified.error };
+    }
+  }
+
+  /** Acceso a la atención en línea (TI2-142); el enlace solo llega si está disponible. */
+  async function getOnlineAccess(appointmentId: string): Promise<OnlineAccessResult> {
+    try {
+      const view = await client.query(api.presentation.appointments.getOnlineAccess, {
+        appointmentId,
+        version: APPOINTMENT_CONTRACT_VERSION,
+      });
+      return view.status === "available"
+        ? { status: "available", link: view.link }
+        : { status: view.status };
+    } catch (error) {
+      const classified = classifyError(error, LOAD_ONLINE_ACCESS_FALLBACK);
+      return "denied" in classified
+        ? { status: "denied" }
+        : { status: "error", message: classified.error.message };
     }
   }
 
@@ -718,9 +820,10 @@ export function createConvexAgendaAdapter(
           version: APPOINTMENT_CONTRACT_VERSION,
         });
       } else {
-        // El reagendamiento exige elegir un cupo (TI2-121) y la justificación
-        // de inasistencia no está publicada (TI2-119): la UI no los ofrece y
-        // el adaptador tampoco los simula.
+        // El reagendamiento exige elegir un cupo y la justificación la entrega
+        // el Estudiante: tienen sus propias operaciones del puerto
+        // (`rescheduleAppointment`, `submitAppointmentJustification`), no un
+        // cambio de estado directo.
         return {
           status: "error",
           error: {
@@ -945,6 +1048,9 @@ export function createConvexAgendaAdapter(
     searchSlots,
     reserveSlot,
     cancelReservation,
+    rescheduleAppointment,
+    submitAppointmentJustification,
+    getOnlineAccess,
     findBookingProfessionals,
     listSpaces: readSpaces,
     saveSpace,

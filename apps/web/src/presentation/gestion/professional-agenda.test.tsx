@@ -134,6 +134,9 @@ function puertoAgendaBase(): AgendaPort {
       }),
     // Cancelación visible (TI2-113): la agenda del Profesional no cancela.
     cancelReservation: () => Promise.resolve({ status: "denied" }),
+    rescheduleAppointment: () => Promise.resolve({ status: "denied" }),
+    submitAppointmentJustification: () => Promise.resolve({ status: "denied" }),
+    getOnlineAccess: () => Promise.resolve({ status: "denied" }),
     listAvailability: () => Promise.resolve({ status: "empty" }),
     saveBlock: () =>
       Promise.resolve({

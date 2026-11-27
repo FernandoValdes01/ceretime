@@ -12,11 +12,12 @@ import {
   type OfficialChannelCoordination,
   type PublicApiError,
   type Space,
+  type SpaceFields,
 } from "../../../../../convex/domain/index.ts";
 
 /**
  * Contrato de capacidades de agenda del cliente Web (TI2-101, TI2-102,
- * TI2-103, TI2-04, TI2-113, TI2-115).
+ * TI2-103, TI2-04, TI2-113, TI2-115, TI2-163).
  *
  * Es únicamente el contrato para poder sustituir el adaptador ficticio por
  * la API real (TI2-123/TI2-125): deriva tipos compartidos y no implementa
@@ -26,7 +27,9 @@ import {
  * reserva y agrega la cancelación visible, y TI2-115 con la agenda del
  * Profesional; no crear otro puerto por operación. La vista propia del Estudiante (TI2-114) reutiliza
  * `listAppointments`/`getAppointment` sin capacidades nuevas: el rol queda
- * resuelto por el Backend.
+ * resuelto por el Backend. TI2-163 suma el cambio de horario, el motivo de la
+ * cancelación, la entrega de la justificación y el acceso en línea del
+ * Estudiante.
  */
 
 /** Filtro de modalidad de la búsqueda; `all` es solo vista del cliente. */
@@ -43,6 +46,12 @@ export type AgendaSlot = Pick<
   readonly spaceId?: string;
   /** Resumen legible del espacio; ausente en modalidad en línea. */
   readonly spaceLabel?: string;
+  /**
+   * Ubicación y acceso de la sala que entrega la búsqueda (TI2-144): campus,
+   * edificio, piso, sala, condiciones e instrucciones de llegada. Ausente en
+   * modalidad en línea.
+   */
+  readonly space?: SpaceFields;
 };
 
 /**
@@ -131,10 +140,13 @@ export type ReserveSlotResult =
 /**
  * Entrada de la cancelación visible (TI2-113): referencia opaca a la
  * reserva confirmada, devuelta por el comprobante. La UI nunca prueba
- * propiedad con ella: la autorización efectiva es del Backend.
+ * propiedad con ella: la autorización efectiva es del Backend. El motivo
+ * (TI2-163) viaja solo si la persona lo escribió; si es obligatorio lo decide
+ * la transición del dominio y el Backend lo exige de nuevo.
  */
 export type CancelReservationInput = {
   readonly reservationId: string;
+  readonly reason?: string;
 };
 
 /**
@@ -145,6 +157,55 @@ export type CancelReservationResult =
   | { readonly status: "cancelled" }
   | { readonly status: "denied" }
   | { readonly status: "error"; readonly error: PublicApiError };
+
+/**
+ * Entrada del cambio de horario del Estudiante (TI2-163): la atención que se
+ * mueve y el cupo elegido en la misma búsqueda de la reserva. El Backend
+ * revalida el cupo con la regla de la reserva y descuenta la atención que se
+ * mueve; la UI no decide compatibilidad ni cruces.
+ */
+export type RescheduleAppointmentInput = {
+  readonly appointmentId: string;
+  readonly slot: AgendaSlot;
+};
+
+/**
+ * Resultado del cambio de horario: los mismos desenlaces de la reserva. Si
+ * falla, la atención conserva su horario anterior en el Backend.
+ */
+export type RescheduleAppointmentResult =
+  | { readonly status: "rescheduled"; readonly appointmentId: string }
+  | { readonly status: "conflict"; readonly code: typeof CONFLICT_ERROR_CODE }
+  | { readonly status: "no_availability"; readonly code: typeof NO_AVAILABILITY_ERROR_CODE }
+  | { readonly status: "denied" }
+  | { readonly status: "error"; readonly error: PublicApiError };
+
+/**
+ * Entrega de la justificación de una inasistencia (TI2-119, TI2-163). El
+ * respaldo no se sube: `supportingDocumentReceived` declara que se entregó por
+ * un canal institucional. El plazo lo decide el Backend con su reloj.
+ */
+export type SubmitAppointmentJustificationInput = {
+  readonly appointmentId: string;
+  readonly explanation: string;
+  readonly supportingDocumentReceived: boolean;
+};
+
+export type SubmitAppointmentJustificationResult =
+  | { readonly status: "submitted" }
+  | { readonly status: "denied" }
+  | { readonly status: "error"; readonly error: PublicApiError };
+
+/**
+ * Acceso a la atención en línea (TI2-142): el enlace privado solo viaja cuando
+ * está disponible y solo a quienes participan de la atención.
+ */
+export type OnlineAccessResult =
+  | { readonly status: "pending" }
+  | { readonly status: "available"; readonly link: string }
+  | { readonly status: "not_applicable" }
+  | { readonly status: "denied" }
+  | { readonly status: "error"; readonly message: string };
 
 /**
  * Entrada del editor de bloques (TI2-103): forma tipada sin identidad ni
@@ -258,6 +319,10 @@ export type EditorExceptionKind = AvailabilityExceptionKind;
  * original conservada y motivo de cancelación propios). No trae identidad
  * del estudiante: el Backend decide qué datos de acompañamiento aparecen y
  * nunca se filtran necesidades de acceso de terceros ni notas internas.
+ *
+ * TI2-163 suma el acompañamiento, para volver a buscar horarios al reagendar,
+ * y la recepción y revisión de la justificación de una inasistencia. Son
+ * opcionales porque la vista minimizada del Practicante no los trae.
  */
 export type AgendaAppointment = Pick<
   Appointment,
@@ -269,7 +334,14 @@ export type AgendaAppointment = Pick<
   | "spaceId"
   | "originalStartAt"
   | "cancelReason"
->;
+  | "justificationExplanation"
+  | "justificationSubmittedAt"
+  | "justificationReview"
+  | "justificationReviewExplanation"
+  | "supportingDocumentReceived"
+> & {
+  readonly accompanimentId?: string;
+};
 
 /** Lista de las atenciones propias del rol vigente (Profesional en TI2-115, Estudiante en TI2-114); el Backend resuelve el rol. */
 export type ListAppointmentsResult =
@@ -320,6 +392,11 @@ export interface AgendaPort {
   searchSlots(filter: SlotSearchFilter): Promise<SlotSearchResult>;
   reserveSlot(input: ReserveSlotInput): Promise<ReserveSlotResult>;
   cancelReservation(input: CancelReservationInput): Promise<CancelReservationResult>;
+  rescheduleAppointment(input: RescheduleAppointmentInput): Promise<RescheduleAppointmentResult>;
+  submitAppointmentJustification(
+    input: SubmitAppointmentJustificationInput,
+  ): Promise<SubmitAppointmentJustificationResult>;
+  getOnlineAccess(appointmentId: string): Promise<OnlineAccessResult>;
   listAvailability(): Promise<ListAvailabilityResult>;
   saveBlock(input: SaveBlockInput): Promise<SaveBlockResult>;
   saveException(input: SaveExceptionInput): Promise<SaveExceptionResult>;
