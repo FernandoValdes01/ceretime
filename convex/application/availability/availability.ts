@@ -95,7 +95,8 @@ export function isValidTimeZone(timeZone: string): boolean {
   }
 }
 
-function isValidSearchRange(from: string, to: string): boolean {
+/** Rango civil de búsqueda: dos fechas válidas, la primera no posterior a la segunda. */
+export function isValidSearchRange(from: string, to: string): boolean {
   return isValidCivilDate(from) && isValidCivilDate(to) && from <= to;
 }
 

@@ -137,6 +137,20 @@ export interface SlotOccupancyReader {
 }
 
 /**
+ * Atenciones del profesional en un intervalo (TI4-84), para elegir entre
+ * cupos equivalentes de varios profesionales: se ofrece el de menos atenciones
+ * esa semana. Cuenta las atenciones no canceladas en que es responsable, con
+ * inicio en `[startAt, endAt)`.
+ */
+export interface ProfessionalLoadReader {
+  countProfessionalAppointments(input: {
+    readonly professionalId: string;
+    readonly startAt: number;
+    readonly endAt: number;
+  }): Promise<number>;
+}
+
+/**
  * Espacios para la compatibilidad de TI2-82. La sala retirada (`null`) no se
  * ofrece; los apoyos en línea cubren las necesidades de esa modalidad.
  */
