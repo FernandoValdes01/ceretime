@@ -554,6 +554,7 @@ export interface PersistedAppointmentTransition {
   readonly justificationExplanation?: string;
   readonly justificationSubmittedAt?: number;
   readonly justificationReview?: Doc<"appointments">["justificationReview"];
+  readonly justificationReviewExplanation?: string;
   readonly supportingDocumentReceived?: boolean;
 }
 
@@ -583,6 +584,9 @@ export async function persistAppointmentTransition(
     ...(fields.justificationReview === undefined
       ? {}
       : { justificationReview: fields.justificationReview }),
+    ...(fields.justificationReviewExplanation === undefined
+      ? {}
+      : { justificationReviewExplanation: fields.justificationReviewExplanation }),
     ...(fields.supportingDocumentReceived === undefined
       ? {}
       : { supportingDocumentReceived: fields.supportingDocumentReceived }),
@@ -617,6 +621,9 @@ export function appointmentTransitionRepository(ctx: MutationCtx) {
           ...(doc.justificationReview === undefined
             ? {}
             : { justificationReview: doc.justificationReview }),
+          ...(doc.justificationReviewExplanation === undefined
+            ? {}
+            : { justificationReviewExplanation: doc.justificationReviewExplanation }),
           ...(doc.supportingDocumentReceived === undefined
             ? {}
             : { supportingDocumentReceived: doc.supportingDocumentReceived }),
@@ -633,6 +640,7 @@ export function appointmentTransitionRepository(ctx: MutationCtx) {
           readonly justificationExplanation?: string;
           readonly justificationSubmittedAt?: number;
           readonly justificationReview?: Doc<"appointments">["justificationReview"];
+          readonly justificationReviewExplanation?: string;
           readonly supportingDocumentReceived?: boolean;
         },
       ) => {
@@ -726,6 +734,9 @@ export function appointmentChangeReader(ctx: DbReader) {
         ...(doc.justificationReview === undefined
           ? {}
           : { justificationReview: doc.justificationReview }),
+        ...(doc.justificationReviewExplanation === undefined
+          ? {}
+          : { justificationReviewExplanation: doc.justificationReviewExplanation }),
         ...(doc.supportingDocumentReceived === undefined
           ? {}
           : { supportingDocumentReceived: doc.supportingDocumentReceived }),
@@ -1114,6 +1125,9 @@ function toAgendaAppointment(doc: Doc<"appointments">) {
     ...(doc.justificationReview === undefined
       ? {}
       : { justificationReview: doc.justificationReview }),
+    ...(doc.justificationReviewExplanation === undefined
+      ? {}
+      : { justificationReviewExplanation: doc.justificationReviewExplanation }),
     ...(doc.supportingDocumentReceived === undefined
       ? {}
       : { supportingDocumentReceived: doc.supportingDocumentReceived }),

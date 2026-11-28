@@ -1,0 +1,2 @@
+# El contenedor ejecuta este script con bash: debe conservar fines de línea LF.
+docker/convex/start.sh text eol=lf

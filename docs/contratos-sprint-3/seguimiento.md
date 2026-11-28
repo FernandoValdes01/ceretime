@@ -225,6 +225,10 @@ TI2-152 agrega estas reglas al cambio:
 - Un acompañamiento cerrado no admite conceder ni modificar accesos (`conflict`). Retirar un acceso sigue permitido.
 - Retirar a un profesional no cancela ni reasigna sus atenciones futuras: siguen a su nombre y solo el Estudiante puede cancelarlas o cambiarles el horario, con el acompañamiento activo. El cierre sí las cancela.
 
+### Cambio de practicantes — TI2-170
+
+El cambio se hace con `assignAccompanimentAccess`, `updateAccompanimentAccess` y `revokeAccompanimentAccess` de TI2-140, con `assignedRole: "intern"`. El contrato completo de la gestión desde la Web del Profesional (habilitación, listado de practicantes y accesos por acompañamiento) vive en `docs/contratos-sprint-3/cuentas.md`, junto a TI2-140; acá solo queda el enlace para no duplicarlo. Quien se retira pierde el acceso en la consulta siguiente aunque conserve el enlace: la vista del practicante (TI2-116) reemplaza el contenido por el aviso de acceso denegado.
+
 ```ts
 const preview = useQuery(api.presentation.accompaniments.getAccompanimentClosurePreview, {
   accompanimentId,

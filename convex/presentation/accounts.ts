@@ -6,6 +6,7 @@ import {
   enableTestProfessionalAccount,
   getAccountDetailUseCase,
   listAccountsUseCase,
+  listInternAccountsUseCase,
   revokeStaffAccount,
 } from "../application/accounts/enablement";
 import { mutation, query } from "../_generated/server";
@@ -138,5 +139,23 @@ export const enableTestProfessional = mutation({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     return unwrapApiResult(await enableTestProfessionalAccount(ctx, identity, args));
+  },
+});
+
+/**
+ * Lista paginada de cuentas practicantes para la gestión del Profesional
+ * (TI2-170).
+ *
+ * La llama el profesional de personal con cuenta habilitada y vigente o el
+ * administrador vigente. Devuelve el detalle mínimo, sin `tokenIdentifier`,
+ * acompañamientos ni notas. La autorización vive en Aplicación y la
+ * denegación es genérica, sin revelar existencia.
+ */
+export const listInternAccounts = query({
+  args: { paginationOpts: paginationOptsValidator },
+  returns: paginationResultValidator(accountSummaryValidator),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(await listInternAccountsUseCase(ctx, identity, args));
   },
 });

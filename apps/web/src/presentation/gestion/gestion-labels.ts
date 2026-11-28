@@ -57,6 +57,8 @@ const APPOINTMENT_REJECTION_MESSAGES: Record<AppointmentRejectionCause, string> 
   current_start_invalid: "La atención no trae una fecha de inicio válida.",
   reason_required: "El motivo es obligatorio para este cambio.",
   occurred_before_start: "No se puede registrar este cambio antes de la hora de la atención.",
+  cancel_after_start: "No se puede cancelar una atención ya iniciada.",
+  reschedule_after_start: "No se puede reagendar una atención ya iniciada.",
   reschedule_required: "Reagendar requiere la nueva fecha de la atención.",
   reschedule_invalid: "La nueva fecha del reagendamiento es inválida.",
 };

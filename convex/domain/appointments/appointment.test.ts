@@ -178,6 +178,50 @@ describe("Política de transición de la atención (TI2-93)", () => {
     expect(studentWithReason.cancelReason).toBe("Tope de horario");
   });
 
+  test("cancelar y reagendar se rechazan desde el inicio de la atención", () => {
+    for (const to of ["cancelled_by_student", "cancelled_by_cereti"] as const) {
+      const atStart = transitionAppointment({
+        from: "scheduled",
+        to,
+        actorId: "actor-ficticio",
+        occurredAt: 2000,
+        currentStartAt: 2000,
+        ...(to === "cancelled_by_cereti" ? { reason: "Motivo ficticio" } : {}),
+      });
+      expect(atStart).toEqual({ status: "rejected", cause: "cancel_after_start" });
+
+      const after = transitionAppointment({
+        from: "scheduled",
+        to,
+        actorId: "actor-ficticio",
+        occurredAt: 3000,
+        currentStartAt: 2000,
+        ...(to === "cancelled_by_cereti" ? { reason: "Motivo ficticio" } : {}),
+      });
+      expect(after).toEqual({ status: "rejected", cause: "cancel_after_start" });
+    }
+
+    const reschedule = transitionAppointment({
+      from: "scheduled",
+      to: "rescheduled",
+      actorId: "actor-ficticio",
+      occurredAt: 2000,
+      currentStartAt: 2000,
+      newStartAt: 5000,
+      newEndAt: 6000,
+    });
+    expect(reschedule).toEqual({ status: "rejected", cause: "reschedule_after_start" });
+
+    const beforeStart = transitionAppointment({
+      from: "scheduled",
+      to: "cancelled_by_student",
+      actorId: "actor-ficticio",
+      occurredAt: 1000,
+      currentStartAt: 2000,
+    });
+    expect(beforeStart.status).toBe("applied");
+  });
+
   test("reagendamiento fija la fecha original y no la sobrescribe al encadenar", () => {
     const first = transitionAppointment({
       from: "scheduled",
@@ -1013,7 +1057,7 @@ describe("Invariantes límite de la atención (TI2-117)", () => {
     // Detecta un `<` en la validación del fin, que aceptaría una atención de cero minutos.
     expect(
       transitionAppointment(
-        attempt("scheduled", "rescheduled", { newStartAt: 5000, newEndAt: 5000 }),
+        attempt("scheduled", "rescheduled", { occurredAt: 1000, newStartAt: 5000, newEndAt: 5000 }),
       ),
     ).toEqual({ status: "rejected", cause: "reschedule_invalid" });
   });
