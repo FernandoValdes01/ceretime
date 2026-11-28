@@ -26,10 +26,12 @@ import type {
  * canal push, una suscripción vencida (`404`/`410`) se retira de inmediato.
  *
  * Antes de reservar, la compuerta del bloqueo (TI2-168) suspende el aviso
- * cuando el destinatario tiene un bloqueo vigente que cubre `notifications`:
- * la fila queda pendiente y vuelve a programarse al terminar el bloqueo. No
- * se envía, no se cuenta como intento y no se marca como entregada: suspender
- * el tratamiento no borra ni modifica el aviso ni su entrega.
+ * cuando el titular de su recurso —no necesariamente el destinatario— tiene
+ * un bloqueo vigente que cubre `notifications`: la fila queda pendiente y
+ * vuelve a programarse al terminar el bloqueo. No se envía, no se cuenta como
+ * intento y no se marca como entregada: suspender el tratamiento no borra ni
+ * modifica el aviso ni su entrega. Las respuestas a una solicitud de
+ * privacidad se entregan siempre, aunque ese bloqueo recién se haya creado.
  */
 
 export interface EmailDispatchDeps {

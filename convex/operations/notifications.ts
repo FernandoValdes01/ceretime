@@ -215,9 +215,12 @@ export const listActivePrivacyBlocks = internalQuery({
 /**
  * Compuerta de bloqueo de una entrega (TI2-168).
  *
- * Consulta los bloqueos vigentes del destinatario antes de reservar la fila.
- * Si alguno cubre `notifications`, devuelve el término del bloqueo para que
- * la entrega quede programada y pueda enviarse cuando el bloqueo termine.
+ * Consulta los bloqueos vigentes del titular de los datos antes de reservar
+ * la fila, no los del destinatario: un aviso al Profesional sobre la atención
+ * de un Estudiante bloqueado es tratamiento de esos datos. Si hay bloqueo,
+ * devuelve su término para programar la entrega cuando termine. Las respuestas
+ * a una solicitud de privacidad se entregan siempre: son la comunicación del
+ * ejercicio del derecho, no un tratamiento suspendido.
  */
 export const privacyDeliveryGate = internalQuery({
   args: { deliveryId: v.string(), now: v.number() },
@@ -232,9 +235,27 @@ export const privacyDeliveryGate = internalQuery({
     if (delivery === null || delivery.status === "sent") return { status: "ok" as const };
     const event = await ctx.db.get(delivery.eventId);
     if (event === null) return { status: "ok" as const };
+    // La respuesta a la propia solicitud de privacidad no se suspende: el
+    // titular debe enterarse de la concesión aunque el bloqueo recién creado
+    // cubra `notifications` (TI2-168).
+    if (isPrivacyNotificationEventKind(event.kind)) return { status: "ok" as const };
+
+    // El bloqueo se evalúa sobre el titular del recurso, igual que en las
+    // consultas y cambios: el estudiante de la atención o de la solicitud.
+    let subjectId: typeof event.recipientId = event.recipientId;
+    if (event.appointmentId !== undefined) {
+      const appointment = await ctx.db.get(event.appointmentId);
+      if (appointment !== null) subjectId = appointment.studentId;
+    } else if (event.privacyRequestId !== undefined) {
+      const privacyRequest = await ctx.db.get(event.privacyRequestId);
+      if (privacyRequest !== null) subjectId = privacyRequest.requesterId;
+    } else if (event.requestId !== undefined) {
+      const request = await ctx.db.get(event.requestId);
+      if (request !== null) subjectId = request.studentId;
+    }
     const treatment = await guardPrivacyTreatment(
       { blocks: privacyBlockReader(ctx), now: () => args.now },
-      { subjectId: event.recipientId, category: "notifications", treatment: "notice" },
+      { subjectId, category: "notifications", treatment: "notice" },
     );
     if (treatment.status === "ok") return { status: "ok" as const };
     return { status: "blocked" as const, retryAt: treatment.endsAt };

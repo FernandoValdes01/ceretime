@@ -25,6 +25,7 @@ function context(
 ): CalendarSyncAppointmentContext {
   return {
     appointmentId: "appointment-1",
+    studentId: "user-student",
     status: "scheduled",
     startAt: START_AT,
     endAt: END_AT,
@@ -399,6 +400,7 @@ describe("sincronización automática con Calendar (TI2-162)", () => {
     } = { startsAt: newStart, endsAt: newEnd, status: "rescheduled" };
     const loadFresh = async (): Promise<CalendarSyncAppointmentContext> => ({
       appointmentId: "appointment-1",
+      studentId: "user-student",
       status: row.status as CalendarSyncAppointmentContext["status"],
       startAt: row.startsAt,
       endAt: row.endsAt,
@@ -535,7 +537,7 @@ describe("bloqueo de privacidad en la sincronización con Calendar (TI2-168)", (
 
     const result = await syncAppointmentToGoogleCalendar({
       ...deps,
-      privacy: blockedGuard(STUDENT),
+      privacy: blockedGuard("user-student"),
     });
 
     expect(result).toEqual({ status: "ok", data: { status: "pending" } });
@@ -544,7 +546,7 @@ describe("bloqueo de privacidad en la sincronización con Calendar (TI2-168)", (
     expect(reschedules()).toBe(0);
   });
 
-  test("con el dueño bloqueado tampoco se actualiza el evento existente", async () => {
+  test("con el titular bloqueado tampoco se actualiza el evento existente", async () => {
     const { deps, calls, recorded } = depsFor(
       context({
         ownerId: STUDENT,
@@ -556,7 +558,7 @@ describe("bloqueo de privacidad en la sincronización con Calendar (TI2-168)", (
 
     const result = await syncAppointmentToGoogleCalendar({
       ...deps,
-      privacy: blockedGuard(STUDENT),
+      privacy: blockedGuard("user-student"),
     });
 
     expect(result).toEqual({ status: "ok", data: { status: "pending" } });

@@ -212,6 +212,7 @@ export const loadAppointmentSyncContext = internalQuery({
     v.null(),
     v.object({
       ...calendarAppointmentContextShape.fields,
+      studentId: v.string(),
       ownerId: v.union(v.string(), v.null()),
       participants: v.array(v.object({ subject: v.string(), everLinked: v.boolean() })),
     }),
@@ -251,6 +252,7 @@ export const loadAppointmentSyncContext = internalQuery({
           };
     return {
       appointmentId: doc._id,
+      studentId: doc.studentId,
       status: doc.status,
       startAt: doc.startsAt,
       endAt: doc.endsAt,
@@ -455,6 +457,7 @@ export const syncAppointmentCalendar = internalAction({
   handler: async (ctx, args) => {
     const loaded: {
       readonly appointmentId: string;
+      readonly studentId: string;
       readonly status: typeof appointmentStatusUnion.type;
       readonly startAt: number;
       readonly endAt: number;
@@ -497,6 +500,7 @@ export const syncAppointmentCalendar = internalAction({
     const outcome = await syncAppointmentToGoogleCalendar({
       loadAppointment: async () => ({
         appointmentId: loaded.appointmentId,
+        studentId: loaded.studentId,
         status: loaded.status,
         startAt: loaded.startAt,
         endAt: loaded.endAt,
