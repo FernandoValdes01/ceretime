@@ -514,6 +514,7 @@ describe("navegación y protección (TI2-114)", () => {
       "Solicitudes",
       "Horarios",
       "Atenciones",
+      "Privacidad",
     ]);
     // La confirmación de reserva necesita el `slotId` que devuelve la
     // búsqueda de horarios: sin él la vista muestra «Cupo no disponible», así
