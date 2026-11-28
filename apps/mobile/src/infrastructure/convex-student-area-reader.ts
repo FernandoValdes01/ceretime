@@ -27,8 +27,6 @@ export function notifyStudentAreaChanged(): void {
 
 export interface ConvexStudentAreaReader extends StudentAreaReader {
   subscribe(onChange: () => void): () => void;
-  /** Provoca la recarga de quienes escuchan; lo usan los adaptadores que escriben. */
-  notifyChanged(): void;
 }
 
 /**
@@ -93,6 +91,5 @@ export function createConvexStudentAreaReader({
         changeListeners.delete(onChange);
       };
     },
-    notifyChanged: notifyStudentAreaChanged,
   };
 }

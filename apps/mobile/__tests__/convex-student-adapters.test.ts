@@ -7,7 +7,10 @@ import {
   StudentRequestActionError,
 } from "../src/application/student-area-port";
 import type { SubmitStudentRequestCommand } from "../src/domain/student-area-models";
-import { createConvexStudentAreaReader } from "../src/infrastructure/convex-student-area-reader";
+import {
+  createConvexStudentAreaReader,
+  notifyStudentAreaChanged,
+} from "../src/infrastructure/convex-student-area-reader";
 import { createConvexStudentRequestSubmitter } from "../src/infrastructure/convex-student-request-submitter";
 
 const student = { id: "users:student-1", displayName: "Ana Pérez", email: "ana@alu.uct.cl" };
@@ -149,9 +152,9 @@ describe("lector estudiantil sobre Convex", () => {
     const onChange = jest.fn();
     const unsubscribe = reader.subscribe?.(onChange);
 
-    reader.notifyChanged();
+    notifyStudentAreaChanged();
     unsubscribe?.();
-    reader.notifyChanged();
+    notifyStudentAreaChanged();
 
     expect(onChange).toHaveBeenCalledTimes(1);
   });
