@@ -26,7 +26,7 @@ Este documento está en curso. Fecha de corte: 27/11/2026.
 | Plazos de justificación | TI2-119 y TI2-147 | S4 | `572fa661` | Cumplido en pruebas existentes |
 | Reintentos y recuperación de avisos y Calendar | TI2-159, TI2-160 y TI2-162 | S4 | `572fa661` | Cumplido en pruebas existentes con dobles. Envío real pendiente |
 | Contratos completos para Web y Mobile | TI2-179 | S4 | `1a96cdff` | Cumplido con un hallazgo abierto |
-| Correo real | TI2-179 sobre TI2-159 | S4 | — | Pendiente: el deployment propio no tiene las credenciales del remitente |
+| Correo real | TI2-179 sobre TI2-159 | S4 | `572fa661` | Cumplido en el deployment de desarrollo, con un remitente de prueba (ver «Correo real») |
 | Push real | TI2-179 sobre TI2-160 | S4 | — | Pendiente: falta configurar VAPID y no hay pantalla para activarlo |
 | Google Calendar y `.ics` reales | TI2-179 sobre TI2-122, TI2-161 y TI2-162 | S4 | `572fa661` | Cumplido en el recorrido: vínculo, evento creado al reservar y `.ics` descargado |
 | Validación funcional por CERETI | CERETI | — | — | Pendiente. Fecha y responsable sin registrar |
@@ -73,8 +73,18 @@ Este documento está en curso. Fecha de corte: 27/11/2026.
 | 15 | Profesional, `revokeAccompanimentAccess` | Practicante revocado. Desde la llamada siguiente, `getAccompaniment` y `getFollowUpRecord` lo deniegan |
 | 16 | Profesional, `closeAccompaniment` y `reactivateAccompaniment` | Acompañamiento cerrado; reactivarlo responde `conflict` |
 | 17 | Estudiante, interfaz | Estado «Cerrado» con aviso de solo lectura, atenciones sin acciones de calendario, historial visible y sin el formulario de necesidades |
+| 18 | Cron de reintentos, tras cargar las credenciales a las 23:22 | Las cuatro entregas para el Estudiante, que llevaban 7 intentos con `not_configured`, pasan a `sent` en el intento 8 (23:29 y 23:34) sin que nadie repita la acción |
+| 19 | Cron de reintentos | La entrega para la cuenta ficticia del Profesional queda en `failed` con `invalid_destination` y sin más reintentos: su correo no está en `EMAIL_ALLOWED_RECIPIENTS` |
 
-**Capturas.** Calendar conectado, solicitud enviada, atención agregada a Google Calendar, evento en Google Calendar, seguimiento del Estudiante sin la nota interna y acompañamiento cerrado. Están en el cuerpo de la PR de TI2-179.
+**Capturas.** Calendar conectado, solicitud enviada, atención agregada a Google Calendar, evento en Google Calendar, seguimiento del Estudiante sin la nota interna, acompañamiento cerrado y correos genéricos recibidos. Están en el cuerpo de la PR de TI2-179.
+
+## Correo real
+
+**Configuración.** En el deployment de desarrollo se cargaron `GMAIL_SENDER_ADDRESS`, `GMAIL_SENDER_REFRESH_TOKEN` y `EMAIL_ALLOWED_RECIPIENTS` según `docs/operaciones/correo-institucional.md`. El token con alcance `gmail.send` se generó en OAuth 2.0 Playground con el cliente OAuth del proyecto de Google Cloud de CERETIME y lo cargó su titular, sin pasar por el repositorio ni por el chat. `EMAIL_ALLOWED_RECIPIENTS` contiene solo el buzón institucional del Estudiante del recorrido.
+
+**Excepción de desarrollo.** La guía pide un remitente institucional. En este deployment el remitente es una cuenta Gmail personal del responsable de TI2-179, agregada como usuario de prueba en el proyecto de Google Cloud por quien lo administra, porque la cuenta institucional no pudo autorizar `gmail.send`. El código no restringe el dominio del remitente (`convex/infrastructure/notifications/gmail_sender.ts`). Producción no cambia y sigue con el remitente que define TI2-159. Mientras la aplicación de Google siga en modo de prueba, el token vence a los 7 días.
+
+**Resultado.** Pasos 18 y 19 del recorrido. En el buzón del Estudiante llegaron los cuatro correos, todos con el asunto «Tienes una actualización pendiente» y el cuerpo «Revisa las novedades en la aplicación.», sin mencionar a CERETI, la solicitud, la sala ni las necesidades. Los avisos generados mientras faltaba la configuración no se perdieron: el cron los envió en cuanto existieron las credenciales.
 
 ## Cobertura existente por tema
 
@@ -103,7 +113,6 @@ Este documento está en curso. Fecha de corte: 27/11/2026.
 ## Partes faltantes
 
 - **Recorrido en la interfaz con los cuatro roles.** Hay una sola cuenta institucional; el Estudiante recorre la interfaz y los demás roles operan por la API pública con `--identity`. Ver las pantallas del Profesional, el Practicante y el Administrador requiere cuentas que puedan iniciar sesión.
-- **Correo real.** El deployment propio no tiene `GMAIL_SENDER_ADDRESS` ni `GMAIL_SENDER_REFRESH_TOKEN`.
 - **Push real.** Falta cargar `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` y `VAPID_SUBJECT`. Además, la Web tiene el service worker y el adaptador del navegador, pero ninguna pantalla permite activar push.
 - **Formato de error de acompañamientos.** Las consultas de `presentation/accompaniments` rechazan con el mensaje «No autorizado» sin el objeto `{ code, message }` que solicitudes adoptó en TI2-181. El recorrido lo confirma: al Practicante revocado, `getAccompaniment` responde `No autorizado` y `getFollowUpRecord`, `{"code":"unauthorized","message":"No autorizado"}`. No impide el uso, pero un cliente nuevo debe tratar las dos formas.
 - **Validaciones de CERETI.** Sin fecha ni responsable.
