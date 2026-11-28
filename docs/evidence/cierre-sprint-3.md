@@ -12,7 +12,7 @@ Este documento está en curso. Fecha de corte: 27/11/2026.
 - **Pruebas automáticas:** `convex-test` con identidades simuladas; no usan un deployment.
 - **Recorrido en la interfaz:** deployment de desarrollo propio de Convex con `TEST_SEEDS_ENABLED=true` y la Web local. La carga de `operations/fictitiousData:load` se rechaza en producción, por diseño.
 - **Cuentas que pueden iniciar sesión:** solo `@alu.uct.cl` y `@uct.cl` (`hd` en `convex/infrastructure/auth/google_providers.ts`). Las cuentas del dataset usan el emisor inventado `dataset-ficticio` y no pueden iniciar sesión.
-- **Producción:** fuera de este documento por ahora. Se registra aparte cómo se demuestra en el despliegue de la universidad.
+- **Producción:** Web en `https://ceretime.inf.uct.cl` y Convex propio en el Kubero de la universidad, sin semillas. Lo comprobado está en «Producción».
 
 ## Criterios
 
@@ -96,7 +96,23 @@ Este documento está en curso. Fecha de corte: 27/11/2026.
 
 **Resultado.** Pasos 20 y 21 del recorrido. El aviso salió por push y por correo al primer intento y el Estudiante vio la notificación del sistema. Su texto lo define `toExternalNotification`, el mismo que usa el correo, sin mencionar a CERETI ni el recurso.
 
-**Pantalla.** Después del recorrido, TI2-172 (#214) agregó la activación de push en `/estudiante/avisos` y `/profesional/avisos`, con las mismas funciones. Se prueba en producción cuando la Web de producción se actualice (ver «Partes faltantes»).
+**Pantalla.** Después del recorrido, TI2-172 (#214) agregó la activación de push en `/estudiante/avisos` y `/profesional/avisos`, con las mismas funciones. En producción la pantalla responde que push no está disponible, porque ese deployment no tiene `VAPID_*` (ver «Producción»).
+
+## Producción
+
+Comprobado el 28/11/2026 sobre `main` en `a0f66279`, con la cuenta institucional del responsable como Estudiante y datos ficticios.
+
+| Comprobación | Resultado |
+| --- | --- |
+| Despliegue | Desde #213 (TI2-171) fallaba la construcción de la imagen Web, porque `privacy-notice.ts` importa `docs/privacidad-aviso.md` y el Dockerfile no lo copiaba; «Deploy to Kubero» quedaba omitido mientras Convex sí se desplegaba. Corregido en `a0f66279`: la imagen se construye y Kubero publica la Web al día |
+| Cabeceras de `ceretime.inf.uct.cl` | CSP con `connect-src` limitado a la propia Web y al Convex de Kubero, `Strict-Transport-Security`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` y `Referrer-Policy` |
+| Backend | `/version` del Convex de Kubero responde 200 y el bundle apunta a `ceretime-convex.inf.uct.cl` |
+| Inicio de sesión | La cuenta institucional entra al Portal del Estudiante |
+| Solicitud | Una solicitud ficticia queda registrada y genera el aviso «Se recibió una solicitud», pendiente en `/estudiante/avisos` |
+| Push | La pantalla responde «Los avisos push no están disponibles por ahora»: el deployment no tiene `VAPID_*` y el aviso sigue en la bandeja |
+| Google Calendar | Conectado desde la misma pantalla |
+
+**Captura.** Bandeja de avisos del Estudiante en producción, en el cuerpo de la PR de TI2-179.
 
 ## Cobertura existente por tema
 
@@ -125,7 +141,7 @@ Este documento está en curso. Fecha de corte: 27/11/2026.
 ## Partes faltantes
 
 - **Recorrido en la interfaz con los cuatro roles.** Hay una sola cuenta institucional; el Estudiante recorre la interfaz y los demás roles operan por la API pública con `--identity`. Ver las pantallas del Profesional, el Practicante y el Administrador requiere cuentas que puedan iniciar sesión.
-- **Web de producción sin actualizar.** Desde #213 (TI2-171) falla la construcción de la imagen Web: `privacy-notice.ts` importa `docs/privacidad-aviso.md` y `apps/web/Dockerfile` no copia `docs/`. Por eso «Deploy to Kubero» queda omitido y `ceretime.inf.uct.cl` sirve el build del 27/11/2026 a las 21:48, mientras Convex sí se despliega. La corrección del Dockerfile va en una PR aparte.
+- **Producción con los cuatro roles.** En producción solo se recorrió el Estudiante. Faltan el primer Administrador (el primer ingreso crea un perfil y `ensureBootstrapAdmin` lo rechaza), cuentas del Profesional y del Practicante que puedan iniciar sesión, y las variables `GMAIL_*` y `VAPID_*` para el correo y push reales.
 - **Formato de error de acompañamientos.** Las consultas de `presentation/accompaniments` rechazan con el mensaje «No autorizado» sin el objeto `{ code, message }` que solicitudes adoptó en TI2-181. El recorrido lo confirma: al Practicante revocado, `getAccompaniment` responde `No autorizado` y `getFollowUpRecord`, `{"code":"unauthorized","message":"No autorizado"}`. No impide el uso, pero un cliente nuevo debe tratar las dos formas.
 - **Validaciones de CERETI.** Sin fecha ni responsable.
 - **Dependencias.** TI2-178 (WCAG) y TI2-174 (conservación) bloquean esta tarea y no están integradas; «todo funciona junto en la misma versión» se vuelve a comprobar cuando lo estén.
