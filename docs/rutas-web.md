@@ -27,11 +27,11 @@ Cada área define su árbol en un archivo propio. `router.tsx` solo compone la r
 | Archivo | Área | Rutas |
 | --- | --- | --- |
 | `root-route.ts` | Raíz | Envoltorio común, 404 y destino desconocido |
-| `public-routes.ts` | Pública | `/`, `/login` y `/denegado` |
-| `student-routes.ts` | Estudiante | `/estudiante`, `/estudiante/solicitudes`, `/estudiante/solicitudes/$requestId`, `/estudiante/horarios`, `/estudiante/reservar`, `/estudiante/atenciones`, `/estudiante/atenciones/$appointmentId` y `/estudiante/acompanamientos/$accompanimentId` |
-| `professional-routes.ts` | Profesional | `/profesional`, `/profesional/solicitudes`, `/profesional/solicitudes/$requestId`, `/profesional/solicitudes/registrar`, `/profesional/disponibilidad`, `/profesional/agenda` y `/profesional/agenda/$appointmentId` |
+| `public-routes.ts` | Pública | `/`, `/login`, `/denegado` y `/privacidad` (aviso de privacidad, sin sesión) |
+| `student-routes.ts` | Estudiante | `/estudiante`, `/estudiante/solicitudes`, `/estudiante/solicitudes/$requestId`, `/estudiante/horarios`, `/estudiante/reservar`, `/estudiante/atenciones`, `/estudiante/atenciones/$appointmentId`, `/estudiante/acompanamientos/$accompanimentId`, `/estudiante/avisos`, `/estudiante/privacidad` y `/estudiante/privacidad/$requestId` |
+| `professional-routes.ts` | Profesional | `/profesional`, `/profesional/solicitudes`, `/profesional/solicitudes/$requestId`, `/profesional/solicitudes/registrar`, `/profesional/disponibilidad`, `/profesional/agenda`, `/profesional/agenda/$appointmentId` y `/profesional/avisos` |
 | `practitioner-routes.ts` | Practicante | `/practicante`, `/practicante/acompanamientos` y `/practicante/acompanamientos/$accompanimentId` |
-| `admin-routes.ts` | Administrador | `/administrador`, `/administrador/cuentas` y `/administrador/espacios` |
+| `admin-routes.ts` | Administrador | `/administrador`, `/administrador/cuentas`, `/administrador/espacios`, `/administrador/privacidad` y `/administrador/privacidad/$requestId` |
 
 Las URL y las guardias vigentes no cambian: cada layout conserva su `RequireStudent` o `RequireStaffRole`, y las páginas siguen resolviendo sus parámetros con `getRouteApi` sobre la misma ruta.
 
@@ -41,10 +41,10 @@ Las URL y las guardias vigentes no cambian: cada layout conserva su `RequireStud
 
 | Portal | Enlaces |
 | --- | --- |
-| Estudiante | Inicio, Solicitudes, Horarios y Atenciones |
-| Profesional | Inicio, Solicitudes, Agenda y Disponibilidad |
+| Estudiante | Inicio, Solicitudes, Horarios, Atenciones, Avisos y Privacidad |
+| Profesional | Inicio, Solicitudes, Acompañamientos, Agenda, Disponibilidad y Avisos |
 | Practicante | Inicio y Acompañamientos |
-| Administrador | Inicio, Cuentas y Espacios |
+| Administrador | Inicio, Cuentas, Espacios y Privacidad |
 
 El encabezado común vive en `app-shell.tsx` y `app-shell.css`. Marca la sección actual con `aria-current="page"`, distingue el elemento activo con fondo y subrayado (no solo color) y mantiene objetivos táctiles de 44 × 44 px. El portal de Administración usa el mismo encabezado convertido en menú lateral: misma marca, navegación, accesibilidad y cierre de sesión, con el botón abajo a la izquierda y el contenido a ancho completo. El botón «Cerrar sesión» llama a `authClient.signOut()`, espera la invalidación de la sesión y vuelve al índice. Se retiró el enlace «Sesión» que apuntaba a `/login` porque no cerraba la sesión.
 

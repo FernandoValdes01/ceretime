@@ -84,3 +84,20 @@
   width: 100%;
   margin-top: 8px;
 }
+
+/* Enlace de texto (TI2-171): color primario y subrayado, no solo el color (WCAG 1.4.1). */
+.auth-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  border-radius: 0.5rem;
+  color: #00695b;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+
+.auth-link:focus-visible {
+  outline: 3px solid #2563eb;
+  outline-offset: 2px;
+}

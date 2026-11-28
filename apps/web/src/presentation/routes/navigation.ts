@@ -25,6 +25,8 @@ export const PORTAL_NAVIGATION = {
       // que devuelve la búsqueda de horarios. Sin ese parámetro la vista
       // muestra «Cupo no disponible», así que se llega desde Horarios.
       { to: "/estudiante/atenciones", label: "Atenciones", exact: false },
+      { to: "/estudiante/avisos", label: "Avisos", exact: false },
+      { to: "/estudiante/privacidad", label: "Privacidad", exact: false },
     ],
   },
   professional: {
@@ -37,6 +39,7 @@ export const PORTAL_NAVIGATION = {
       { to: "/profesional/practicantes", label: "Practicantes", exact: false },
       { to: "/profesional/agenda", label: "Agenda", exact: false },
       { to: "/profesional/disponibilidad", label: "Disponibilidad", exact: false },
+      { to: "/profesional/avisos", label: "Avisos", exact: false },
     ],
   },
   practitioner: {
@@ -54,6 +57,7 @@ export const PORTAL_NAVIGATION = {
       { to: "/administrador", label: "Inicio", exact: true },
       { to: "/administrador/cuentas", label: "Cuentas", exact: false },
       { to: "/administrador/espacios", label: "Espacios", exact: false },
+      { to: "/administrador/privacidad", label: "Privacidad", exact: false },
     ],
   },
 } as const;

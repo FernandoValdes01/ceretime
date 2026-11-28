@@ -1,6 +1,6 @@
 ---
 created: 2026-11-17T00:00
-updated: 2026-11-20T00:00
+updated: 2026-11-27T00:00
 ---
 
 # Aviso de privacidad de CERETI
@@ -91,7 +91,7 @@ Puedes pedir acceso, rectificación, supresión, oposición, bloqueo y portabili
 
 Si en el futuro la UCT te pide consentimiento, podrás retirarlo. El procedimiento de prueba todavía no tiene un tipo de solicitud para retirarlo; la UCT debe definir esa vía antes de pedir consentimiento.
 
-Cuando exista la pantalla, el Estudiante presentará la solicitud desde la aplicación. Los demás roles usarán el canal institucional que defina la UCT. La dirección de ese canal sigue pendiente. El procedimiento de prueba fija una respuesta general dentro de 30 días corridos, prorrogables una sola vez hasta por otros 30 días, y una respuesta de bloqueo en dos días hábiles, sin prórroga; el cómputo exacto requiere validación institucional. Si tu solicitud se rechaza total o parcialmente, puedes reclamar ante la Agencia de Protección de Datos Personales dentro de los 30 días hábiles siguientes a la notificación. El texto jurídico definitivo de esa respuesta está pendiente de validación.
+El Estudiante presenta todos los derechos enumerados desde la sección Privacidad de su portal; los demás roles usarán el canal institucional que defina la UCT. La dirección de ese canal sigue pendiente. El procedimiento de prueba fija una respuesta general dentro de 30 días corridos, prorrogables una sola vez hasta por otros 30 días, y una respuesta de bloqueo en dos días hábiles, sin prórroga; el cómputo exacto requiere validación institucional. Si tu solicitud se rechaza total o parcialmente, puedes reclamar ante la Agencia de Protección de Datos Personales dentro de los 30 días hábiles siguientes a la notificación. El texto jurídico definitivo de esa respuesta está pendiente de validación.
 
 ## Menores de edad
 

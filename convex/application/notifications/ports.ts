@@ -4,6 +4,7 @@ import type {
   AppointmentNotificationEvent,
   NotificationEvent,
   NotificationReadStatus,
+  PrivacyNotificationEvent,
   RequestNotificationEvent,
 } from "../../domain/notifications/notification";
 
@@ -19,6 +20,22 @@ import type {
  */
 export interface NotificationEventRecorder {
   record(events: readonly NotificationEvent[]): Promise<void>;
+}
+
+/**
+ * Compuerta de bloqueo previa a reservar una entrega (TI2-168).
+ *
+ * Se consulta antes de `claim` para que la fila conserve su estado pendiente:
+ * devolver `blocked` con `retryAt` deja la entrega programada para cuando el
+ * bloqueo termine, sin enviarla ni contarla como intento fallido. El bloqueo
+ * suspende el tratamiento; no descarta ni modifica el aviso ni su entrega.
+ */
+export interface PrivacyDeliveryGate {
+  check(
+    deliveryId: string,
+    now: number,
+  ): Promise<{ readonly status: "ok" } | { readonly status: "blocked"; readonly retryAt: number }>;
+  defer(deliveryId: string, nextAttemptAt: number): Promise<void>;
 }
 
 /** Correo ya compuesto con el texto genérico del aviso, sin datos sensibles. */
@@ -76,11 +93,16 @@ export type StoredNotification<
   NotificationId extends string = string,
   UserId extends string = string,
   RequestId extends string = string,
+  PrivacyRequestId extends string = string,
 > =
   | (Omit<AppointmentNotificationEvent, "recipientId"> &
       StoredNotificationFields<NotificationId, UserId>)
   | (Omit<RequestNotificationEvent, "recipientId" | "requestId"> &
-      StoredNotificationFields<NotificationId, UserId> & { readonly requestId: RequestId });
+      StoredNotificationFields<NotificationId, UserId> & { readonly requestId: RequestId })
+  | (Omit<PrivacyNotificationEvent, "recipientId" | "privacyRequestId"> &
+      StoredNotificationFields<NotificationId, UserId> & {
+        readonly privacyRequestId: PrivacyRequestId;
+      });
 
 /**
  * Lo que suma el aviso guardado. Los identificadores son genéricos (TI2-154):

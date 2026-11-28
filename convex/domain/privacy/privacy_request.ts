@@ -44,6 +44,22 @@ export const PRIVACY_REQUEST_KIND_LABELS: Record<PrivacyRequestKind, string> = {
   portability: "Portabilidad",
 };
 
+/**
+ * Derechos que esta entrega acepta por la aplicación, en el orden en que se
+ * ofrecen. TI2-168 habilita el bloqueo temporal y la oposición además de los
+ * anteriores. Es la única lista: el caso de uso rechaza los demás y la Web
+ * solo ofrece
+ * estos, así no se ofrece un derecho que el Backend no recibe.
+ */
+export const SUBMITTABLE_PRIVACY_REQUEST_KINDS = [
+  "access",
+  "rectification",
+  "erasure",
+  "objection",
+  "blocking",
+  "portability",
+] as const satisfies readonly PrivacyRequestKind[];
+
 /** Verdadero cuando el valor es un derecho conocido. */
 export function isPrivacyRequestKind(value: string): value is PrivacyRequestKind {
   return (PRIVACY_REQUEST_KIND_VALUES as readonly string[]).includes(value);
@@ -170,6 +186,13 @@ export type PendingInstitutionalDecision = (typeof PENDING_INSTITUTIONAL_DECISIO
 export const PRIVACY_RESPONSE_OUTCOME_VALUES = ["granted", "partially_granted", "denied"] as const;
 
 export type PrivacyResponseOutcome = (typeof PRIVACY_RESPONSE_OUTCOME_VALUES)[number];
+
+/** Etiqueta en español de cada resultado, para que todos los canales usen el mismo lenguaje. */
+export const PRIVACY_RESPONSE_OUTCOME_LABELS: Record<PrivacyResponseOutcome, string> = {
+  granted: "Concedida",
+  partially_granted: "Concedida en parte",
+  denied: "Denegada",
+};
 
 /** Verdadero cuando el valor es un resultado de respuesta conocido. */
 export function isPrivacyResponseOutcome(value: string): value is PrivacyResponseOutcome {

@@ -578,6 +578,7 @@ export async function searchAvailabilitySlots(
   const grant = await authorizeAvailabilityRead(deps.auth, {
     tokenIdentifier: input.tokenIdentifier,
     accompanimentId: input.accompanimentId,
+    privacyCategory: "appointments",
   });
   if (grant.status === "error") return denied();
   // Un profesional no asignado, revocado o sin cuenta vigente responde igual
@@ -717,6 +718,7 @@ export async function listBookableProfessionals(
   const grant = await authorizeAvailabilityRead(deps.auth, {
     tokenIdentifier: input.tokenIdentifier,
     accompanimentId: input.accompanimentId,
+    privacyCategory: "appointments",
   });
   if (grant.status === "error") return denied();
   const candidates = await deps.professionals.listActiveProfessionalIds(input.accompanimentId);

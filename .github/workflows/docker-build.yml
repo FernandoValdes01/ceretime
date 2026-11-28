@@ -30,14 +30,16 @@ jobs:
       - name: Instalar dependencias
         run: bun install --frozen-lockfile
 
-      # La deploy key elige el deployment de destino; debe ser el mismo al que
-      # apuntan las variables VITE_* con que se construye la imagen.
+      # Producción usa la instancia propia de Convex en Kubero. El destino sale
+      # de `VITE_CONVEX_URL`, así las funciones siempre llegan al mismo backend
+      # que usa la imagen Web construida en el job siguiente.
       - name: Desplegar funciones de Convex
         env:
-          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          CONVEX_SELF_HOSTED_URL: ${{ vars.VITE_CONVEX_URL }}
+          CONVEX_SELF_HOSTED_ADMIN_KEY: ${{ secrets.CONVEX_SELF_HOSTED_ADMIN_KEY }}
         run: |
-          if [ -z "$CONVEX_DEPLOY_KEY" ]; then
-            echo "::error::Falta el secret CONVEX_DEPLOY_KEY."
+          if [ -z "$CONVEX_SELF_HOSTED_URL" ] || [ -z "$CONVEX_SELF_HOSTED_ADMIN_KEY" ]; then
+            echo "::error::Faltan la variable VITE_CONVEX_URL o el secret CONVEX_SELF_HOSTED_ADMIN_KEY."
             exit 1
           fi
           bunx convex deploy

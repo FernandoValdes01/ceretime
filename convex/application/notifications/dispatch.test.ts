@@ -6,6 +6,7 @@ import type {
   EmailDeliveryStore,
   EmailMessage,
   EmailSender,
+  PrivacyDeliveryGate,
   PushDeliveryStore,
   PushSender,
   PushSendResult,
@@ -175,4 +176,99 @@ describe("despacho de avisos por push (TI2-160)", () => {
       );
     },
   );
+});
+
+describe("bloqueo de privacidad en el despacho (TI2-168)", () => {
+  const RETRY_AT = NOW + 60_000;
+
+  function blockedGate(): PrivacyDeliveryGate {
+    return {
+      check: async () => ({ status: "blocked", retryAt: RETRY_AT }),
+      defer: async () => undefined,
+    };
+  }
+
+  function openGate(): PrivacyDeliveryGate {
+    return {
+      check: async () => ({ status: "ok" }),
+      defer: async () => undefined,
+    };
+  }
+
+  test("con bloqueo vigente el correo no se reserva: queda diferido hasta el fin del bloqueo", async () => {
+    const send = vi.fn<EmailSender["send"]>();
+    const claim = vi.fn<EmailDeliveryStore["claim"]>();
+    const recordAttempt = vi.fn<EmailDeliveryStore["recordAttempt"]>();
+    const defer = vi.fn<PrivacyDeliveryGate["defer"]>();
+    const store: EmailDeliveryStore = { claim, recordAttempt };
+
+    const outcome = await dispatchEmailDelivery(
+      {
+        store,
+        sender: { send },
+        now: () => NOW,
+        privacy: { ...blockedGate(), defer },
+      },
+      "delivery-1",
+    );
+
+    expect(outcome).toBe("skipped");
+    expect(defer).toHaveBeenCalledWith("delivery-1", RETRY_AT);
+    expect(claim).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(recordAttempt).not.toHaveBeenCalled();
+  });
+
+  test("con bloqueo vigente el push no se reserva: queda diferido hasta el fin del bloqueo", async () => {
+    const send = vi.fn<PushSender["send"]>();
+    const claim = vi.fn<PushDeliveryStore["claim"]>();
+    const recordAttempt = vi.fn<PushDeliveryStore["recordAttempt"]>();
+    const defer = vi.fn<PrivacyDeliveryGate["defer"]>();
+    const store: PushDeliveryStore = {
+      claim,
+      recordAttempt,
+      removeExpiredSubscription: vi.fn<PushDeliveryStore["removeExpiredSubscription"]>(),
+    };
+
+    const outcome = await dispatchPushDelivery(
+      {
+        store,
+        sender: { send },
+        now: () => NOW,
+        privacy: { ...blockedGate(), defer },
+      },
+      "delivery-1",
+    );
+
+    expect(outcome).toBe("skipped");
+    expect(defer).toHaveBeenCalledWith("delivery-1", RETRY_AT);
+    expect(claim).not.toHaveBeenCalled();
+    expect(send).not.toHaveBeenCalled();
+    expect(recordAttempt).not.toHaveBeenCalled();
+  });
+
+  test("sin bloqueo el correo se reserva y se entrega como antes", async () => {
+    const send = vi.fn<EmailSender["send"]>(async () => ({ status: "sent" }));
+    const recordAttempt = vi.fn<EmailDeliveryStore["recordAttempt"]>();
+    const defer = vi.fn<PrivacyDeliveryGate["defer"]>();
+    const store: EmailDeliveryStore = {
+      claim: async (): Promise<EmailDeliveryClaim> => ({
+        status: "claimed",
+        eventId: "event-1",
+        event: makeEvent(),
+        recipientEmail: "estudiante@alu.uct.cl",
+      }),
+      recordAttempt,
+    };
+
+    const outcome = await dispatchEmailDelivery(
+      { store, sender: { send }, now: () => NOW, privacy: { ...openGate(), defer } },
+      "delivery-1",
+    );
+
+    expect(outcome).toBe("sent");
+    expect(send).toHaveBeenCalledOnce();
+    expect(recordAttempt).toHaveBeenCalledWith("event-1", { status: "sent" }, NOW);
+    expect(defer).not.toHaveBeenCalled();
+  });
 });

@@ -1,4 +1,6 @@
 import { AGENDA_TIME_ZONE } from "../../domain/availability/availability";
+import { CHILE_HOLIDAYS } from "../../domain/calendar/chile_holidays";
+import { notificationEventsForPrivacyResolution } from "../../domain/notifications/notification";
 import {
   canRespondToPrivacyRequest,
   canSubmitPrivacyRequest,
@@ -18,11 +20,14 @@ import {
 } from "../../domain/privacy/privacy_controls";
 import {
   PRIVACY_REQUEST_REASON_MAX_LENGTH,
+  SUBMITTABLE_PRIVACY_REQUEST_KINDS,
   type PrivacyRequestKind,
   type PrivacyRequestRejectionCause,
   type PrivacyResponseOutcome,
 } from "../../domain/privacy/privacy_request";
 import type { PrivacyExtensionRejectionCause } from "../../domain/privacy/privacy_deadlines";
+import type { NotificationEventRecorder } from "../notifications/ports";
+import type { PrivacyBlockWriter } from "./ports";
 import type {
   PrivacyProfile,
   PrivacyProfileReader,
@@ -56,13 +61,10 @@ import {
  * Opera con datos ficticios.
  */
 
-/** Derechos que esta entrega acepta por la aplicación; bloqueo y oposición son la siguiente tarea. */
-const SUBMITTABLE_KINDS: ReadonlySet<PrivacyRequestKind> = new Set([
-  "access",
-  "rectification",
-  "erasure",
-  "portability",
-]);
+/** Derechos que esta entrega acepta por la aplicación (TI2-168 habilita los tres pendientes). */
+const SUBMITTABLE_KINDS: ReadonlySet<PrivacyRequestKind> = new Set(
+  SUBMITTABLE_PRIVACY_REQUEST_KINDS,
+);
 
 /** Mensaje público cuando el derecho todavía no se presenta desde la aplicación. */
 export const PRIVACY_REQUEST_KIND_UNAVAILABLE_MESSAGE =
@@ -74,6 +76,18 @@ export interface PrivacyCommandDeps<RequestId extends string, UserId extends str
   readonly requests: PrivacyRequestStore<RequestId, UserId>;
   /** Reloj del servidor; las pruebas lo avanzan. */
   readonly now: () => number;
+  /**
+   * Efecto material de una resolución concedida (TI2-168): registra el aviso
+   * al titular. Opcional para no romper dobles de la entrega anterior; en
+   * producción lo provee Presentación con el mismo `ctx`.
+   */
+  readonly notifications?: NotificationEventRecorder;
+  /**
+   * Materialización del bloqueo concedido (TI2-168). Opcional para no romper
+   * dobles de la entrega anterior; en producción Presentación lo provee con
+   * el mismo `ctx`, así ocurre en la misma transacción que la resolución.
+   */
+  readonly blocks?: PrivacyBlockWriter;
 }
 
 function denied<T>(): ApiResult<T> {
@@ -179,6 +193,7 @@ export async function submitPrivacyRequest<RequestId extends string, UserId exte
     requesterId: profile._id,
     receivedAt: deps.now(),
     timeZone: AGENDA_TIME_ZONE,
+    holidays: CHILE_HOLIDAYS,
   });
   if (result.status === "invalid_reference") throw serverReferenceError();
   return okResult(toOwnProjection(result.request));
@@ -220,12 +235,16 @@ export async function resolvePrivacyRequest<RequestId extends string, UserId ext
   const profile = await findResponder(deps, input.tokenIdentifier);
   if (profile === null) return denied();
 
-  return transitionResult(
+  const record = await deps.requests.getRequest(input.requestId);
+  if (record === null) return denied();
+
+  const occurredAt = deps.now();
+  const result = transitionResult(
     await deps.requests.transition({
       requestId: input.requestId,
       to: "resolved",
       actorId: profile._id,
-      occurredAt: deps.now(),
+      occurredAt,
       response: {
         outcome: input.outcome,
         reasons: input.reasons,
@@ -236,6 +255,48 @@ export async function resolvePrivacyRequest<RequestId extends string, UserId ext
       },
     }),
   );
+
+  // La concesión de un bloqueo materializa la suspensión en la misma
+  // transacción que la resolución: sin esta fila el guardia de las cuatro
+  // vías nunca encontraría un bloqueo en producción (TI2-168).
+  if (
+    result.status === "ok" &&
+    record.kind === "blocking" &&
+    input.outcome !== "denied" &&
+    input.temporaryBlockUntil !== undefined
+  ) {
+    // Fallar cerrado: una concesión sin escritor dejaría la resolución sin
+    // efecto real, así que no se publica como concedida.
+    if (deps.blocks === undefined) throw serverReferenceError();
+    const created = await deps.blocks.create({
+      subjectId: record.requesterId,
+      requestId: input.requestId,
+      scope: "all_personal_data",
+      startsAt: occurredAt,
+      endsAt: input.temporaryBlockUntil,
+      createdBy: profile._id,
+      reason: "Bloqueo temporal concedido por solicitud de privacidad.",
+    });
+    if (created.status !== "created") {
+      throw new Error("El bloqueo concedido no se pudo materializar con la solicitud resuelta.");
+    }
+  }
+
+  // El aviso se comunica al titular (TI2-168). El evento referencia la
+  // solicitud de privacidad y es genérico: no lleva el derecho, el fundamento
+  // ni el bloqueo, que el titular lee en su sesión. Una denegación conserva
+  // los datos y también se comunica.
+  if (result.status === "ok" && deps.notifications !== undefined) {
+    await deps.notifications.record(
+      notificationEventsForPrivacyResolution({
+        privacyRequestId: input.requestId,
+        recipientId: record.requesterId,
+        granted: input.outcome !== "denied",
+        occurredAt,
+      }),
+    );
+  }
+  return result;
 }
 
 /** Aplica la única prórroga de hasta 30 días corridos, con su motivo. */

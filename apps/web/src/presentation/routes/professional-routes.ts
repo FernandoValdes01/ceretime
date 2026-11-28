@@ -1,4 +1,5 @@
 import { createRoute } from "@tanstack/react-router";
+import { toCalendarCallbackStatus } from "../../application/calendar/calendar-link.ts";
 import {
   ProfessionalAccompanimentDetailRouteComponent,
   ProfessionalAccompanimentsRouteComponent,
@@ -7,6 +8,7 @@ import {
   ProfessionalAvailabilityRouteComponent,
   ProfessionalIndexRouteComponent,
   ProfessionalLayoutRouteComponent,
+  ProfessionalNotificationsRouteComponent,
   ProfessionalOfficialRequestRouteComponent,
   ProfessionalPracticantesRouteComponent,
   ProfessionalRequestDetailRouteComponent,
@@ -92,6 +94,16 @@ const professionalPracticantesRoute = createRoute({
   component: ProfessionalPracticantesRouteComponent,
 });
 
+// `calendar` es el marcador de retorno de la autorización de Google (TI2-172).
+const professionalNotificationsRoute = createRoute({
+  getParentRoute: () => professionalLayoutRoute,
+  path: "avisos",
+  validateSearch: (search: Record<string, unknown>): { calendar?: "connected" | "error" } => ({
+    calendar: toCalendarCallbackStatus(search.calendar),
+  }),
+  component: ProfessionalNotificationsRouteComponent,
+});
+
 export const professionalRoutes = [
   professionalLayoutRoute.addChildren([
     professionalIndexRoute,
@@ -104,5 +116,6 @@ export const professionalRoutes = [
     professionalAgendaRoute,
     professionalAgendaDetailRoute,
     professionalPracticantesRoute,
+    professionalNotificationsRoute,
   ]),
 ] as const;

@@ -721,6 +721,7 @@ describe("editor de espacios (TI2-04)", () => {
       "Inicio",
       "Cuentas",
       "Espacios",
+      "Privacidad",
     ]);
     for (const link of links) {
       link.focus();

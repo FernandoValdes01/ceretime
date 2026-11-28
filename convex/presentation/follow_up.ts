@@ -6,7 +6,6 @@ import {
 } from "../application/follow_up/queries";
 import { mutation, query } from "../_generated/server";
 import type { FollowUpProjection } from "../domain/follow_up/follow_up";
-import { authorizationReader } from "../infrastructure/accompaniments/repository";
 import { appointmentAgendaReader } from "../infrastructure/appointments/repository";
 import { followUpRecorder, followUpRecordReader } from "../infrastructure/follow_up/repository";
 import {
@@ -16,6 +15,7 @@ import {
   followUpTaskStatusUnion,
 } from "../infrastructure/validators";
 import { unwrapApiResult } from "./session";
+import { privacyAwareAuthorizationReader } from "./privacyAuthorization";
 
 /**
  * Borde de Presentación: registro de seguimiento de una atención (TI2-146).
@@ -111,7 +111,7 @@ export const saveFollowUpRecord = mutation({
     return unwrapApiResult(
       await saveFollowUpRecordUseCase(
         {
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           appointments: appointmentAgendaReader(ctx),
           recorder: followUpRecorder(ctx),
         },
@@ -130,7 +130,7 @@ export const getFollowUpRecord = query({
     const projection = unwrapApiResult(
       await getFollowUpRecordUseCase(
         {
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           appointments: appointmentAgendaReader(ctx),
           followUp: followUpRecordReader(ctx),
         },
@@ -164,7 +164,7 @@ export const listAccompanimentFollowUpRecords = query({
     const result = unwrapApiResult(
       await listAccompanimentFollowUpRecordsUseCase(
         {
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           appointments: appointmentAgendaReader(ctx),
           followUp: followUpRecordReader(ctx),
         },

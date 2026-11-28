@@ -143,6 +143,7 @@ export async function loadCalendarAppointment(
   const grant = await authorizeAppointmentCalendar(deps.auth, {
     tokenIdentifier: input.tokenIdentifier,
     appointment,
+    privacyCategory: "calendar",
   });
   if (grant.status === "error") return null;
   const reference =
