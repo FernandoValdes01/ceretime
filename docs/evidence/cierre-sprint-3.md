@@ -105,7 +105,7 @@ Comprobado el 28/11/2026 sobre `main` en `a0f66279`, con la cuenta institucional
 | Comprobación | Resultado |
 | --- | --- |
 | Despliegue | Desde #213 (TI2-171) fallaba la construcción de la imagen Web, porque `privacy-notice.ts` importa `docs/privacidad-aviso.md` y el Dockerfile no lo copiaba; «Deploy to Kubero» quedaba omitido mientras Convex sí se desplegaba. Corregido en `a0f66279`: la imagen se construye y Kubero publica la Web al día |
-| Cabeceras de `ceretime.inf.uct.cl` | CSP con `connect-src` limitado a la propia Web y al Convex de Kubero, `Strict-Transport-Security`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` y `Referrer-Policy` |
+| Cabeceras de `ceretime.inf.uct.cl` | CSP cuyo `connect-src` admite el Convex de Kubero y todavía los dominios de Convex Cloud (`*.convex.cloud` y `*.convex.site`), `Strict-Transport-Security`, `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff` y `Referrer-Policy` |
 | Backend | `/version` del Convex de Kubero responde 200 y el bundle apunta a `ceretime-convex.inf.uct.cl` |
 | Inicio de sesión | La cuenta institucional entra al Portal del Estudiante |
 | Solicitud | Una solicitud ficticia queda registrada y genera el aviso «Se recibió una solicitud», pendiente en `/estudiante/avisos` |
