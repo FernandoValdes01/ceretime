@@ -142,9 +142,14 @@ describe("Estudiante", () => {
     const options = within(group)
       .getAllByRole("radio")
       .map((radio) => (radio as HTMLInputElement).value);
-    expect(options).toEqual(["access", "rectification", "erasure", "portability"]);
-    expect(within(group).queryByText("Oposición")).toBeNull();
-    expect(within(group).queryByText("Bloqueo")).toBeNull();
+    expect(options).toEqual([
+      "access",
+      "rectification",
+      "erasure",
+      "objection",
+      "blocking",
+      "portability",
+    ]);
   });
 
   test("sin derecho elegido no envía; al presentar muestra el acuse y el plazo", async () => {
@@ -168,11 +173,8 @@ describe("Estudiante", () => {
     expect(screen.getByText(/Te responderemos hasta el .*2 de diciembre de 2026/)).toBeDefined();
   });
 
-  test("dice qué derechos todavía no se presentan y enlaza el aviso como enlace", async () => {
+  test("todos los derechos se presentan y enlaza el aviso como enlace", async () => {
     await renderInRouter(<StudentPrivacyPage />);
-    expect(
-      screen.getByText("Oposición y bloqueo todavía no se presentan desde la aplicación."),
-    ).toBeDefined();
     const link = screen.getByRole("link", { name: "Leer el aviso de privacidad" });
     expect(link.getAttribute("href")).toBe("/privacidad");
     expect(link.className).toContain("underline");
