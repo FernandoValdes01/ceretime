@@ -131,12 +131,14 @@ export default defineSchema({
     userId: v.id("users"),
     assignedRole: assignmentRoleUnion,
     status: assignmentStatusUnion,
-    // Trazabilidad de la vigencia: quién concede y cuándo, y quién revoca
-    // y cuándo. Solo persistencia, sin reglas de autorización.
+    // Trazabilidad de la vigencia: quién concede y cuándo, quién revoca y
+    // cuándo, y cuándo venció la ventana acordada (`expired`, TI4-84), que no
+    // tiene actor. Solo persistencia, sin reglas de autorización.
     grantedBy: v.optional(v.id("users")),
     grantedAt: v.optional(v.number()),
     revokedBy: v.optional(v.id("users")),
     revokedAt: v.optional(v.number()),
+    expiredAt: v.optional(v.number()),
     // Vigencia opcional de la asignación (TI2-138): desde y hasta cuándo vale
     // el acceso. Ausentes en las filas anteriores y cuando la asignación no
     // declara límites. La vigencia efectiva la sigue decidiendo `status`; estas

@@ -78,7 +78,7 @@ export const revoke = internalMutation({
 });
 
 /**
- * Revoca la fila al vencer su ventana acordada (TI2-140).
+ * Cierra la fila como `expired` al vencer su ventana acordada (TI2-140, TI4-84).
  *
  * La programa la vía pública al conceder o modificar con `validUntil`
  * (`ctx.scheduler.runAt`): al vencer cambia el dato para que las consultas

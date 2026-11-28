@@ -99,6 +99,6 @@ export interface AccompanimentAssignmentStore extends AccompanimentProfileReader
     assignmentId: Id<"accompanimentAssignments">,
     revokedBy: Id<"users">,
   ): Promise<void>;
-  /** Cierra la fila al vencer su ventana, sin actor. */
+  /** Cierra la fila como `expired` al vencer su ventana, sin actor (TI4-84). */
   expireAssignmentRow(assignmentId: Id<"accompanimentAssignments">): Promise<void>;
 }

@@ -305,10 +305,10 @@ export async function revokeAssignmentRow(
 }
 
 /**
- * Revoca la fila por vencimiento de la ventana acordada (TI2-140).
+ * Cierra la fila por vencimiento de la ventana acordada (TI2-140).
  *
- * Solo persistencia: fija `status` en `revoked` con fecha, sin `revokedBy`
- * porque el actor es el sistema, no una persona. La lectura ya excluía la
+ * Solo persistencia: fija `status` en `expired` con `expiredAt`, sin actor
+ * porque lo cierra el sistema y no una persona (TI4-84). La lectura ya excluía la
  * fila vencida; esto cambia el dato para que las consultas suscritas vuelvan
  * a ejecutarse al vencer, ya que el paso del tiempo por sí solo no invalida
  * la caché de Convex.
@@ -318,8 +318,8 @@ export async function expireAssignmentRow(
   assignmentId: Id<"accompanimentAssignments">,
 ) {
   await ctx.db.patch(assignmentId, {
-    status: "revoked",
-    revokedAt: Date.now(),
+    status: "expired",
+    expiredAt: Date.now(),
   });
 }
 

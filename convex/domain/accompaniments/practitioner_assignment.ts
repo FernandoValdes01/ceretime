@@ -24,8 +24,15 @@ export const ASSIGNMENT_ROLE_VALUES = ["professional", "intern"] as const;
 
 export type AssignmentRole = (typeof ASSIGNMENT_ROLE_VALUES)[number];
 
-/** Vigencia de la asignación: activa o revocada. */
-export const ASSIGNMENT_STATUS_VALUES = ["active", "revoked"] as const;
+/**
+ * Vigencia de la asignación (`ACCESOS_PRACTICANTE.estado` del MER): `active`
+ * es vigente, `revoked` la retiró una persona, con `revokedBy` y `revokedAt`, y
+ * `expired` venció su ventana acordada, con `expiredAt` y sin actor (TI4-84).
+ * Hasta TI4-84 el vencimiento quedaba como `revoked` sin `revokedBy`; la
+ * migración `reclassifyExpiredAssignments` las pasa a `expired`. Solo
+ * `active` autoriza.
+ */
+export const ASSIGNMENT_STATUS_VALUES = ["active", "revoked", "expired"] as const;
 
 export type AssignmentStatus = (typeof ASSIGNMENT_STATUS_VALUES)[number];
 

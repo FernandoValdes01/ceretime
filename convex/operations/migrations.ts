@@ -136,6 +136,59 @@ export const migrateLegacyAssignments = internalMutation({
 });
 
 /**
+ * Migración de vencimientos (TI4-84): `expired` en vez de `revoked`.
+ *
+ * Hasta TI4-84 el vencimiento programado de una asignación (TI2-140) dejaba
+ * `status: "revoked"` con `revokedAt` y sin `revokedBy`, y solo se distinguía
+ * de una revocación por la falta de actor. Desde TI4-84 deja `expired` con
+ * `expiredAt`, como `ACCESOS_PRACTICANTE.estado = vencido` del MER. Esta
+ * migración pasa a `expired` las filas `revoked` sin `revokedBy`
+ * cuya `validUntil` ya pasó: mueve `revokedAt` a `expiredAt`, o usa
+ * `validUntil` si la fila no trae fecha, sin inventar actor. Una fila
+ * revocada sin actor y sin ventana vencida, como las revocadas a mano antes
+ * de TI2-16, no se toca. Es idempotente: una fila ya `expired` no vuelve a
+ * coincidir.
+ *
+ * Mismo procedimiento que las demás: la ejecuta un Administrador vigente y
+ * el barrido es paginado, repitiendo cada llamada con el `continueCursor`
+ * devuelto hasta que `isDone` sea verdadero. Ninguna autorización cambia,
+ * porque solo `active` da acceso.
+ */
+export const reclassifyExpiredAssignments = internalMutation({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
+    await requireAdminOperator(ctx);
+
+    const result = await ctx.db.query("accompanimentAssignments").paginate(args.paginationOpts);
+    const now = Date.now();
+    let reclassified = 0;
+    const reclassifiedIds = [];
+    for (const row of result.page) {
+      const expiredBySystem =
+        row.status === "revoked" &&
+        row.revokedBy === undefined &&
+        row.validUntil !== undefined &&
+        row.validUntil <= now;
+      if (!expiredBySystem) continue;
+      await ctx.db.patch(row._id, {
+        status: "expired",
+        expiredAt: row.revokedAt ?? row.validUntil,
+        revokedAt: undefined,
+      });
+      reclassified += 1;
+      if (reclassifiedIds.length < MIGRATION_SAMPLE_SIZE) reclassifiedIds.push(row._id);
+    }
+    return {
+      scanned: result.page.length,
+      reclassified,
+      isDone: result.isDone,
+      continueCursor: result.continueCursor,
+      reclassifiedIds,
+    };
+  },
+});
+
+/**
  * Migración de solicitudes (TI2-135): procedencia de las filas anteriores.
  *
  * Las filas de `requests` anteriores a TI2-135 no tienen `provenance`. Hasta

@@ -434,14 +434,15 @@ export async function revokeAccompaniment(
 }
 
 /**
- * Revoca la fila al vencer su ventana acordada (TI2-140).
+ * Cierra la fila como vencida al terminar su ventana acordada (TI2-140).
  *
  * La ejecuta el programador (`ctx.scheduler.runAt(validUntil, ...)`): cambia
  * el dato para que las consultas suscritas vuelvan a ejecutarse al vencer,
  * ya que el paso del tiempo por sí solo no invalida la caché. Es idempotente
  * y con guarda: si la fila ya no está activa, si la ventana cambió o si aún
- * no vence, no escribe. El actor es el sistema (`revokedBy` ausente con
- * `revokedAt`), distinto de la revocación de una persona.
+ * no vence, no escribe. Deja `expired` con `expiredAt` y sin actor
+ * (TI4-84), distinto de la revocación de una persona, que deja `revoked` con
+ * `revokedBy`.
  */
 export async function expireAssignmentWindow(
   store: AccompanimentAssignmentStore,

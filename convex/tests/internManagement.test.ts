@@ -922,7 +922,7 @@ test("la modificación también programa el vencimiento", async () => {
     vi.advanceTimersByTime(2_000);
     await t.finishAllScheduledFunctions(() => vi.advanceTimersByTime(100));
     const expired = await t.run(async (ctx) => ctx.db.get(assignmentId));
-    expect(expired?.status).toBe("revoked");
+    expect(expired?.status).toBe("expired");
   } finally {
     vi.useRealTimers();
   }
@@ -1038,7 +1038,7 @@ test("la vía pública exige alcance también entre profesionales de personal", 
   expect(outsider.id).toBeDefined();
 });
 
-test("el vencimiento programa la revocación y se ejecuta aunque nadie consulte", async () => {
+test("el vencimiento se programa y deja la fila `expired` aunque nadie consulte", async () => {
   vi.useFakeTimers();
   try {
     const t = convexTest(schema, modules);
@@ -1085,12 +1085,138 @@ test("el vencimiento programa la revocación y se ejecuta aunque nadie consulte"
     vi.advanceTimersByTime(2_000);
     await t.finishAllScheduledFunctions(() => vi.advanceTimersByTime(100));
     const expired = await t.run(async (ctx) => ctx.db.get(assignmentId));
-    expect(expired?.status).toBe("revoked");
-    expect(typeof expired?.revokedAt).toBe("number");
+    // TI4-84: el vencimiento es `expired` con su fecha y sin actor, distinto de
+    // una revocación.
+    expect(expired?.status).toBe("expired");
+    expect(typeof expired?.expiredAt).toBe("number");
+    expect(expired?.revokedAt).toBeUndefined();
     expect(expired?.revokedBy).toBeUndefined();
+
+    // Una asignación vencida no da acceso al detalle ni al listado.
+    const asIntern = t.withIdentity(identityFor("ti140-int-13", "ti140-int-13@alu.uct.cl"));
+    const detail = await asIntern
+      .query(api.presentation.accompaniments.getAccompaniment, { accompanimentId })
+      .then(
+        () => null,
+        (error: unknown) => (error instanceof ConvexError ? (error.data as unknown) : error),
+      );
+    expect(detail).toEqual({ code: "unauthorized", message: "No autorizado" });
+    const listed = await asIntern.query(
+      api.presentation.accompaniments.listAssignedAccompaniments,
+      { limit: 10 },
+    );
+    expect(listed.items).toEqual([]);
+
+    // La revocación de una persona sigue siendo `revoked` con su actor.
+    const other = await seedUser(t, {
+      subject: "ti140-int-13c",
+      email: "ti140-int-13c@alu.uct.cl",
+      role: "intern",
+    });
+    const revokedId = await asPro.mutation(
+      api.presentation.accompaniments.assignAccompanimentAccess,
+      { accompanimentId, userId: other.id, assignedRole: "intern" },
+    );
+    await asPro.mutation(api.presentation.accompaniments.revokeAccompanimentAccess, {
+      accompanimentId,
+      userId: other.id,
+      assignedRole: "intern",
+    });
+    const revoked = await t.run(async (ctx) => ctx.db.get(revokedId));
+    expect(revoked).toMatchObject({ status: "revoked", revokedBy: pro.id });
+    expect(revoked?.expiredAt).toBeUndefined();
   } finally {
     vi.useRealTimers();
   }
+});
+
+test("TI4-84: la migración pasa a `expired` los vencimientos guardados como `revoked`", async () => {
+  const t = convexTest(schema, modules);
+  await seedUser(t, { subject: "ti84-adm", email: "ti84-adm@uct.cl", role: "admin" });
+  const pro = await seedUser(t, {
+    subject: "ti84-pro",
+    email: "ti84-pro@uct.cl",
+    role: "professional",
+  });
+  const student = await seedUser(t, {
+    subject: "ti84-est",
+    email: "ti84-est@alu.uct.cl",
+    role: "student",
+  });
+  const intern = await seedUser(t, {
+    subject: "ti84-int",
+    email: "ti84-int@alu.uct.cl",
+    role: "intern",
+  });
+  const accompanimentId = await seedAccompaniment(t, student.id);
+  const past = Date.now() - 86_400_000;
+  const ids = await t.run(async (ctx) => {
+    const base = {
+      accompanimentId,
+      userId: intern.id,
+      assignedRole: "intern" as const,
+      grantedBy: pro.id,
+      grantedAt: past - 1_000,
+    };
+    return {
+      // Vencida antes de TI4-84: revocada sin actor, con la ventana pasada.
+      expiredLegacy: await ctx.db.insert("accompanimentAssignments", {
+        ...base,
+        status: "revoked",
+        validUntil: past,
+        revokedAt: past + 10,
+      }),
+      // Revocada por una persona: conserva `revoked`.
+      revokedByPerson: await ctx.db.insert("accompanimentAssignments", {
+        ...base,
+        status: "revoked",
+        validUntil: past,
+        revokedBy: pro.id,
+        revokedAt: past - 500,
+      }),
+      // Revocada sin actor y sin ventana: no se puede afirmar que venció.
+      revokedWithoutWindow: await ctx.db.insert("accompanimentAssignments", {
+        ...base,
+        status: "revoked",
+        revokedAt: past,
+      }),
+    };
+  });
+
+  const asAdmin = t.withIdentity(identityFor("ti84-adm", "ti84-adm@uct.cl"));
+  const first = await asAdmin.mutation(
+    internal.operations.migrations.reclassifyExpiredAssignments,
+    {
+      paginationOpts: { numItems: 10, cursor: null },
+    },
+  );
+  expect(first).toMatchObject({ reclassified: 1, isDone: true });
+
+  const rows = await t.run(async (ctx) => ({
+    expiredLegacy: await ctx.db.get(ids.expiredLegacy),
+    revokedByPerson: await ctx.db.get(ids.revokedByPerson),
+    revokedWithoutWindow: await ctx.db.get(ids.revokedWithoutWindow),
+  }));
+  expect(rows.expiredLegacy).toMatchObject({ status: "expired", expiredAt: past + 10 });
+  expect(rows.expiredLegacy?.revokedAt).toBeUndefined();
+  expect(rows.revokedByPerson).toMatchObject({ status: "revoked", revokedBy: pro.id });
+  expect(rows.revokedWithoutWindow).toMatchObject({ status: "revoked" });
+
+  // Idempotente, y solo la ejecuta un Administrador vigente.
+  const again = await asAdmin.mutation(
+    internal.operations.migrations.reclassifyExpiredAssignments,
+    {
+      paginationOpts: { numItems: 10, cursor: null },
+    },
+  );
+  expect(again).toMatchObject({ reclassified: 0 });
+  await expect(
+    t
+      .withIdentity(identityFor("ti84-pro", "ti84-pro@uct.cl"))
+      .mutation(internal.operations.migrations.reclassifyExpiredAssignments, {
+        paginationOpts: { numItems: 10, cursor: null },
+      }),
+  ).rejects.toThrow("No autorizado");
 });
 
 test("el comienzo no se programa: validFrom sigue en la fila y la lectura decide", async () => {
