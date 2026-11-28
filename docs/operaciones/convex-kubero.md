@@ -97,7 +97,7 @@ En Settings → Secrets and variables → Actions del repositorio:
 - Variables `VITE_CONVEX_URL=https://ceretime-convex.inf.uct.cl` y `VITE_CONVEX_SITE_URL=https://ceretime-convex-site.inf.uct.cl`.
 - Variable `VITE_SITE_URL=https://ceretime.inf.uct.cl`.
 
-El job `Desplegar Convex` toma el destino de `VITE_CONVEX_URL`, así las funciones siempre llegan al mismo backend que usa la imagen Web. Cambia las variables justo antes de fusionar el cambio a `main`: el push construye la imagen Web con las URLs nuevas y `Deploy to Kubero` reinicia la app `ceretime`.
+Son **variables**, no secrets: el workflow lee `vars.*` y un secret con el mismo nombre no tiene efecto. Los dominios de la instancia también figuran en `connect-src` de la CSP de `apps/web/vercel.json`; si cambian, hay que actualizarla o el navegador bloquea la conexión y la Web queda en «Cargando…». El job `Desplegar Convex` toma el destino de `VITE_CONVEX_URL`, así las funciones siempre llegan al mismo backend que usa la imagen Web. Cambia las variables justo antes de fusionar el cambio a `main`: el push construye la imagen Web con las URLs nuevas y `Deploy to Kubero` reinicia la app `ceretime`.
 
 ### 7. App móvil
 
@@ -115,7 +115,7 @@ Con la Web ya conectada a la instancia nueva, sigue el [procedimiento de arranqu
 
 ## Riesgos conocidos
 
-- El Ingress de Kubero puede limitar el tamaño de las peticiones. Si `convex deploy` responde `413`, hay que pedir al profesor que suba `proxy-body-size` para `ceretime-convex`.
+- El Ingress de Kubero limita las peticiones a 1 MB y `convex deploy` responde `413`. En Redes de `ceretime-convex`, la anotación `nginx.ingress.kubernetes.io/proxy-body-size` con valor `64m` sube el límite.
 - Si los WebSockets se cortan cada pocos segundos o minutos, revisa el tiempo de espera del Ingress; el cliente de Convex vuelve a conectarse solo, pero los cortes frecuentes se notan en las suscripciones.
 - La Web de Vercel sigue apuntando al deployment de Convex Cloud, que deja de recibir despliegues desde este workflow. No debe usarse como producción.
 - Los respaldos no son automáticos. `bunx convex export --path <archivo>.zip --env-file $HOME\ceretime-prod.env` descarga una copia de la base.

@@ -16,6 +16,7 @@
     "kubero",
     "cephfs",
     "storageclass",
+    "kubernetes",
     "openssl",
     "cmdk",
     "nginx",
