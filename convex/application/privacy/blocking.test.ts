@@ -114,6 +114,7 @@ describe("guardPrivacyTreatment", () => {
         treatment,
         blockId: "block-1",
         scope: "all_personal_data",
+        endsAt: NOW + 60_000,
       });
       await applyTreatment(treatment, decision, record);
       expect(record).toEqual(freshRecord());
@@ -182,6 +183,7 @@ describe("guardPrivacyTreatment", () => {
       treatment: "notice",
       blockId: "block-notice",
       scope: "notifications",
+      endsAt: NOW + 60_000,
     });
   });
 

@@ -4,12 +4,6 @@ import {
   type PrivacyBlockScope,
   type PrivacyDataCategory,
 } from "../../domain/privacy/privacy_controls";
-import {
-  errResult,
-  okResult,
-  unauthorizedError,
-  type ApiResult,
-} from "../../domain/errors/api_error";
 
 /**
  * Guardia única del bloqueo temporal de privacidad (TI2-168).
@@ -66,6 +60,7 @@ export type PrivacyTreatmentResult =
       readonly treatment: PrivacyTreatment;
       readonly blockId: string;
       readonly scope: PrivacyBlockScope;
+      readonly endsAt: number;
     };
 
 /**
@@ -90,20 +85,8 @@ export async function guardPrivacyTreatment<UserId extends string>(
       treatment: input.treatment,
       blockId: block.id,
       scope: block.scope,
+      endsAt: block.endsAt,
     };
   }
   return { status: "ok", treatment: input.treatment };
-}
-
-/**
- * Traducción al contrato público: un tratamiento bloqueado responde
- * `unauthorized`, sin revelar el bloqueo, su motivo ni su alcance.
- */
-export function privacyTreatmentDenied<T>(): ApiResult<T> {
-  return errResult(unauthorizedError());
-}
-
-/** Resultado permitido para el caso de uso que solo necesita seguir. */
-export function privacyTreatmentAllowed(): ApiResult<void> {
-  return okResult(undefined);
 }

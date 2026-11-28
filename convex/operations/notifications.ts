@@ -25,7 +25,7 @@ import type {
   PrivacyDeliveryGate,
   PushDeliveryClaim,
 } from "../application/notifications/ports";
-import { doesPrivacyBlockCoverCategory } from "../domain/privacy/privacy_controls";
+import { guardPrivacyTreatment } from "../application/privacy/blocking";
 import {
   isAppointmentNotificationEventKind,
   isPrivacyNotificationEventKind,
@@ -232,18 +232,12 @@ export const privacyDeliveryGate = internalQuery({
     if (delivery === null || delivery.status === "sent") return { status: "ok" as const };
     const event = await ctx.db.get(delivery.eventId);
     if (event === null) return { status: "ok" as const };
-    const blocks = await privacyBlockReader(ctx).listActiveBlocksForSubject(
-      event.recipientId,
-      args.now,
+    const treatment = await guardPrivacyTreatment(
+      { blocks: privacyBlockReader(ctx), now: () => args.now },
+      { subjectId: event.recipientId, category: "notifications", treatment: "notice" },
     );
-    const covering = blocks.filter((block) =>
-      doesPrivacyBlockCoverCategory(block.scope, "notifications"),
-    );
-    if (covering.length === 0) return { status: "ok" as const };
-    return {
-      status: "blocked" as const,
-      retryAt: Math.min(...covering.map((block) => block.endsAt)),
-    };
+    if (treatment.status === "ok") return { status: "ok" as const };
+    return { status: "blocked" as const, retryAt: treatment.endsAt };
   },
 });
 

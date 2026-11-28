@@ -176,16 +176,12 @@ export async function syncAppointmentToGoogleCalendar(deps: {
   /** Término del bloqueo que suspende este sujeto, o `null` si no hay uno. */
   const blockedUntil = async (subject: string): Promise<number | null> => {
     if (deps.privacy === undefined) return null;
-    const now = deps.now();
-    const blocks = await deps.privacy.blocks.listActiveBlocksForSubject(subject, now);
     const treatment = await guardPrivacyTreatment(deps.privacy, {
       subjectId: subject,
       category: "calendar",
       treatment: "change",
     });
-    if (treatment.status === "ok") return null;
-    const block = blocks.find((candidate) => candidate.id === treatment.blockId);
-    return block?.endsAt ?? now + 60_000;
+    return treatment.status === "blocked" ? treatment.endsAt : null;
   };
 
   const expected: CalendarSyncExpectation = {
