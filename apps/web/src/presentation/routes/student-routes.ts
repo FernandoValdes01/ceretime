@@ -1,6 +1,10 @@
 import { createRoute } from "@tanstack/react-router";
 import { toCalendarCallbackStatus } from "../../application/calendar/calendar-link.ts";
 import {
+  SLOT_MODALITY_FILTER_VALUES,
+  type SlotModalityFilter,
+} from "../../application/agenda/agenda-port.ts";
+import {
   StudentAccompanimentDetailRouteComponent,
   StudentAppointmentDetailRouteComponent,
   StudentAppointmentsRouteComponent,
@@ -38,25 +42,43 @@ const studentIndexRoute = createRoute({
   component: StudentIndexRouteComponent,
 });
 
+/**
+ * Búsqueda que comparten horarios y confirmación (TI2-163): la modalidad
+ * elegida y la atención cuyo horario cambia viajan en la URL, así volver a elegir
+ * un horario tras un conflicto conserva lo ingresado y recargar no lo pierde.
+ */
+type BookingSearch = {
+  accompanimentId?: string;
+  modality?: SlotModalityFilter;
+  rescheduleAppointmentId?: string;
+};
+
+function readBookingSearch(search: Record<string, unknown>): BookingSearch {
+  const modality = SLOT_MODALITY_FILTER_VALUES.find((value) => value === search.modality);
+  return {
+    accompanimentId:
+      typeof search.accompanimentId === "string" ? search.accompanimentId : undefined,
+    modality,
+    rescheduleAppointmentId:
+      typeof search.rescheduleAppointmentId === "string"
+        ? search.rescheduleAppointmentId
+        : undefined,
+  };
+}
+
 const studentScheduleRoute = createRoute({
   getParentRoute: () => studentLayoutRoute,
   path: "/horarios",
-  validateSearch: (search: Record<string, unknown>): { accompanimentId?: string } => ({
-    accompanimentId:
-      typeof search.accompanimentId === "string" ? search.accompanimentId : undefined,
-  }),
+  validateSearch: readBookingSearch,
   component: StudentScheduleRouteComponent,
 });
 
 const studentReservationRoute = createRoute({
   getParentRoute: () => studentLayoutRoute,
   path: "/reservar",
-  validateSearch: (
-    search: Record<string, unknown>,
-  ): { slotId?: string; accompanimentId?: string } => ({
+  validateSearch: (search: Record<string, unknown>): BookingSearch & { slotId?: string } => ({
+    ...readBookingSearch(search),
     slotId: typeof search.slotId === "string" ? search.slotId : undefined,
-    accompanimentId:
-      typeof search.accompanimentId === "string" ? search.accompanimentId : undefined,
   }),
   component: StudentReservationRouteComponent,
 });

@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, getRouteApi } from "@tanstack/react-router";
-// Mensaje canónico del contrato compartido (TI2-88): sin cupos se coordina por
-// el canal oficial, igual que en la confirmación de reserva.
-import { NO_AVAILABILITY_ERROR_MESSAGE } from "../../../../../convex/domain/index.ts";
 import {
   formatSlotTimeRange,
   groupSlotsByWeek,
   modalityFilterOptions,
   modalityLabel,
 } from "./agenda-labels.ts";
+import { OfficialChannelsPanel } from "./official-channels.tsx";
 import { useSlotSearch } from "./schedule-search-data.ts";
 import { BookingContextGate } from "./student-booking-context.tsx";
 import {
@@ -27,11 +25,23 @@ import "../routes/student-portal.css";
  * filtros por modalidad, estados tipados de carga/vacío/sin-cupo/error y cupos
  * por semana, cada uno con enlace directo a la confirmación de TI2-102. Sin
  * reglas de compatibilidad ni autorización en el cliente.
+ *
+ * TI2-163: sin horario compatible muestra la explicación, el código de
+ * referencia y los canales oficiales que entrega el Backend. La misma búsqueda
+ * sirve para reagendar (`rescheduleAppointmentId`): no hay otra búsqueda ni
+ * otro formulario. La modalidad vive en la URL para conservarla al volver
+ * desde un conflicto.
  */
 const horariosRouteApi = getRouteApi("/estudiante/horarios");
 
+/** Lo que la búsqueda reenvía a la confirmación para no perderlo. */
+type CarriedSearch = {
+  readonly modality: SlotModalityFilter;
+  readonly rescheduleAppointmentId: string | undefined;
+};
+
 export function ScheduleSearchPage() {
-  const { accompanimentId } = horariosRouteApi.useSearch();
+  const { accompanimentId, rescheduleAppointmentId } = horariosRouteApi.useSearch();
   const headingRef = useRef<HTMLHeadingElement>(null);
 
   useEffect(() => {
@@ -41,8 +51,19 @@ export function ScheduleSearchPage() {
   return (
     <section aria-labelledby="schedule-search-title">
       <h1 id="schedule-search-title" ref={headingRef} tabIndex={-1}>
-        Buscar horarios
+        {rescheduleAppointmentId === undefined ? "Buscar horarios" : "Elegir un nuevo horario"}
       </h1>
+      {rescheduleAppointmentId === undefined ? null : (
+        <p>
+          Tu atención mantiene su horario actual hasta que confirmes el cambio.{" "}
+          <Link
+            to="/estudiante/atenciones/$appointmentId"
+            params={{ appointmentId: rescheduleAppointmentId }}
+          >
+            Volver a la atención
+          </Link>
+        </p>
+      )}
       <StudentPanelErrorBoundary subject="la búsqueda de horarios" level="section">
         <BookingContextGate requestedAccompanimentId={accompanimentId}>
           {(context) => <ScheduleSearchBody context={context} />}
@@ -53,9 +74,23 @@ export function ScheduleSearchPage() {
 }
 
 function ScheduleSearchBody({ context }: { context: SlotSearchContext }) {
-  const [modality, setModality] = useState<SlotModalityFilter>("all");
+  const search = horariosRouteApi.useSearch();
+  const navigate = horariosRouteApi.useNavigate();
+  const modality = search.modality ?? "all";
+  const carried: CarriedSearch = {
+    modality,
+    rescheduleAppointmentId: search.rescheduleAppointmentId,
+  };
   const [attempt, setAttempt] = useState(0);
   const result = useSlotSearch(modality, attempt, context);
+
+  function setModality(next: SlotModalityFilter) {
+    // Reemplaza la entrada del historial: cambiar el filtro no es una página nueva.
+    void navigate({
+      search: (previous) => ({ ...previous, modality: next === "all" ? undefined : next }),
+      replace: true,
+    });
+  }
 
   return (
     <>
@@ -81,7 +116,7 @@ function ScheduleSearchBody({ context }: { context: SlotSearchContext }) {
       </fieldset>
       <SlotSearchContent
         accompanimentId={context.accompanimentId}
-        modality={modality}
+        carried={carried}
         result={result}
         onRetry={() => setAttempt((count) => count + 1)}
       />
@@ -91,12 +126,12 @@ function ScheduleSearchBody({ context }: { context: SlotSearchContext }) {
 
 function SlotSearchContent({
   accompanimentId,
-  modality,
+  carried,
   result,
   onRetry,
 }: {
   accompanimentId: string;
-  modality: SlotModalityFilter;
+  carried: CarriedSearch;
   result: ReturnType<typeof useSlotSearch>;
   onRetry: () => void;
 }) {
@@ -107,7 +142,7 @@ function SlotSearchContent({
       </span>
       <SlotSearchResult
         accompanimentId={accompanimentId}
-        modality={modality}
+        carried={carried}
         result={result}
         onRetry={onRetry}
       />
@@ -142,12 +177,12 @@ function searchAnnouncement(result: SlotSearchResult | undefined): string {
 
 function SlotSearchResult({
   accompanimentId,
-  modality,
+  carried,
   result,
   onRetry,
 }: {
   accompanimentId: string;
-  modality: SlotModalityFilter;
+  carried: CarriedSearch;
   result: ReturnType<typeof useSlotSearch>;
   onRetry: () => void;
 }) {
@@ -186,12 +221,7 @@ function SlotSearchResult({
   // Ningún profesional tiene cupos en ninguna modalidad: cambiar el filtro no
   // ayuda, así que se ofrece la coordinación por canal oficial.
   if (result.status === "no_availability") {
-    return (
-      <div className="student-portal__empty">
-        <p className="student-portal__empty-title">No hay cupos compatibles por ahora.</p>
-        <p>{NO_AVAILABILITY_ERROR_MESSAGE}</p>
-      </div>
-    );
+    return <OfficialChannelsPanel coordination={result.coordination} />;
   }
 
   if (result.status === "denied") {
@@ -203,7 +233,14 @@ function SlotSearchResult({
   }
 
   // La clave devuelve la vista a la primera semana con cupos al cambiar de filtro.
-  return <SlotWeeks key={modality} slots={result.slots} accompanimentId={accompanimentId} />;
+  return (
+    <SlotWeeks
+      key={carried.modality}
+      slots={result.slots}
+      accompanimentId={accompanimentId}
+      carried={carried}
+    />
+  );
 }
 
 /**
@@ -214,9 +251,11 @@ function SlotSearchResult({
 function SlotWeeks({
   slots,
   accompanimentId,
+  carried,
 }: {
   slots: ReadonlyArray<AgendaSlot>;
   accompanimentId: string;
+  carried: CarriedSearch;
 }) {
   const weeks = groupSlotsByWeek(slots);
   const [requestedStart, setRequestedStart] = useState<string | null>(null);
@@ -271,7 +310,12 @@ function SlotWeeks({
               <li key={slot.id} className="student-portal__item">
                 <Link
                   to="/estudiante/reservar"
-                  search={{ slotId: slot.id, accompanimentId }}
+                  search={{
+                    slotId: slot.id,
+                    accompanimentId,
+                    modality: carried.modality === "all" ? undefined : carried.modality,
+                    rescheduleAppointmentId: carried.rescheduleAppointmentId,
+                  }}
                   className="student-portal__item-link student-portal__slot-link"
                 >
                   <span className="sr-only">{day.label}, </span>

@@ -233,6 +233,8 @@ export type {
   ListAppointmentsInput,
   MinimizedAppointment,
 } from "./appointments/appointment";
+// Plazo único de justificación con los feriados de Chile (TI2-147).
+export { justificationDeadlineFor } from "./appointments/justification_deadline";
 
 // Participantes de la atención: varios profesionales (TI2-142).
 export {

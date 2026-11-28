@@ -117,6 +117,9 @@ function puertoOk(): AgendaPort {
       }),
     // Cancelación visible (TI2-113): el editor del Administrador no cancela.
     cancelReservation: () => Promise.resolve({ status: "denied" }),
+    rescheduleAppointment: () => Promise.resolve({ status: "denied" }),
+    submitAppointmentJustification: () => Promise.resolve({ status: "denied" }),
+    getOnlineAccess: () => Promise.resolve({ status: "denied" }),
     listAvailability: () => Promise.resolve({ status: "empty" }),
     saveBlock: (input) =>
       Promise.resolve({

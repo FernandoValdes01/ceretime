@@ -27,6 +27,8 @@ let mockedBackendConfigured = true;
 const searchSlotsMock = vi.fn();
 const reserveSlotMock = vi.fn();
 const cancelReservationMock = vi.fn();
+const rescheduleAppointmentMock = vi.fn();
+const getAppointmentMock = vi.fn();
 
 vi.mock("convex/react", () => ({ useQuery: () => mockedSession }));
 
@@ -48,6 +50,8 @@ vi.mock("../../infrastructure/agenda/convex-agenda-adapter.ts", () => ({
     searchSlots: searchSlotsMock,
     reserveSlot: reserveSlotMock,
     cancelReservation: cancelReservationMock,
+    rescheduleAppointment: rescheduleAppointmentMock,
+    getAppointment: getAppointmentMock,
   }),
 }));
 
@@ -129,6 +133,8 @@ beforeEach(() => {
   searchSlotsMock.mockReset();
   reserveSlotMock.mockReset();
   cancelReservationMock.mockReset();
+  rescheduleAppointmentMock.mockReset();
+  getAppointmentMock.mockReset();
   searchSlotsMock.mockResolvedValue({ status: "ok", slots: [cupoFicticio()] });
 });
 
@@ -542,6 +548,13 @@ describe("conflicto, denegación y cancelación visible (TI2-113)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
     expect(await screen.findByRole("heading", { name: "Reserva confirmada" })).toBeDefined();
     fireEvent.click(screen.getByRole("button", { name: "Cancelar esta reserva" }));
+    // Cancelar pide confirmar; el motivo es opcional para el Estudiante.
+    expect(await screen.findByRole("textbox", { name: "Motivo (opcional)" })).toBeDefined();
+    // En el comprobante el formulario cuelga del h1: sus títulos son h2.
+    expect(
+      screen.getByRole("heading", { level: 2, name: "¿Cancelar esta atención?" }),
+    ).toBeDefined();
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar cancelación" }));
 
     expect(await screen.findByRole("heading", { name: "Reserva cancelada" })).toBeDefined();
     // Tras cancelar el encabezado del estado queda con el foco y es la única
@@ -567,6 +580,7 @@ describe("conflicto, denegación y cancelación visible (TI2-113)", () => {
     fireEvent.click(await screen.findByRole("checkbox", { name: /Confirmo que deseo reservar/ }));
     fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
     fireEvent.click(await screen.findByRole("button", { name: "Cancelar esta reserva" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirmar cancelación" }));
 
     // El foco no se pierde al desaparecer el botón de cancelación: el
     // encabezado del panel lo recoge como anuncio único del desenlace.
@@ -590,17 +604,170 @@ describe("conflicto, denegación y cancelación visible (TI2-113)", () => {
     fireEvent.click(await screen.findByRole("checkbox", { name: /Confirmo que deseo reservar/ }));
     fireEvent.click(screen.getByRole("button", { name: "Confirmar reserva" }));
     fireEvent.click(await screen.findByRole("button", { name: "Cancelar esta reserva" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Confirmar cancelación" }));
 
-    expect(
-      await screen.findByText("No pudimos cancelar la reserva. Inténtalo de nuevo."),
-    ).toBeDefined();
+    const alerta = await screen.findByRole("alert");
+    expect(alerta.textContent).toContain("No pudimos cancelar la reserva. Inténtalo de nuevo.");
+    expect(alerta.textContent).toContain("Tu atención sigue reservada.");
+    // El comprobante sigue a la vista y el formulario queda listo para reintentar.
+    expect(screen.getByRole("heading", { name: "Reserva confirmada" })).toBeDefined();
 
-    fireEvent.click(screen.getByRole("button", { name: "Cancelar esta reserva" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar cancelación" }));
     expect(await screen.findByRole("heading", { name: "Reserva cancelada" })).toBeDefined();
     expect(cancelReservationMock).toHaveBeenCalledTimes(2);
     for (const llamada of cancelReservationMock.mock.calls) {
       expect(llamada).toEqual([{ reservationId: "reserva-ficticia-cupo-1" }]);
     }
+  });
+});
+
+describe("cómo llegar y cambio de horario (TI2-163)", () => {
+  const RUTA_CAMBIO =
+    "/estudiante/reservar?slotId=cupo-1&accompanimentId=acompanamiento-1&modality=inPerson&rescheduleAppointmentId=atencion-1";
+
+  /** Atención futura que todavía se puede cambiar; el reloj es el de la prueba. */
+  function atencionActual(overrides: Record<string, unknown> = {}) {
+    const startAt = Date.now() + 72 * 3_600_000;
+    return {
+      id: "atencion-1",
+      accompanimentId: "acompanamiento-1",
+      status: "scheduled",
+      modality: "online",
+      startAt,
+      endAt: startAt + 3_600_000,
+      ...overrides,
+    };
+  }
+
+  test("el cupo presencial muestra cómo llegar a la sala antes de confirmar", async () => {
+    comoEstudiante();
+    searchSlotsMock.mockResolvedValue({
+      status: "ok",
+      slots: [
+        {
+          ...cupoFicticio(),
+          space: {
+            campus: "Campus Norte",
+            building: "Edificio A",
+            floor: "Piso 1",
+            room: "Sala 101",
+            accessConditions: "Ascensor con botones en braille.",
+            arrivalInstructions: "Desde la entrada, el ascensor está a la izquierda.",
+          },
+        },
+      ],
+    });
+    renderAt("/estudiante/reservar?slotId=cupo-1");
+
+    expect(await screen.findByText("Ascensor con botones en braille.")).toBeDefined();
+    expect(screen.getByText("Desde la entrada, el ascensor está a la izquierda.")).toBeDefined();
+  });
+
+  test("reagendar muestra el horario actual y el nuevo, y usa el cambio de horario", async () => {
+    comoEstudiante();
+    getAppointmentMock.mockResolvedValue({ status: "ok", appointment: atencionActual() });
+    rescheduleAppointmentMock.mockResolvedValue({
+      status: "rescheduled",
+      appointmentId: "atencion-1",
+    });
+    renderAt(RUTA_CAMBIO);
+
+    expect(
+      await screen.findByRole("heading", { name: "Confirmar cambio de horario" }),
+    ).toBeDefined();
+    expect(await screen.findByRole("heading", { name: "Horario actual" })).toBeDefined();
+    expect(screen.getByRole("heading", { name: "Nuevo horario" })).toBeDefined();
+    expect(await screen.findByText("En línea")).toBeDefined();
+
+    fireEvent.click(screen.getByRole("checkbox", { name: /cambiar mi atención a este horario/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar cambio" }));
+
+    expect(await screen.findByRole("heading", { name: "Horario cambiado" })).toBeDefined();
+    expect(rescheduleAppointmentMock).toHaveBeenCalledWith({
+      appointmentId: "atencion-1",
+      slot: cupoFicticio(),
+    });
+    expect(reserveSlotMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("link", { name: "Ver la atención" }).getAttribute("href")).toBe(
+      "/estudiante/atenciones/atencion-1",
+    );
+    // Reagendar no ofrece la cancelación del comprobante de reserva.
+    expect(screen.queryByRole("button", { name: "Cancelar esta reserva" })).toBeNull();
+  });
+
+  test("un conflicto al reagendar conserva el horario actual y lo ingresado al volver", async () => {
+    comoEstudiante();
+    getAppointmentMock.mockResolvedValue({ status: "ok", appointment: atencionActual() });
+    rescheduleAppointmentMock.mockResolvedValue({ status: "conflict", code: "conflict" });
+    renderAt(RUTA_CAMBIO);
+
+    fireEvent.click(
+      await screen.findByRole("checkbox", { name: /cambiar mi atención a este horario/ }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Confirmar cambio" }));
+
+    const alerta = await screen.findByRole("alert");
+    expect(alerta.textContent).toContain("Tu atención conserva su horario actual.");
+    expect(screen.getByRole("heading", { name: "Horario actual" })).toBeDefined();
+    expect(screen.getByRole("link", { name: "Elegir otro horario" }).getAttribute("href")).toBe(
+      "/estudiante/horarios?accompanimentId=acompanamiento-1&modality=inPerson&rescheduleAppointmentId=atencion-1",
+    );
+    // El formulario sigue operativo para reintentar el mismo cambio.
+    expect(screen.getByRole("button", { name: "Confirmar cambio" })).toBeDefined();
+  });
+
+  test.each([
+    ["cancelada", { status: "cancelled_by_student" }],
+    ["realizada", { status: "completed" }],
+    ["ya iniciada", { startAt: Date.now() - 3_600_000, endAt: Date.now() + 3_600_000 }],
+  ])(
+    "una atención %s no ofrece confirmar el cambio y lleva a la atención",
+    async (_caso, overrides) => {
+      comoEstudiante();
+      getAppointmentMock.mockResolvedValue({
+        status: "ok",
+        appointment: atencionActual(overrides),
+      });
+      renderAt(RUTA_CAMBIO);
+
+      expect(
+        await screen.findByRole("heading", { name: "Esta atención ya no se puede cambiar" }),
+      ).toBeDefined();
+      expect(screen.getByRole("link", { name: "Ver la atención" }).getAttribute("href")).toBe(
+        "/estudiante/atenciones/atencion-1",
+      );
+      expect(screen.queryByRole("button", { name: "Confirmar cambio" })).toBeNull();
+      // Volver a horarios llevaría a esta misma confirmación.
+      expect(screen.queryByRole("link", { name: "Volver a horarios" })).toBeNull();
+      expect(rescheduleAppointmentMock).not.toHaveBeenCalled();
+    },
+  );
+
+  test("una atención ajena no ofrece el cambio ni revela si existe", async () => {
+    comoEstudiante();
+    getAppointmentMock.mockResolvedValue({ status: "denied" });
+    renderAt(RUTA_CAMBIO);
+
+    expect(
+      await screen.findByRole("heading", { name: "No tienes acceso a esta atención." }),
+    ).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Confirmar cambio" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Horario actual" })).toBeNull();
+  });
+
+  test("si falla la lectura de la atención permite reintentar sin ofrecer el cambio", async () => {
+    comoEstudiante();
+    getAppointmentMock
+      .mockResolvedValueOnce({ status: "error", message: "No pudimos cargar la atención." })
+      .mockResolvedValue({ status: "ok", appointment: atencionActual() });
+    renderAt(RUTA_CAMBIO);
+
+    expect(await screen.findByText("No pudimos cargar la atención.")).toBeDefined();
+    expect(screen.queryByRole("button", { name: "Confirmar cambio" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Reintentar cargar tu atención" }));
+
+    expect(await screen.findByRole("heading", { name: "Horario actual" })).toBeDefined();
+    expect(screen.getByRole("button", { name: "Confirmar cambio" })).toBeDefined();
   });
 });
 

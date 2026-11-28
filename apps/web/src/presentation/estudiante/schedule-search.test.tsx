@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import type { ReactNode } from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { createAppRouter } from "../routes/router.tsx";
 import type { WebSessionRole, WebSessionState } from "../session/session-state.ts";
 import type { SlotSearchResult } from "../../application/agenda/agenda-port.ts";
+import { toOfficialChannelCoordination } from "../../../../../convex/domain/index.ts";
 
 /**
  * Pruebas de búsqueda de horarios del Estudiante (TI2-101).
@@ -257,7 +258,9 @@ describe("búsqueda de horarios (TI2-101)", () => {
     mockedResult = { status: "no_availability", code: "no_availability" };
     renderAt("/estudiante/horarios");
 
-    expect(await screen.findByText("No hay cupos compatibles por ahora.")).toBeDefined();
+    expect(
+      await screen.findByRole("heading", { name: "No hay horarios compatibles por ahora" }),
+    ).toBeDefined();
     expect(
       screen.getByText(
         "Sin cupo disponible. Coordina por el canal oficial con la referencia indicada.",
@@ -267,6 +270,54 @@ describe("búsqueda de horarios (TI2-101)", () => {
     expect(screen.queryByText("No pudimos cargar los horarios. Inténtalo de nuevo.")).toBeNull();
     expect(screen.getByRole("status").textContent?.trim()).toBe(
       "Sin cupos compatibles en este momento.",
+    );
+  });
+
+  test("sin horario compatible muestra la explicación, el código y los canales oficiales (TI2-163)", async () => {
+    comoEstudiante();
+    const coordination = toOfficialChannelCoordination("acompanamiento-1", "needs_not_met");
+    mockedResult = { status: "no_availability", code: "no_availability", coordination };
+    renderAt("/estudiante/horarios");
+
+    const panel = await screen.findByRole("region", {
+      name: "No hay horarios compatibles por ahora",
+    });
+    const enPanel = within(panel);
+    expect(enPanel.getByText(coordination.explanation)).toBeDefined();
+    expect(enPanel.getByText(coordination.referenceCode)).toBeDefined();
+    expect(coordination.referenceCode).toMatch(/^CER-[0-9A-Z]{4}-[0-9A-Z]{4}$/);
+    // Cada canal trae su horario y una forma accesible de contacto.
+    for (const channel of coordination.channels) {
+      expect(enPanel.getByText(channel.name)).toBeDefined();
+    }
+    const correo = enPanel.getByRole("link", { name: /Escribir a / });
+    expect(correo.getAttribute("href")).toMatch(/^mailto:/);
+    const llamar = enPanel.getByRole("link", { name: /Llamar al / });
+    expect(llamar.getAttribute("href")).toMatch(/^tel:\+?\d+$/);
+    // El canal presencial muestra cómo llegar, con sus condiciones de acceso.
+    expect(enPanel.getByText("Condiciones de acceso")).toBeDefined();
+    expect(enPanel.getByText("Instrucciones de llegada")).toBeDefined();
+    expect(enPanel.getByText("Lugar")).toBeDefined();
+    // No propone relajar necesidades ni buscar otra modalidad.
+    expect(screen.queryByText(/otra modalidad/)).toBeNull();
+  });
+
+  test("al reagendar, cada cupo conserva la atención y la modalidad elegida (TI2-163)", async () => {
+    comoEstudiante();
+    mockedResult = { status: "ok", slots: [cupoFicticio({ id: "cupo-1" })] };
+    renderAt(
+      "/estudiante/horarios?accompanimentId=acompanamiento-1&modality=inPerson&rescheduleAppointmentId=atencion-1",
+    );
+
+    expect(await screen.findByRole("heading", { name: "Elegir un nuevo horario" })).toBeDefined();
+    expect(screen.getByText(/mantiene su horario actual/)).toBeDefined();
+    expect(screen.getByRole("radio", { name: "Presencial" })).toHaveProperty("checked", true);
+    const enlace = screen.getByRole("link", { name: /Martes 20 de octubre.*Sala 101/ });
+    expect(enlace.getAttribute("href")).toBe(
+      "/estudiante/reservar?slotId=cupo-1&accompanimentId=acompanamiento-1&modality=inPerson&rescheduleAppointmentId=atencion-1",
+    );
+    expect(screen.getByRole("link", { name: "Volver a la atención" }).getAttribute("href")).toBe(
+      "/estudiante/atenciones/atencion-1",
     );
   });
 

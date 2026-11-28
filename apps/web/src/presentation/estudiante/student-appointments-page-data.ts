@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { toSpaceLabel } from "../../../../../convex/domain/index.ts";
+import type { Space } from "../../../../../convex/domain/index.ts";
 import type {
   AgendaAppointment,
   AgendaAppointmentResult,
   ListAppointmentsResult,
+  OnlineAccessResult,
 } from "../../application/agenda/agenda-port.ts";
 import { getAgendaPort } from "./schedule-search-data.ts";
 
@@ -24,24 +26,19 @@ export {
  *
  * La proyección visible corresponde a la vista `shared` de TI2-112: el
  * motivo de cancelación es texto libre de la vista del Profesional y el
- * Estudiante no lo recibe ni lo muestra. El cálculo del plazo de
- * justificación pertenece al Backend (TI2-94) y la presentación y revisión
- * de justificaciones a TI2-119; nada de eso se calcula o inventa acá.
+ * Estudiante no lo recibe ni lo muestra. La vista sí trae el acompañamiento,
+ * para reagendar con la misma búsqueda, y la recepción y revisión de la
+ * justificación (TI2-163); el plazo sale del dominio compartido (TI2-147).
  */
 
-/** Proyección con la vista visible del Estudiante: sin datos de terceros. */
+/**
+ * Proyección con la vista visible del Estudiante: todo lo de la atención salvo
+ * el motivo de cancelación, que es de la vista del Profesional.
+ */
 function sharedViewOf(appointment: AgendaAppointment): AgendaAppointment {
-  return {
-    id: appointment.id,
-    status: appointment.status,
-    modality: appointment.modality,
-    startAt: appointment.startAt,
-    endAt: appointment.endAt,
-    ...(appointment.spaceId === undefined ? {} : { spaceId: appointment.spaceId }),
-    ...(appointment.originalStartAt === undefined
-      ? {}
-      : { originalStartAt: appointment.originalStartAt }),
-  };
+  return appointment.cancelReason === undefined
+    ? appointment
+    : { ...appointment, cancelReason: undefined };
 }
 
 /** Lista de las atenciones propias, con la vista `shared` aplicada. */
@@ -91,19 +88,31 @@ export function useStudentAppointments(attempt: number): ListAppointmentsResult 
   return entry.attempt === attempt ? entry.result : undefined;
 }
 
-/** Detalle de una atención propia, con la vista `shared` aplicada. */
+/**
+ * Detalle de una atención propia, con la vista `shared` aplicada.
+ *
+ * `attempt` reintenta tras un error y vuelve a la carga; `revision` relee
+ * después de un cambio propio conservando lo mostrado hasta que llega la
+ * respuesta nueva, para no perder el foco ni la atención anterior. Sin
+ * identificador no consulta nada: la confirmación de reserva solo lee la
+ * atención cuando cambia su horario (TI2-163).
+ */
 export function useStudentAppointment(
-  appointmentId: string,
+  appointmentId: string | undefined,
   attempt: number,
+  revision = 0,
 ): AgendaAppointmentResult | undefined {
   // Igual que la lista, el resultado recuerda a qué lectura pertenece.
   const [entry, setEntry] = useState<{
-    appointmentId: string;
+    appointmentId: string | undefined;
     attempt: number;
     result?: AgendaAppointmentResult;
   }>({ appointmentId, attempt });
 
   useEffect(() => {
+    if (appointmentId === undefined) {
+      return;
+    }
     let cancelled = false;
     const apply = (next: AgendaAppointmentResult) => {
       if (!cancelled) {
@@ -136,22 +145,68 @@ export function useStudentAppointment(
     return () => {
       cancelled = true;
     };
-  }, [appointmentId, attempt]);
+  }, [appointmentId, attempt, revision]);
 
   return entry.appointmentId === appointmentId && entry.attempt === attempt
     ? entry.result
     : undefined;
 }
 
+/**
+ * Acceso a la atención en línea (TI2-142). Lo consulta solo la sección de una
+ * atención en línea; el enlace privado nunca viaja en la agenda.
+ */
+export function useOnlineAccess(
+  appointmentId: string,
+  attempt: number,
+): OnlineAccessResult | undefined {
+  const [entry, setEntry] = useState<{
+    key: string;
+    result: OnlineAccessResult;
+  } | null>(null);
+  const key = `${appointmentId}:${attempt}`;
+
+  useEffect(() => {
+    let cancelled = false;
+    getAgendaPort()
+      .getOnlineAccess(appointmentId)
+      .then(
+        (result) => {
+          if (!cancelled) {
+            setEntry({ key, result });
+          }
+        },
+        () => {
+          if (!cancelled) {
+            setEntry({
+              key,
+              result: {
+                status: "error",
+                message: "No pudimos cargar el acceso en línea. Inténtalo de nuevo.",
+              },
+            });
+          }
+        },
+      );
+    return () => {
+      cancelled = true;
+    };
+  }, [appointmentId, key]);
+
+  return entry?.key === key ? entry.result : undefined;
+}
+
 /** Catálogo de salas por identificador, con su estado de lectura y reintento. */
 export type SpaceLabels = {
   readonly labels: ReadonlyMap<string, string>;
+  /** Salas completas, con condiciones de acceso e instrucciones de llegada (TI2-163). */
+  readonly spaces: ReadonlyMap<string, Space>;
   /** Verdadero cuando la lectura terminó; una sala sin etiqueta queda sin resolver. */
   readonly settled: boolean;
   readonly retry: () => void;
 };
 
-const NO_SPACE_LABELS: ReadonlyMap<string, string> = new Map();
+const NO_SPACES: ReadonlyMap<string, Space> = new Map();
 
 /**
  * Etiquetas legibles de los espacios del catálogo, por identificador.
@@ -166,14 +221,14 @@ export function useSpaceLabels(): SpaceLabels {
   const [attempt, setAttempt] = useState(0);
   const [entry, setEntry] = useState<{
     attempt: number;
-    labels: ReadonlyMap<string, string>;
+    spaces: ReadonlyMap<string, Space>;
   } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    const settle = (labels: ReadonlyMap<string, string>) => {
+    const settle = (spaces: ReadonlyMap<string, Space>) => {
       if (!cancelled) {
-        setEntry({ attempt, labels });
+        setEntry({ attempt, spaces });
       }
     };
     getAgendaPort()
@@ -182,13 +237,13 @@ export function useSpaceLabels(): SpaceLabels {
         (result) => {
           settle(
             result.status === "ok"
-              ? new Map(result.spaces.map((space) => [space.id, toSpaceLabel(space)]))
-              : NO_SPACE_LABELS,
+              ? new Map(result.spaces.map((space) => [space.id, space]))
+              : NO_SPACES,
           );
         },
         () => {
           // Sin catálogo la lista sigue siendo útil: el espacio se omite con aviso.
-          settle(NO_SPACE_LABELS);
+          settle(NO_SPACES);
         },
       );
     return () => {
@@ -197,8 +252,10 @@ export function useSpaceLabels(): SpaceLabels {
   }, [attempt]);
 
   const settled = entry !== null && entry.attempt === attempt;
+  const spaces = settled ? entry.spaces : NO_SPACES;
   return {
-    labels: settled ? entry.labels : NO_SPACE_LABELS,
+    labels: new Map([...spaces].map(([id, space]) => [id, toSpaceLabel(space)])),
+    spaces,
     settled,
     retry: () => setAttempt((value) => value + 1),
   };
