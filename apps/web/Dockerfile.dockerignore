@@ -6,6 +6,7 @@
 !bun.lock
 !patches/
 !convex/
+!docs/privacidad-aviso.md
 !apps/web/
 !apps/mobile/package.json
 **/node_modules

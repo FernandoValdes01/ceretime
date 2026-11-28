@@ -31,6 +31,10 @@ COPY apps/mobile/package.json apps/mobile/
 RUN bun install --frozen-lockfile --filter ceretime --filter web
 
 COPY convex ./convex
+# La página del aviso de privacidad importa el documento con `?raw` (TI2-171).
+# Otro archivo de fuera de `apps/web` que importe la Web va aquí y en
+# `Dockerfile.dockerignore`.
+COPY docs/privacidad-aviso.md ./docs/privacidad-aviso.md
 COPY apps/web ./apps/web
 
 ARG VITE_CONVEX_URL
