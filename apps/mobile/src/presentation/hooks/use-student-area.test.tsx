@@ -252,6 +252,28 @@ test("a refresh that fails keeps the loaded data, but losing access removes it",
   act(() => mounted.unmount());
 });
 
+test("a failed refresh is reported until a later one succeeds", async () => {
+  const { reader, reads } = manualReader();
+  const mounted = mount(reader);
+  await resolveRead(reads[0]!, await snapshot({ requests: [request("propia")] }));
+  expect(mounted.getState().refreshError).toBeNull();
+
+  act(() => mounted.getState().refresh());
+  await rejectRead(reads[1]!, new Error("sin red"));
+  expect(mounted.getState().refreshError).not.toBeNull();
+  expect(mounted.getState().retryingRefresh).toBe(false);
+
+  // Mientras reintenta, el aviso sigue: los datos todavía no están confirmados.
+  act(() => mounted.getState().refresh());
+  expect(mounted.getState().refreshError).not.toBeNull();
+  expect(mounted.getState().retryingRefresh).toBe(true);
+
+  await resolveRead(reads[2]!, await snapshot({ requests: [request("propia")] }));
+  expect(mounted.getState().refreshError).toBeNull();
+  expect(mounted.getState().retryingRefresh).toBe(false);
+  act(() => mounted.unmount());
+});
+
 test("returning to the foreground refreshes, and unmounting stops listening", async () => {
   const listeners: ((state: AppStateStatus) => void)[] = [];
   const remove = jest.fn();

@@ -42,6 +42,9 @@ export interface StudentAreaState {
   readonly reload: () => void;
   /** Vuelve a leer sin vaciar la pantalla, para traer cambios hechos fuera de la app. */
   readonly refresh: () => void;
+  /** Fallo de la última relectura: lo que se muestra sigue siendo lo leído antes. */
+  readonly refreshError: unknown | null;
+  readonly retryingRefresh: boolean;
   // La identidad siempre viene en el snapshot, por eso no tiene estado `empty`.
   readonly identity: StudentIdentityState;
   readonly requests: StudentRequestsState;
@@ -53,10 +56,14 @@ interface StudentAreaLoad {
   readonly status: StudentAreaLoadStatus;
   readonly snapshot: StudentAreaSnapshot | null;
   readonly error: unknown | null;
+  readonly refreshError: unknown | null;
+  readonly retryingRefresh: boolean;
 }
 
+const settledRefresh = { refreshError: null, retryingRefresh: false } as const;
+
 function loadingLoad(reader: StudentAreaReader): StudentAreaLoad {
-  return { reader, status: "loading", snapshot: null, error: null };
+  return { reader, status: "loading", snapshot: null, error: null, ...settledRefresh };
 }
 
 function errorLoad(reader: StudentAreaReader, error: unknown): StudentAreaLoad {
@@ -65,10 +72,11 @@ function errorLoad(reader: StudentAreaReader, error: unknown): StudentAreaLoad {
     status: isMobileAccessDenied(error) ? "access-denied" : "error",
     snapshot: null,
     error: toMobileOperationError(error, "No pudimos cargar tus solicitudes. Intenta nuevamente."),
+    ...settledRefresh,
   };
 }
 
-// Un refresco que falla conserva lo ya leído; perder el acceso sí lo retira.
+// Un refresco que falla conserva lo ya leído y lo declara; perder el acceso sí lo retira.
 function failedLoad(
   previous: StudentAreaLoad,
   reader: StudentAreaReader,
@@ -79,11 +87,13 @@ function failedLoad(
     failed.status !== "access-denied" &&
     previous.reader === reader &&
     previous.status === "success";
-  return keepsPrevious ? previous : failed;
+  return keepsPrevious
+    ? { ...previous, refreshError: failed.error, retryingRefresh: false }
+    : failed;
 }
 
 function successLoad(reader: StudentAreaReader, snapshot: StudentAreaSnapshot): StudentAreaLoad {
-  return { reader, status: "success", snapshot, error: null };
+  return { reader, status: "success", snapshot, error: null, ...settledRefresh };
 }
 
 /**
@@ -111,6 +121,9 @@ export function useStudentArea(reader: StudentAreaReader): StudentAreaState {
   const refresh = useCallback(() => {
     if (reading.current) return;
     reading.current = true;
+    setLoad((previous) =>
+      previous.refreshError === null ? previous : { ...previous, retryingRefresh: true },
+    );
     setReloadVersion((version) => version + 1);
   }, []);
 
@@ -201,6 +214,8 @@ export function useStudentArea(reader: StudentAreaReader): StudentAreaState {
     error,
     reload,
     refresh,
+    refreshError: visibleLoad.refreshError,
+    retryingRefresh: visibleLoad.retryingRefresh,
     identity,
     requests,
     accompaniments,

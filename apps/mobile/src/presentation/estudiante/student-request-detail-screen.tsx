@@ -3,6 +3,7 @@ import { View } from "react-native";
 
 import { StudentRequestActionsPanel } from "./student-request-actions";
 import { StudentAction, StudentScreen } from "./student-screen";
+import { StudentRefreshNotice } from "./student-refresh-notice";
 import { StudentText } from "./student-text";
 import { formatRequestDate } from "./student-request-formatters";
 import { StudentRequestStatusIndicator } from "./student-request-status-indicator";
@@ -45,7 +46,7 @@ export default function StudentRequestDetailScreen() {
       : undefined;
 
   return (
-    <StudentScreen onBack={router.back} showIntroduction={false}>
+    <StudentScreen onBack={router.back} showIntroduction={false} notice={<StudentRefreshNotice />}>
       <OperationAnnouncement message={detailAnnouncement(requests.status, Boolean(request))} />
       {requests.status === "loading" ? (
         <View

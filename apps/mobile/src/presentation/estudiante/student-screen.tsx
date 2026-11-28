@@ -1,4 +1,4 @@
-import { type PropsWithChildren, type Ref } from "react";
+import { type PropsWithChildren, type ReactNode, type Ref } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { AppHeader } from "../components/app-header";
@@ -22,6 +22,8 @@ export type StudentScreenProps = PropsWithChildren<
   StudentScreenIntroductionProps & {
     readonly scrollRef?: Ref<ScrollView>;
     readonly onBack?: () => void;
+    /** Aviso fijo bajo la cabecera: se ve aunque el contenido esté desplazado. */
+    readonly notice?: ReactNode;
   }
 >;
 
@@ -29,6 +31,7 @@ export type StudentScreenProps = PropsWithChildren<
 export function StudentScreen({
   scrollRef,
   onBack,
+  notice,
   children,
   ...introduction
 }: StudentScreenProps) {
@@ -39,6 +42,7 @@ export function StudentScreen({
         edges={["top", "left", "right", "bottom"]}
       >
         <AppHeader onBack={onBack} />
+        {notice}
         <ScrollView
           ref={scrollRef}
           keyboardShouldPersistTaps="handled"

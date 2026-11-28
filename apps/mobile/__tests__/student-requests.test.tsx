@@ -242,6 +242,40 @@ describe("Solicitudes del estudiante", () => {
     expect(await screen.findByLabelText("Estado de la solicitud: En revisión")).toBeOnTheScreen();
   });
 
+  test("si no puede actualizar lo avisa, conserva lo escrito y permite reintentar", async () => {
+    const notice = "No pudimos actualizar. Ves los últimos datos cargados.";
+    const reader = mobileDependencies.studentAreaReader;
+    const readDemo = reader.readStudentArea.bind(reader);
+    let offline = false;
+    jest
+      .spyOn(reader, "readStudentArea")
+      .mockImplementation(() => (offline ? Promise.reject(new Error("sin red")) : readDemo()));
+
+    renderRouter(appDirectory);
+    fireEvent.press(await screen.findByRole("button", { name: "Entrar como Estudiante" }));
+    fireEvent.press(await screen.findByRole("button", { name: "Mis solicitudes" }));
+    fireEvent.press(
+      await screen.findByRole("button", { name: /Estado: Esperando información o aceptación/ }),
+    );
+    fireEvent.press(await screen.findByRole("button", { name: "Responder información" }));
+    fireEvent.changeText(
+      screen.getByLabelText("Respuesta a la información solicitada"),
+      "A medio escribir",
+    );
+    expect(screen.queryByText(notice)).not.toBeOnTheScreen();
+
+    offline = true;
+    fireEvent.press(screen.getByLabelText("Perfil, pestaña, 3 de 3"));
+    fireEvent.press(screen.getByLabelText("Solicitudes, pestaña, 2 de 3"));
+    expect(await screen.findByText(notice)).toBeOnTheScreen();
+    expect(screen.getByDisplayValue("A medio escribir")).toBeOnTheScreen();
+
+    offline = false;
+    fireEvent.press(screen.getByRole("button", { name: "Reintentar actualización" }));
+    await waitFor(() => expect(screen.queryByText(notice)).not.toBeOnTheScreen());
+    expect(screen.getByDisplayValue("A medio escribir")).toBeOnTheScreen();
+  });
+
   test("incluye en listado y detalle una solicitud enviada durante la sesión", async () => {
     const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility");
     const navigation = renderRouter(appDirectory);
