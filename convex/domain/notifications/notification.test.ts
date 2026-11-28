@@ -11,10 +11,12 @@ import {
   NOTIFICATION_CONTRACT_VERSION,
   NOTIFICATION_EVENT_KIND_VALUES,
   NOTIFICATION_READ_STATUS_VALUES,
+  PRIVACY_NOTIFICATION_EVENT_KIND_VALUES,
   REQUEST_NOTIFICATION_EVENT_KIND_VALUES,
   isAppointmentNotificationEventKind,
   isNotificationEventKind,
   isNotificationReadStatus,
+  isPrivacyNotificationEventKind,
   isRequestNotificationEventKind,
   notificationEventsForCreation,
   notificationEventsForJustificationSubmitted,
@@ -197,15 +199,15 @@ describe("Evento de notificación para consumidores (TI2-100)", () => {
     expect(isNotificationEventKind("request_received")).toBe(true);
     expect(isNotificationEventKind("appointment_deleted")).toBe(false);
     expect([...APPOINTMENT_NOTIFICATION_EVENT_KIND_VALUES]).not.toContain("request_received");
+    // Las comunicaciones de privacidad tienen clase y recurso propios.
+    expect([...PRIVACY_NOTIFICATION_EVENT_KIND_VALUES]).toEqual([
+      "privacy_request_granted",
+      "privacy_request_denied",
+    ]);
+    expect(isPrivacyNotificationEventKind("privacy_request_granted")).toBe(true);
+    expect(isPrivacyNotificationEventKind("request_received")).toBe(false);
     expect(
-      REQUEST_NOTIFICATION_EVENT_KIND_VALUES.filter((kind) => kind.startsWith("request_")).every(
-        (kind) => kind.startsWith("request_"),
-      ),
-    ).toBe(true);
-    expect(
-      REQUEST_NOTIFICATION_EVENT_KIND_VALUES.filter((kind) => kind.startsWith("privacy_")).every(
-        (kind) => kind === "privacy_request_granted" || kind === "privacy_request_denied",
-      ),
+      REQUEST_NOTIFICATION_EVENT_KIND_VALUES.every((kind) => kind.startsWith("request_")),
     ).toBe(true);
     expect(
       APPOINTMENT_NOTIFICATION_EVENT_KIND_VALUES.every((kind) => kind.startsWith("appointment_")),
