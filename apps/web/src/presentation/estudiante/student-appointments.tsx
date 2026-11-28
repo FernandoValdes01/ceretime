@@ -1,16 +1,16 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { authClient } from "../../infrastructure/auth/auth-client.ts";
-import {
-  getCalendarLinkRequest,
-  type CalendarCallbackStatus,
-} from "../../application/calendar/calendar-link.ts";
+import type { CalendarCallbackStatus } from "../../application/calendar/calendar-link.ts";
 import { isCalendarActionableStatus } from "../../../../../convex/domain/index.ts";
 import {
   appointmentStatusLabel,
   formatAppointmentDateTime,
   modalityLabel,
 } from "./agenda-labels.ts";
+import {
+  startCalendarLink,
+  useConfirmCalendarLinkOnReturn,
+} from "../avisos/calendar-link-actions.ts";
 import { downloadCalendarFile } from "./calendar-download.ts";
 import {
   useAddAppointmentToGoogleCalendar,
@@ -29,6 +29,11 @@ import {
  * oculta la atención ni revierte la reserva: se muestra un aviso genérico y el
  * archivo de respaldo. No se leen calendarios ni se muestran tokens, correo de
  * Google o detalles del proveedor.
+ *
+ * Desde TI2-172 cada atención muestra su sincronización automática (TI2-162):
+ * pendiente, sincronizada o con error. Un error nunca muestra la reserva como
+ * fallida; si Google perdió el permiso, se pide volver a vincular. Al volver
+ * de la autorización, el vínculo se confirma en el Backend.
  */
 
 type Notice = {
@@ -83,20 +88,32 @@ function ConnectionCard({
   );
 }
 
-function calendarCallbackNotice(status?: CalendarCallbackStatus): Notice | null {
-  if (status === "connected") {
-    return {
-      kind: "success",
-      text: "Google Calendar quedó conectado. Ya puedes agregar tus atenciones.",
-    };
+/**
+ * Atención que todavía se sincroniza: vigente y futura. Al volver a vincular,
+ * el Backend solo recorre estas, así que un error de una cancelada o pasada
+ * no se corrige y no debe pedir volver a conectar.
+ */
+function isCalendarSyncCurrent(appointment: OwnAppointmentSummary, now: number): boolean {
+  return isCalendarActionableStatus(appointment.status) && appointment.startAt > now;
+}
+
+/** Estado de la sincronización automática de una atención, en texto. */
+function calendarSyncText(appointment: OwnAppointmentSummary, now: number): string | null {
+  if (appointment.calendarSyncStatus === "error" && !isCalendarSyncCurrent(appointment, now)) {
+    return null;
   }
-  if (status === "error") {
-    return {
-      kind: "error",
-      text: "No pudimos conectar Google Calendar. Puedes intentarlo de nuevo o descargar el archivo .ics.",
-    };
+  switch (appointment.calendarSyncStatus) {
+    case "pending":
+      return "Sincronizando con Google Calendar";
+    case "synced":
+      return "Sincronizada con Google Calendar";
+    case "error":
+      return appointment.calendarSyncErrorCode === "not_connected"
+        ? "Sin sincronizar: Google Calendar perdió el permiso. Tu atención sigue reservada"
+        : "Sin sincronizar por ahora: se volverá a intentar. Tu atención sigue reservada";
+    default:
+      return null;
   }
-  return null;
 }
 
 export function StudentAppointmentsSection({
@@ -122,7 +139,22 @@ export function StudentAppointmentsSection({
   const [notices, setNotices] = useState<Record<string, Notice>>({});
   const [fallbackIds, setFallbackIds] = useState<Record<string, true>>({});
 
-  const callbackNotice = callbackDismissed ? null : calendarCallbackNotice(calendarStatus);
+  const returnNotice = useConfirmCalendarLinkOnReturn(readOnly ? undefined : calendarStatus);
+  const callbackNotice: Notice | null =
+    callbackDismissed || returnNotice === null
+      ? null
+      : { kind: returnNotice.tone === "alert" ? "error" : "success", text: returnNotice.text };
+  // La sincronización automática también detecta que Google perdió el permiso,
+  // aunque el vínculo guardado siga conectado (Google lo revocó por fuera).
+  // Solo cuentan las atenciones que volver a vincular vuelve a sincronizar.
+  const [now] = useState(() => Date.now());
+  const syncLostAccess =
+    appointments?.some(
+      (appointment) =>
+        isCalendarSyncCurrent(appointment, now) &&
+        appointment.calendarSyncStatus === "error" &&
+        appointment.calendarSyncErrorCode === "not_connected",
+    ) === true;
   const visibleConnectionNotice = connectionNotice ?? callbackNotice;
 
   function setAppointmentNotice(appointmentId: string, notice: Notice) {
@@ -133,24 +165,13 @@ export function StudentAppointmentsSection({
     setConnecting(true);
     setConnectionNotice(null);
     setCallbackDismissed(true);
-    try {
-      const result = await authClient.linkSocial(
-        getCalendarLinkRequest(`${window.location.pathname}${window.location.search}`),
-      );
-      if (result.error) {
-        setConnectionNotice({
-          kind: "error",
-          text: "No pudimos conectar Google Calendar. Inténtalo de nuevo.",
-        });
-      }
-    } catch {
+    if (!(await startCalendarLink())) {
       setConnectionNotice({
         kind: "error",
         text: "No pudimos conectar Google Calendar. Inténtalo de nuevo.",
       });
-    } finally {
-      setConnecting(false);
     }
+    setConnecting(false);
   }
 
   async function handleDownload(appointmentId: string) {
@@ -242,7 +263,7 @@ export function StudentAppointmentsSection({
         <p role="status" className="text-sm text-on-surface-variant">
           Verificando la conexión con Google Calendar…
         </p>
-      ) : needsReconnect ? (
+      ) : needsReconnect || syncLostAccess ? (
         <ConnectionCard
           title="Google Calendar perdió el acceso."
           description="Vuelve a conectar tu cuenta para agregar atenciones. También puedes descargar el archivo .ics de las atenciones vigentes."
@@ -276,8 +297,9 @@ export function StudentAppointmentsSection({
             <AppointmentItem
               key={appointment.appointmentId}
               appointment={appointment}
-              connected={connection?.connected === true && !needsReconnect}
+              connected={connection?.connected === true && !needsReconnect && !syncLostAccess}
               readOnly={readOnly}
+              syncText={readOnly ? null : calendarSyncText(appointment, now)}
               pending={pendingId === appointment.appointmentId}
               downloading={downloadingId === appointment.appointmentId}
               notice={notices[appointment.appointmentId]}
@@ -304,6 +326,7 @@ function AppointmentItem({
   appointment,
   connected,
   readOnly,
+  syncText,
   pending,
   downloading,
   notice,
@@ -314,6 +337,7 @@ function AppointmentItem({
   appointment: OwnAppointmentSummary;
   connected: boolean;
   readOnly: boolean;
+  syncText: string | null;
   pending: boolean;
   downloading: boolean;
   notice?: Notice;
@@ -335,6 +359,9 @@ function AppointmentItem({
             ? " · Evento de Google Calendar desactualizado"
             : ""}
       </p>
+      {syncText === null ? null : (
+        <p className="mb-3 text-sm text-on-surface-variant">{syncText}.</p>
+      )}
 
       {notice === undefined ? null : <NoticeBox notice={notice} />}
 

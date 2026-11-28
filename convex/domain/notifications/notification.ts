@@ -118,6 +118,34 @@ export function isNotificationEventKind(value: string): value is NotificationEve
 }
 
 /**
+ * Texto de cada clase dentro de una sesión autenticada (TI2-172): la bandeja
+ * lo compone a partir de `kind`, porque el aviso no trae textos. Dice qué
+ * cambió sin incluir datos del recurso, que se leen en su detalle con su
+ * propio permiso. Fuera de sesión se usa `toExternalNotification`.
+ */
+export const NOTIFICATION_EVENT_KIND_LABELS: Record<NotificationEventKind, string> = {
+  appointment_scheduled: "Se programó una atención",
+  appointment_rescheduled: "Una atención cambió de horario",
+  appointment_cancelled: "Se canceló una atención",
+  appointment_no_show: "Se registró una inasistencia",
+  appointment_reminder: "Recordatorio de una atención",
+  appointment_online_access_ready: "El acceso en línea de una atención está disponible",
+  appointment_justification_submitted: "Se entregó una justificación de inasistencia",
+  appointment_justification_reviewed: "Se revisó una justificación de inasistencia",
+  appointment_availability_changed: "Cambió la disponibilidad de una atención",
+  appointment_space_changed: "Cambió la sala de una atención",
+  appointment_needs_updated: "Cambiaron las necesidades de acceso de una atención",
+  request_received: "Se recibió una solicitud",
+  request_under_review: "Una solicitud está en revisión",
+  request_information_requested: "CERETI pidió más información sobre una solicitud",
+  request_information_provided: "Se respondió la información pedida en una solicitud",
+  request_accepted: "Se aceptó una solicitud",
+  request_referred: "Se derivó una solicitud",
+  request_closed: "Se cerró una solicitud",
+  request_cancelled: "Se canceló una solicitud",
+};
+
+/**
  * Estado de lectura del aviso para su destinatario. Cada evento tiene un solo
  * destinatario, así que el estado vive en la fila: `pending` mientras no se
  * marcó y `read` desde que existe su instante de lectura.
