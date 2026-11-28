@@ -393,8 +393,10 @@ export async function listRequestsByStatus(
 
 /**
  * Tomas activas y terminadas del usuario, paginadas por solicitud para
- * duplicadas adyacentes (TI4-84). Las liberadas se descartan con `filter`
- * sobre el índice: son pocas por usuario y el índice ya acota el barrido.
+ * duplicadas adyacentes (TI4-84). Un solo índice no puede pedir dos estados,
+ * así que las liberadas se descartan con `filter` después del índice, que ya
+ * acota el barrido al usuario: una página puede traer menos filas que
+ * `numItems` y el cursor sigue avanzando igual.
  */
 export async function listReviewTakes(
   ctx: DbReader,
