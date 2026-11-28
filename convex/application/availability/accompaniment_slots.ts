@@ -124,9 +124,12 @@ export async function searchAccompanimentSlots(
   const after = input.cursor === undefined ? null : decodeSlotCursor(input.cursor);
   if (input.cursor !== undefined && after === null) return conflict();
 
+  // Misma autorización que `searchSlots`, incluido el bloqueo temporal de las
+  // atenciones (TI2-168).
   const grant = await authorizeAvailabilityRead(deps.auth, {
     tokenIdentifier: input.tokenIdentifier,
     accompanimentId: input.accompanimentId,
+    privacyCategory: "appointments",
   });
   if (grant.status === "error") return errResult(unauthorizedError());
 

@@ -262,6 +262,28 @@ describe("searchAccompanimentSlots (TI4-84)", () => {
     ).toMatchObject({ status: "ok" });
   });
 
+  test("un bloqueo temporal de las atenciones del titular deniega la búsqueda (TI2-168)", async () => {
+    const { deps } = world();
+    const blocked: SearchAccompanimentSlotsDeps = {
+      ...deps,
+      auth: {
+        ...deps.auth,
+        listActivePrivacyBlocks: async () => [
+          {
+            id: "bloqueo-1",
+            scope: "all_personal_data",
+            startsAt: 0,
+            endsAt: Number.MAX_SAFE_INTEGER,
+          },
+        ],
+      },
+    };
+    expect(await searchAccompanimentSlots(blocked, input())).toEqual({
+      status: "error",
+      error: { code: "unauthorized", message: "No autorizado" },
+    });
+  });
+
   test("un cursor que esta búsqueda no emitió responde conflict", async () => {
     const { deps } = world();
     expect(

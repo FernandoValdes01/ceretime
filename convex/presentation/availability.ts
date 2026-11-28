@@ -290,7 +290,7 @@ export const searchAccompanimentSlots = query({
     const result = unwrap(
       await searchAccompanimentSlotsUseCase(
         {
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           professionals: bookableProfessionalSource(ctx),
           availability: availabilityReader(ctx),
           needs: accompanimentNeedsReader(ctx),
