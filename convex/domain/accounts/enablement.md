@@ -12,7 +12,7 @@ El objetivo debe tener rol `intern`, correo institucional normalizado (`@alu.uct
 
 ## Auditoría y separación de decisiones
 
-Cada habilitación registra actor (`enabledBy` con el `_id` del Administrador) y fecha (`enabledAt`) en el propio documento de `users`; habilitar no concede acompañamientos, una cuenta habilitada sin asignación activa sigue sin leer nada y la asignación posterior la realiza un Profesional autorizado por la vía guardada de `internal.operations.assignments`.
+Cada habilitación registra actor (`enabledBy` con el `_id` del Administrador) y fecha (`enabledAt`) en el propio documento de `users`, que guarda el último estado. Desde TI4-84 además agrega un evento a `accountEnablements` (`HABILITACIONES_CUENTA` del MER), que la revocación siguiente cierra con su actor, su fecha y un motivo opcional de hasta `ACCOUNT_REVOCATION_REASON_MAX_LENGTH` caracteres; así las acciones de un Administrador anterior siguen consultables con `listAccountEnablements`. La habilitación automática del Estudiante y el arranque abren su evento sin actor. Habilitar no concede acompañamientos, una cuenta habilitada sin asignación activa sigue sin leer nada y la asignación posterior la realiza un Profesional autorizado por la vía guardada de `internal.operations.assignments`.
 
 ## Ausencia de auto-escalamiento
 

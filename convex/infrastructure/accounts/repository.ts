@@ -59,11 +59,60 @@ export async function findExistingAdmin(ctx: DbReader): Promise<Doc<"users"> | n
 }
 
 /**
+ * Agrega el evento de habilitación al historial de la cuenta (TI4-84), con
+ * el rol que tiene al habilitarse. Sin actor en la habilitación automática
+ * del Estudiante y en el arranque administrativo.
+ */
+async function insertEnablementEvent(
+  ctx: MutationCtx,
+  input: {
+    readonly userId: Id<"users">;
+    readonly role: Doc<"users">["role"];
+    readonly enabledBy?: Id<"users">;
+    readonly enabledAt: number;
+  },
+): Promise<void> {
+  await ctx.db.insert("accountEnablements", {
+    userId: input.userId,
+    role: input.role,
+    ...(input.enabledBy === undefined ? {} : { enabledBy: input.enabledBy }),
+    enabledAt: input.enabledAt,
+  });
+}
+
+/**
+ * Cierra el evento de habilitación abierto más reciente de la cuenta
+ * (TI4-84). Sin evento abierto, como en una cuenta anterior al historial
+ * todavía sin sembrar, no escribe: la migración siembra ese caso.
+ */
+async function closeOpenEnablementEvent(
+  ctx: MutationCtx,
+  input: {
+    readonly userId: Id<"users">;
+    readonly revokedBy?: Id<"users">;
+    readonly revokedAt: number;
+    readonly reason?: string;
+  },
+): Promise<void> {
+  const latest = await ctx.db
+    .query("accountEnablements")
+    .withIndex("by_user_and_enabledAt", (q) => q.eq("userId", input.userId))
+    .order("desc")
+    .first();
+  if (latest === null || latest.revokedAt !== undefined) return;
+  await ctx.db.patch(latest._id, {
+    ...(input.revokedBy === undefined ? {} : { revokedBy: input.revokedBy }),
+    revokedAt: input.revokedAt,
+    ...(input.reason === undefined ? {} : { revocationReason: input.reason }),
+  });
+}
+
+/**
  * Marca la cuenta como habilitada con su auditoría.
  *
  * Fija `institutionalStatus` en `enabled` junto al actor administrador y la
- * fecha de la operación. No cambia el rol: la habilitación jamás convierte
- * una cuenta en Administradora.
+ * fecha de la operación, y agrega el evento al historial (TI4-84). No cambia
+ * el rol: la habilitación jamás convierte una cuenta en Administradora.
  */
 export async function patchEnablement(
   ctx: MutationCtx,
@@ -73,20 +122,24 @@ export async function patchEnablement(
     readonly enabledAt: number;
   },
 ): Promise<void> {
+  const profile = await ctx.db.get(input.userId);
+  if (profile === null) throw new Error("La cuenta a habilitar no existe.");
   await ctx.db.patch(input.userId, {
     institutionalStatus: "enabled",
     enabledBy: input.enabledBy,
     enabledAt: input.enabledAt,
   });
+  await insertEnablementEvent(ctx, { ...input, role: profile.role });
 }
 
 /**
  * Marca la cuenta profesional o administrativa como revocada (TI2-137).
  *
  * Fija `institutionalStatus` en `disabled` junto al actor administrador y la
- * fecha de la operación. Conserva `enabledBy`/`enabledAt` como historial y
- * no cambia el rol. La cuenta revocada deja de operar en la petición
- * siguiente porque ya no cumple `institutionalStatus === "enabled"`.
+ * fecha de la operación, y cierra el evento abierto del historial con el
+ * motivo, si lo hay (TI4-84). Conserva `enabledBy`/`enabledAt` y no cambia el
+ * rol. La cuenta revocada deja de operar en la petición siguiente porque ya
+ * no cumple `institutionalStatus === "enabled"`.
  */
 export async function patchRevocation(
   ctx: MutationCtx,
@@ -94,6 +147,7 @@ export async function patchRevocation(
     readonly userId: Id<"users">;
     readonly revokedBy: Id<"users">;
     readonly revokedAt: number;
+    readonly reason?: string;
   },
 ): Promise<void> {
   await ctx.db.patch(input.userId, {
@@ -101,6 +155,20 @@ export async function patchRevocation(
     revokedBy: input.revokedBy,
     revokedAt: input.revokedAt,
   });
+  await closeOpenEnablementEvent(ctx, input);
+}
+
+/** Historial de habilitaciones de la cuenta, de la más reciente a la más antigua (TI4-84). */
+export async function paginateAccountEnablements(
+  ctx: DbReader,
+  userId: Id<"users">,
+  paginationOpts: PaginationOptions,
+) {
+  return await ctx.db
+    .query("accountEnablements")
+    .withIndex("by_user_and_enabledAt", (q) => q.eq("userId", userId))
+    .order("desc")
+    .paginate(paginationOpts);
 }
 
 /** Página de cuentas de personal para el listado administrativo (TI2-137). */
@@ -140,6 +208,8 @@ export function accountReader(ctx: DbReader): AccountReader {
     paginateStaffAccounts: (role, paginationOpts) =>
       paginateStaffAccounts(ctx, role, paginationOpts),
     paginateInternAccounts: (paginationOpts) => paginateInternAccounts(ctx, paginationOpts),
+    paginateAccountEnablements: (userId, paginationOpts) =>
+      paginateAccountEnablements(ctx, userId, paginationOpts),
   };
 }
 
@@ -187,7 +257,7 @@ export function ownProfileStore(ctx: MutationCtx): OwnProfileStore {
     ...ownProfileReader(ctx),
     isEmailRegistered: async (email) => (await findUserByEmail(ctx, email)) !== null,
     create: async (profile) => {
-      await ctx.db.insert("users", {
+      const userId = await ctx.db.insert("users", {
         email: profile.email,
         fullName: profile.fullName,
         role: profile.role,
@@ -196,6 +266,14 @@ export function ownProfileStore(ctx: MutationCtx): OwnProfileStore {
         tokenIdentifier: profile.tokenIdentifier,
         ...(profile.enabledAt === undefined ? {} : { enabledAt: profile.enabledAt }),
       });
+      // La habilitación automática del Estudiante abre su evento sin actor (TI4-84).
+      if (profile.enabledAt !== undefined) {
+        await insertEnablementEvent(ctx, {
+          userId,
+          role: profile.role,
+          enabledAt: profile.enabledAt,
+        });
+      }
       return {
         fullName: profile.fullName,
         email: profile.email,
@@ -217,7 +295,7 @@ export async function insertBootstrapAdmin(
     readonly enabledAt: number;
   },
 ): Promise<Id<"users">> {
-  return await ctx.db.insert("users", {
+  const userId = await ctx.db.insert("users", {
     email: input.email,
     fullName: input.fullName,
     role: "admin",
@@ -226,12 +304,16 @@ export async function insertBootstrapAdmin(
     tokenIdentifier: input.tokenIdentifier,
     enabledAt: input.enabledAt,
   });
+  // El arranque no tiene actor: el evento queda sin `enabledBy` (TI4-84).
+  await insertEnablementEvent(ctx, { userId, role: "admin", enabledAt: input.enabledAt });
+  return userId;
 }
 
 /**
  * Adaptador del puerto `StudentReclassificationStore` (TI2-182). Quita
  * `enabledAt` porque la habilitación automática del Estudiante no vale para
- * el rol nuevo, que espera la suya con actor y fecha.
+ * el rol nuevo, que espera la suya con actor y fecha, y cierra su evento del
+ * historial (TI4-84).
  */
 export function studentReclassificationStore(ctx: MutationCtx): StudentReclassificationStore {
   return {
@@ -256,6 +338,13 @@ export function studentReclassificationStore(ctx: MutationCtx): StudentReclassif
         role,
         institutionalStatus: "pending",
         enabledAt: undefined,
+      });
+      // La habilitación automática como Estudiante termina sin actor: la
+      // corrección del rol no es una revocación de una persona (TI4-84).
+      await closeOpenEnablementEvent(ctx, {
+        userId,
+        revokedAt: Date.now(),
+        reason: "Corrección del rol creado en el primer ingreso.",
       });
     },
   };

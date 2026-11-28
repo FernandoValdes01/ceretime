@@ -8,13 +8,14 @@ Fuente: `CONTEXT.md` (Administrador sin acceso irrestricto, Practicante con asig
 | --- | --- | --- | --- | --- |
 | `presentation/accounts.listAccounts` | `role` (`professional` o `admin`), `paginationOpts` (`numItems` entero entre 1 y 100) | Página de cuentas del `role` pedido con detalle mínimo | Administrador vigente | `unauthorized`, sin revelar existencia; `numItems` fuera de rango falla con error de regla |
 | `presentation/accounts.getAccount` | `userId` | Detalle mínimo de la cuenta | Administrador vigente, solo personal | `unauthorized`; el `_id` de estudiante o practicante se deniega igual que uno inexistente |
+| `presentation/accounts.listAccountEnablements` | `userId`, `paginationOpts` (`numItems` entero entre 1 y 100) | Página del historial de habilitaciones y revocaciones (TI4-84) | Administrador vigente, solo personal | `unauthorized`, igual que `getAccount` |
 
 ## Mutations públicas
 
 | Operación | Argumentos | Devuelve | Quién | Denegación |
 | --- | --- | --- | --- | --- |
 | `presentation/accounts.enableAccount` | `userId` | `{ userId }` habilitado | Administrador vigente, objetivo profesional o administrador de personal, pendiente o revocado | `unauthorized` sin permiso o con objetivo inexistente o fuera de esta vía; `conflict` con tránsito inválido |
-| `presentation/accounts.revokeAccount` | `userId` | `{ userId }` revocado | Administrador vigente, objetivo profesional o administrador habilitado | `unauthorized` sin permiso o con objetivo inexistente o fuera de esta vía; `conflict` con tránsito inválido o auto-revocación |
+| `presentation/accounts.revokeAccount` | `userId`, `reason?` (hasta 500 caracteres) | `{ userId }` revocado | Administrador vigente, objetivo profesional o administrador habilitado | `unauthorized` sin permiso o con objetivo inexistente o fuera de esta vía; `account_fields_invalid` con un motivo de más de 500 caracteres; `conflict` con tránsito inválido o auto-revocación |
 
 ## Detalle mínimo y resultados
 
@@ -34,6 +35,32 @@ El listado y el detalle entregan `_id`, `email`, `fullName`, `role`, `institutio
 ```
 
 Una cuenta pendiente aún no trae auditoría; una revocada conserva la habilitación y suma la revocación (`revokedBy`, `revokedAt`); una rehabilitada vuelve a `enabled` y conserva ambas auditorías. El estado vigente lo decide `institutionalStatus`, nunca la comparación de fechas.
+
+## Historial de habilitaciones (TI4-84)
+
+Hasta TI4-84 la fila de `users` guardaba solo los últimos `enabledBy`, `enabledAt`, `revokedBy` y `revokedAt`, y las acciones de un Administrador anterior dejaban de ser consultables. Desde TI4-84 la tabla `accountEnablements` (`HABILITACIONES_CUENTA` del MER) guarda un evento por habilitación: cada habilitación agrega uno con el rol, el actor y la fecha, y la revocación siguiente lo cierra con su actor, su fecha y el motivo, si lo hay. `users` sigue guardando el último estado, así que `getAccount` y `listAccounts` no cambian.
+
+Todas las vías de escritura dejan su evento: `enableAccount`, `revokeAccount`, `enableIntern`, `enableTestProfessional`, la habilitación automática del Estudiante en su primer ingreso y el arranque administrativo. Las dos últimas no tienen actor, así que su evento no trae `enabledBy`. La corrección del Estudiante creado en el primer ingreso (TI2-182) cierra su evento sin actor y con el motivo «Corrección del rol creado en el primer ingreso.».
+
+`listAccountEnablements` entrega los eventos del más reciente al más antiguo, con `_id`, `role`, `enabledAt`, y si los hay `enabledBy`, `enabledByName`, `revokedAt`, `revokedBy`, `revokedByName` y `revocationReason`. Los nombres se entregan para que la Web no tenga que buscarlos. La página conserva la forma de `paginate`.
+
+```json
+{
+  "_id": "k57abc...",
+  "role": "professional",
+  "enabledAt": 1762700000000,
+  "enabledBy": "j97def...",
+  "enabledByName": "Administradora Ficticia",
+  "revokedAt": 1762900000000,
+  "revokedBy": "j97def...",
+  "revokedByName": "Administradora Ficticia",
+  "revocationReason": "Término del convenio ficticio"
+}
+```
+
+`revokeAccount` acepta `reason?`. Se recorta y uno vacío no cuenta como motivo; uno de más de 500 caracteres responde `account_fields_invalid` sin escribir, con el mensaje en español.
+
+Las cuentas anteriores a TI4-84 no tienen eventos hasta que se ejecuta la migración interna `internal.operations.migrations.seedAccountEnablements`, que siembra uno por cuenta a partir de los campos de `users` sin inventar actor ni fecha. Las habilitaciones y revocaciones anteriores a la última ya no están guardadas en ninguna fila y no se recuperan.
 
 ## Permisos y datos por rol
 

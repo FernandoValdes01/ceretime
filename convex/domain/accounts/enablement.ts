@@ -375,3 +375,19 @@ export function checkStudentReclassification(
   if (target.hasStudentActivity) return { ok: false, reason: "target-has-student-activity" };
   return { ok: true };
 }
+
+/** Máximo de caracteres del motivo de revocación de una cuenta (TI4-84). */
+export const ACCOUNT_REVOCATION_REASON_MAX_LENGTH = 500;
+
+/**
+ * Motivo opcional de la revocación, recortado (TI4-84). Sin texto, o solo con
+ * espacios, no hay motivo; sobre el máximo se rechaza en vez de truncarse.
+ */
+export function toRevocationReason(
+  raw: string | undefined,
+): { readonly ok: true; readonly reason?: string } | { readonly ok: false } {
+  const reason = raw?.trim() ?? "";
+  if (reason === "") return { ok: true };
+  if (reason.length > ACCOUNT_REVOCATION_REASON_MAX_LENGTH) return { ok: false };
+  return { ok: true, reason };
+}

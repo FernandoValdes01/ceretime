@@ -2,10 +2,12 @@ import type { PaginationOptions, UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
 import type { Doc, Id } from "../../_generated/dataModel";
 import {
+  ACCOUNT_REVOCATION_REASON_MAX_LENGTH,
   checkEnablement,
   checkInternEnablement,
   checkTestProfessionalEnablement,
   isPersonalProfessionalActive,
+  toRevocationReason,
   validateBootstrapCandidate,
   validateStaffEnablementTarget,
   validateStaffRevocationTarget,
@@ -22,6 +24,7 @@ import {
 } from "../../domain/authorization/permissions";
 import { normalizeEmail } from "../../domain/auth/institutional_domain";
 import {
+  ACCOUNT_FIELDS_INVALID_ERROR_CODE,
   CONFLICT_ERROR_CODE,
   errResult,
   okResult,
@@ -209,6 +212,81 @@ export async function getAccountDetailUseCase(
   return okResult(toAccountSummary(target));
 }
 
+/** Evento del historial de habilitaciones con el nombre de cada actor (TI4-84). */
+export type AccountEnablementEvent = {
+  readonly _id: Id<"accountEnablements">;
+  readonly role: DbProfile["role"];
+  readonly enabledAt: number;
+  readonly enabledBy?: Id<"users">;
+  readonly enabledByName?: string;
+  readonly revokedAt?: number;
+  readonly revokedBy?: Id<"users">;
+  readonly revokedByName?: string;
+  readonly revocationReason?: string;
+};
+
+/**
+ * Historial paginado de habilitaciones y revocaciones de una cuenta de
+ * personal (TI4-84), del evento más reciente al más antiguo.
+ *
+ * Solo el Administrador vigente, con el mismo permiso que lee la cuenta
+ * (`canReadAccount`); una cuenta inexistente o fuera de esta vía responde
+ * `unauthorized`, sin revelar existencia. Cada evento trae el nombre de quien
+ * habilitó y de quien revocó, para que la Web no tenga que buscarlo; la
+ * habilitación automática y el arranque no tienen actor. El `numItems` debe
+ * ser un entero entre 1 y 100, igual que `listAccounts`.
+ */
+export async function listAccountEnablementsUseCase(
+  accounts: AccountReader,
+  identity: UserIdentity | null,
+  args: { readonly userId: Id<"users">; readonly paginationOpts: PaginationOptions },
+): Promise<ApiResult<{ page: AccountEnablementEvent[]; isDone: boolean; continueCursor: string }>> {
+  const caller = await findCallerProfile(accounts, identity);
+  if (
+    caller === null ||
+    !canReadAccount({
+      role: caller.role,
+      institutionalStatus: caller.institutionalStatus,
+      accountStatus: caller.accountStatus,
+    })
+  ) {
+    return unauthorized();
+  }
+  const target = await accounts.getUserById(args.userId);
+  if (target === null || !isStaffAccount(target)) return unauthorized();
+  if (
+    !Number.isInteger(args.paginationOpts.numItems) ||
+    args.paginationOpts.numItems < 1 ||
+    args.paginationOpts.numItems > 100
+  ) {
+    throw new Error("El límite del listado debe ser un entero entre 1 y 100.");
+  }
+  const result = await accounts.paginateAccountEnablements(target._id, args.paginationOpts);
+  const names = new Map<Id<"users">, string | undefined>();
+  const nameOf = async (userId: Id<"users"> | undefined) => {
+    if (userId === undefined) return undefined;
+    if (!names.has(userId)) names.set(userId, (await accounts.getUserById(userId))?.fullName);
+    return names.get(userId);
+  };
+  const page: AccountEnablementEvent[] = [];
+  for (const event of result.page) {
+    const enabledByName = await nameOf(event.enabledBy);
+    const revokedByName = await nameOf(event.revokedBy);
+    page.push({
+      _id: event._id,
+      role: event.role,
+      enabledAt: event.enabledAt,
+      ...(event.enabledBy === undefined ? {} : { enabledBy: event.enabledBy }),
+      ...(enabledByName === undefined ? {} : { enabledByName }),
+      ...(event.revokedAt === undefined ? {} : { revokedAt: event.revokedAt }),
+      ...(event.revokedBy === undefined ? {} : { revokedBy: event.revokedBy }),
+      ...(revokedByName === undefined ? {} : { revokedByName }),
+      ...(event.revocationReason === undefined ? {} : { revocationReason: event.revocationReason }),
+    });
+  }
+  return okResult({ page, isDone: result.isDone, continueCursor: result.continueCursor });
+}
+
 /**
  * Habilita la cuenta profesional o administrativa pendiente o revocada
  * (TI2-137).
@@ -281,6 +359,10 @@ export async function enableStaffAccount(
  * escribir. La auto-revocación se deniega como conflicto porque quien llama
  * ya es un administrador autorizado que puede leer el estado.
  *
+ * El motivo es opcional y se guarda en el historial de la cuenta (TI4-84); uno
+ * de más de `ACCOUNT_REVOCATION_REASON_MAX_LENGTH` caracteres responde
+ * `account_fields_invalid` sin escribir.
+ *
  * Revocar a un Profesional libera en la misma transacción sus tomas abiertas,
  * con el Administrador como actor (TI4-84): las solicitudes vuelven a
  * `received` y a la bandeja en vez de quedar bloqueadas. El Administrador no
@@ -289,7 +371,7 @@ export async function enableStaffAccount(
 export async function revokeStaffAccount(
   accounts: AccountStore,
   identity: UserIdentity | null,
-  args: { readonly userId: Id<"users"> },
+  args: { readonly userId: Id<"users">; readonly reason?: string },
   takes: ReleaseOpenTakesDeps<Id<"requests">, Id<"users">>,
 ): Promise<ApiResult<{ userId: Id<"users"> }>> {
   const caller = await findCallerProfile(accounts, identity);
@@ -302,6 +384,13 @@ export async function revokeStaffAccount(
     })
   ) {
     return unauthorized();
+  }
+  const reason = toRevocationReason(args.reason);
+  if (!reason.ok) {
+    return errResult({
+      code: ACCOUNT_FIELDS_INVALID_ERROR_CODE,
+      message: `El motivo de la revocación no puede superar ${ACCOUNT_REVOCATION_REASON_MAX_LENGTH} caracteres.`,
+    });
   }
   const target = await accounts.getUserById(args.userId);
   if (target === null) return unauthorized();
@@ -329,6 +418,7 @@ export async function revokeStaffAccount(
     userId: target._id,
     revokedBy: caller._id,
     revokedAt,
+    ...(reason.reason === undefined ? {} : { reason: reason.reason }),
   });
   if (target.role === "professional") {
     await releaseOpenTakesOf(takes, {

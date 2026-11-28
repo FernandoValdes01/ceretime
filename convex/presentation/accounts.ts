@@ -5,6 +5,7 @@ import {
   enableStaffAccount,
   enableTestProfessionalAccount,
   getAccountDetailUseCase,
+  listAccountEnablementsUseCase,
   listAccountsUseCase,
   listInternAccountsUseCase,
   revokeStaffAccount,
@@ -60,6 +61,18 @@ const accountSummaryValidator = v.object({
 
 const accountIdValidator = v.object({ userId: v.id("users") });
 
+const accountEnablementEventValidator = v.object({
+  _id: v.id("accountEnablements"),
+  role: roleUnion,
+  enabledAt: v.number(),
+  enabledBy: v.optional(v.id("users")),
+  enabledByName: v.optional(v.string()),
+  revokedAt: v.optional(v.number()),
+  revokedBy: v.optional(v.id("users")),
+  revokedByName: v.optional(v.string()),
+  revocationReason: v.optional(v.string()),
+});
+
 /** Lista paginada de cuentas de personal, filtrada por rol. Solo Administrador. */
 export const listAccounts = query({
   args: {
@@ -97,11 +110,27 @@ export const enableAccount = mutation({
 });
 
 /**
+ * Historial de habilitaciones y revocaciones de una cuenta de personal
+ * (TI4-84), del más reciente al más antiguo, con el nombre de cada actor.
+ * Solo Administrador.
+ */
+export const listAccountEnablements = query({
+  args: { userId: v.id("users"), paginationOpts: paginationOptsValidator },
+  returns: paginationResultValidator(accountEnablementEventValidator),
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(await listAccountEnablementsUseCase(accountReader(ctx), identity, args));
+  },
+});
+
+/**
  * Revoca una cuenta profesional o administrativa habilitada.
- * Registra actor y fecha; la cuenta deja de operar en la petición siguiente.
+ * Registra actor, fecha y un motivo opcional de hasta 500 caracteres (TI4-84);
+ * la cuenta deja de operar en la petición siguiente y las tomas abiertas de un
+ * Profesional vuelven a la bandeja.
  */
 export const revokeAccount = mutation({
-  args: { userId: v.id("users") },
+  args: { userId: v.id("users"), reason: v.optional(v.string()) },
   returns: accountIdValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();

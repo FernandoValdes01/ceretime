@@ -240,6 +240,22 @@ export default defineSchema({
     occurredAt: v.number(),
   }).index("by_request", ["requestId"]),
 
+  // Tabla 'accountEnablements': historial de habilitaciones y revocaciones
+  // de cuentas (HABILITACIONES_CUENTA del MER, TI4-84). Cada habilitación
+  // agrega una fila y la revocación siguiente la cierra; `users` sigue
+  // guardando solo el último estado. La habilitación automática del
+  // Estudiante y el arranque administrativo no tienen actor: `enabledBy`
+  // queda ausente. Solo se agrega o se cierra, nunca se borra.
+  accountEnablements: defineTable({
+    userId: v.id("users"),
+    role: roleUnion,
+    enabledBy: v.optional(v.id("users")),
+    enabledAt: v.number(),
+    revokedBy: v.optional(v.id("users")),
+    revokedAt: v.optional(v.number()),
+    revocationReason: v.optional(v.string()),
+  }).index("by_user_and_enabledAt", ["userId", "enabledAt"]),
+
   // Tabla 'requestAssignments': tomas de solicitudes por Profesionales
   // (TOMAS_SOLICITUD del MER). Relación explícita que autoriza a operar una
   // solicitud: como máximo una fila activa por solicitud y usuario. Solo el

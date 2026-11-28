@@ -43,6 +43,11 @@ export interface AccountReader {
   paginateInternAccounts(
     paginationOpts: PaginationOptions,
   ): Promise<PaginationResult<Doc<"users">>>;
+  /** Historial de habilitaciones de la cuenta, de la más reciente a la más antigua (TI4-84). */
+  paginateAccountEnablements(
+    userId: Id<"users">,
+    paginationOpts: PaginationOptions,
+  ): Promise<PaginationResult<Doc<"accountEnablements">>>;
 }
 
 /**
@@ -51,17 +56,24 @@ export interface AccountReader {
  * una sola transacción.
  */
 export interface AccountStore extends AccountReader {
-  /** Deja la cuenta habilitada con su actor y su fecha, sin cambiar el rol. */
+  /**
+   * Deja la cuenta habilitada con su actor y su fecha, sin cambiar el rol, y
+   * agrega el evento al historial (TI4-84).
+   */
   patchEnablement(input: {
     readonly userId: Id<"users">;
     readonly enabledBy: Id<"users">;
     readonly enabledAt: number;
   }): Promise<void>;
-  /** Deja la cuenta revocada con su actor y su fecha, sin cambiar el rol. */
+  /**
+   * Deja la cuenta revocada con su actor y su fecha, sin cambiar el rol, y
+   * cierra el evento abierto del historial con el motivo, si lo hay (TI4-84).
+   */
   patchRevocation(input: {
     readonly userId: Id<"users">;
     readonly revokedBy: Id<"users">;
     readonly revokedAt: number;
+    readonly reason?: string;
   }): Promise<void>;
   /** Crea la cuenta administrativa inicial, ya habilitada. */
   insertBootstrapAdmin(input: {
