@@ -50,10 +50,12 @@ En `https://kubero.inf.uct.cl` → Pipelines → `ceretime` → Producción → 
 - Dominio: `ceretime-convex.inf.uct.cl`. Con «Añadir dominio», agrega `ceretime-convex-site.inf.uct.cl`.
 - Despliegue: imagen `ghcr.io/<owner>/ceretime-convex` y como etiqueta el SHA del workflow.
 - Variables de entorno: `INSTANCE_NAME=ceretime-prod`, `INSTANCE_SECRET=<secreto del paso 1>`, `CONVEX_CLOUD_ORIGIN=https://ceretime-convex.inf.uct.cl`, `CONVEX_SITE_ORIGIN=https://ceretime-convex-site.inf.uct.cl` y, si no quieres enviar datos de uso anónimos a Convex, `DISABLE_BEACON=true`.
-- Recursos: 1 réplica web, 0 worker y sin escalado automático. Dos réplicas sobre el mismo SQLite corrompen la base.
-- Volúmenes: ruta de montaje `/convex/data`, modo `ReadWriteOnce` y un tamaño de al menos `5Gi`. El modo no se puede cambiar después, y eliminar la app elimina el volumen con todos los datos.
+- Seguridad: desactiva «Sistema de archivos raíz de sólo lectura». Deja el usuario y el grupo en `0` y «Ejecutar como no-root» desactivado, porque la imagen oficial corre como root.
+- Recursos: tamaño de pod Medium (2 CPU, 2 GiB), 1 réplica web, 0 worker y sin escalado automático. Dos réplicas sobre el mismo SQLite corrompen la base.
+- Volúmenes: nombre `convex-data`, clase de almacenamiento `csi-cephfs-sc`, ruta de montaje `/convex/data`, modo `ReadWriteOnce` y un tamaño de al menos `5Gi`. El formulario propone la clase `standard`, que no existe en el clúster: el pod queda esperando el volumen con `storageclass "standard" not found`. La clase de un volumen creado no cambia al editarla; para corregirla, cambia el nombre del volumen y Kubero crea uno nuevo. El modo no se puede cambiar después, y eliminar la app elimina el volumen con todos los datos.
+- Deja desactivados SSL, autenticación básica, CORS y las comprobaciones de estado. El certificado de `*.inf.uct.cl` ya cubre HTTPS, y Convex y Better Auth envían sus propias cabeceras CORS.
 
-Al crearla, el pod debe quedar en ejecución y `https://ceretime-convex.inf.uct.cl/version` debe responder con la versión del backend.
+Al crearla, el pod debe quedar en ejecución y `https://ceretime-convex.inf.uct.cl/version` debe responder `unknown`, el texto normal de una instancia propia de Convex. Si tu equipo no encuentra el dominio, el DNS de la red guardó la respuesta «no existe» de antes de crear la app y puede conservarla hasta un día; mientras tanto, agrega los dos dominios con una IP de `proxy.inf.uct.cl` a `C:\Windows\System32\drivers\etc\hosts` y elimina esas líneas cuando la red ya los resuelva.
 
 ### 3. Variables del backend
 
@@ -65,7 +67,7 @@ Configura las variables que exige `convex/convex.config.ts`, una por comando:
 bunx convex env set SITE_URL https://ceretime.inf.uct.cl --env-file $HOME\ceretime-prod.env
 ```
 
-Repite con `BETTER_AUTH_SECRET` (genera un valor nuevo con el comando del paso 1), `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`. Las variables opcionales del correo (`GMAIL_*`, `EMAIL_ALLOWED_RECIPIENTS`) y de Web Push (`VAPID_*`) se configuran igual cuando corresponda. `TEST_SEEDS_ENABLED` nunca se configura en producción. Comprueba la lista con `bunx convex env list --env-file $HOME\ceretime-prod.env`.
+Repite con `BETTER_AUTH_SECRET` (genera un valor nuevo con el comando del paso 1), `GOOGLE_CLIENT_ID` y `GOOGLE_CLIENT_SECRET`. Para los secretos, escribe solo el nombre y la CLI pide el valor sin dejarlo en el historial. Google Cloud no vuelve a mostrar un secreto de cliente después de crearlo: toma el valor del deployment de Convex Cloud o agrega un secreto nuevo al mismo cliente, sin deshabilitar el que usa desarrollo. Las variables opcionales del correo (`GMAIL_*`, `EMAIL_ALLOWED_RECIPIENTS`) y de Web Push (`VAPID_*`) se configuran igual cuando corresponda. `TEST_SEEDS_ENABLED` nunca se configura en producción. Comprueba la lista con `bunx convex env list --env-file $HOME\ceretime-prod.env`.
 
 ### 4. Google Cloud
 
