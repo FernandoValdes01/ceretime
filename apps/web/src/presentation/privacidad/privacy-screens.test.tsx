@@ -369,6 +369,9 @@ describe("Administrador", () => {
     store.record.mockResolvedValue(undefined);
     await renderInRouter(<AdminPrivacyRequestDetailPage requestId="pr-1" />);
     expect(screen.getByText("Pendiente de registrar.")).toBeDefined();
+    // El responsable lee el reclamo en tercera persona; «Puedes» es para el titular.
+    expect(screen.getByText(/^El titular puede reclamar ante la Agencia/)).toBeDefined();
+    expect(screen.queryByText(/^Puedes reclamar/)).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Registrar el envío" }));
     const folio = screen.getByLabelText("Folio o referencia");
     expect(screen.getByRole("alert").textContent).toBe(
