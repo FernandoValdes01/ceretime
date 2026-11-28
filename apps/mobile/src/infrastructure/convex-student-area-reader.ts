@@ -16,6 +16,21 @@ import { readAllPages } from "./read-all-pages";
 
 type ReadClient = Pick<MobileConvexClient, "query">;
 
+// Cada solicitud pide su detalle aparte: en tandas, la ráfaga no crece con el historial de la cuenta.
+const MAX_CONCURRENT_DETAIL_READS = 5;
+
+async function mapInBatches<Item, Result>(
+  items: readonly Item[],
+  size: number,
+  map: (item: Item) => Promise<Result>,
+): Promise<Result[]> {
+  const results: Result[] = [];
+  for (let start = 0; start < items.length; start += size) {
+    results.push(...(await Promise.all(items.slice(start, start + size).map(map))));
+  }
+  return results;
+}
+
 // Los envíos y las acciones viven en otro adaptador y otra ruta: avisan por aquí para que la lista
 // se recargue aunque su pantalla ya esté montada.
 const changeListeners = new Set<() => void>();
@@ -46,8 +61,10 @@ export function createConvexStudentAreaReader({
         client.query(api.presentation.requests.listOwnRequests, { paginationOpts }),
       );
       // El listado no trae el intercambio con el profesional ni la razón de cierre: solo el detalle.
-      return await Promise.all(
-        listed.map(async (row): Promise<StudentRequest> => {
+      return await mapInBatches(
+        listed,
+        MAX_CONCURRENT_DETAIL_READS,
+        async (row): Promise<StudentRequest> => {
           const detail = await client.query(api.presentation.requests.getRequest, {
             requestId: row._id,
           });
@@ -61,7 +78,7 @@ export function createConvexStudentAreaReader({
               : { informationResponse: detail.informationResponse }),
             ...(detail.closureReason === undefined ? {} : { closureReason: detail.closureReason }),
           };
-        }),
+        },
       );
     } catch (error) {
       throw toStudentOperationError(error, "listOwnRequests");

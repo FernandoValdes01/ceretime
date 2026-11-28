@@ -88,6 +88,36 @@ describe("lector estudiantil sobre Convex", () => {
     expect(calls.filter(({ name }) => name.endsWith("listOwnRequests"))).toHaveLength(2);
   });
 
+  it("pide los detalles de a cinco como máximo y conserva el orden del listado", async () => {
+    const ids = Array.from({ length: 12 }, (_, index) => `requests:${index}`);
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const { client } = fakeClient({
+      "presentation/requests:listOwnRequests": () => ({
+        page: ids.map((id) => requestRow(id)),
+        isDone: true,
+        continueCursor: "",
+      }),
+      "presentation/requests:getRequest": async ({ requestId }) => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((resolve) => setTimeout(resolve, 1));
+        inFlight -= 1;
+        return requestRow(requestId as string);
+      },
+      "presentation/accompaniments:listOwnedAccompaniments": () => ({
+        page: [],
+        isDone: true,
+        continueCursor: "",
+      }),
+    });
+
+    const snapshot = await createConvexStudentAreaReader({ client, student }).readStudentArea();
+
+    expect(maxInFlight).toBe(5);
+    expect(snapshot.requests.map(({ id }) => id)).toEqual(ids);
+  });
+
   it("falla sin éxito parcial cuando el servidor deniega el acceso", async () => {
     const { client } = fakeClient({
       "presentation/requests:listOwnRequests": () => {
