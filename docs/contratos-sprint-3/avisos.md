@@ -90,6 +90,6 @@ Canal opcional fuera de sesión. Cada persona activa o retira la suscripción de
 
 ## Impacto en los clientes
 
-Es un módulo nuevo (`api.presentation.notifications`). No cambia ninguna operación existente. Mobile no consume ninguna de las dos, y una notificación nativa de Mobile no usaría Web Push.
+Es un módulo nuevo (`api.presentation.notifications`). No cambia ninguna operación existente. Mobile no consume ni la bandeja ni la suscripción push, y una notificación nativa de Mobile no usaría Web Push.
 
 Web lo consume desde TI2-172 en `/estudiante/avisos` y `/profesional/avisos`, los dos roles que reciben avisos. La bandeja filtra por `readStatus`; al abrir un aviso llama a `openNotification`, lo marca con `markNotificationRead` si estaba pendiente y navega al detalle de la atención o de la solicitud en el área de quien lo recibió; si marcarlo falla, navega igual y el aviso queda pendiente. Si el permiso ya no está vigente, muestra un aviso genérico, no navega y deja el aviso en la bandeja. La misma pantalla ofrece activar push en el navegador (`getOwnPushStatus`, `activatePushSubscription` y `deactivatePushSubscription`), que se dan por activos solo si el navegador está suscrito y `getOwnPushStatus` responde `enabled`, y vincular o desconectar Google Calendar (ver `calendar.md`).
