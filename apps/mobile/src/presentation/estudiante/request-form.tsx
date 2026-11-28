@@ -386,7 +386,7 @@ export function RequestForm({
         />
       )}
       {currentStep.id === "information" && <InformationStep bindField={bindField} />}
-      {currentStep.id === "review" && <ReviewStep values={values} />}
+      {currentStep.id === "review" && <ReviewStep values={values} simulated={simulated} />}
 
       {Object.keys(errors).length > 0 && (
         <Text
