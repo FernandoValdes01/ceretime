@@ -1,5 +1,8 @@
 import { api } from "../../../../convex/_generated/api";
 import type { Id } from "../../../../convex/_generated/dataModel";
+// Deuda: el diagrama de Componentes solo conecta Mobile con la API pública de Convex, no con su
+// Dominio. Falta que TI2 publique los códigos y mensajes de error en la API o en un módulo de
+// contrato; otros módulos de Mobile importan igual desde `convex/domain`.
 import { API_ERROR_MESSAGES, isApiErrorCode } from "../../../../convex/domain/errors/api_error";
 import {
   StudentRequestActionError,
