@@ -12,6 +12,11 @@
     "apps/web/src/assets/*.svg"
   ],
   "words": [
+    "Kubero",
+    "kubero",
+    "cephfs",
+    "storageclass",
+    "openssl",
     "cmdk",
     "nginx",
     "nginxinc",
