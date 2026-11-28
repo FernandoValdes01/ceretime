@@ -377,8 +377,8 @@ export const recordCalendarSyncOutcome = internalMutation({
       return "recorded" as const;
     }
     if (args.outcome.kind === "blocked") {
-      // El bloqueo suspende el tratamiento: la fila sigue pendiente y se
-      // reprograma al terminar, sin marcar `synced` ni borrar la referencia.
+      // El bloqueo suspende el tratamiento: la fila sigue pendiente y vuelve
+      // a programarse al terminar, sin marcar `synced` ni borrar la referencia.
       await ctx.db.patch(appointmentId, {
         calendarSyncStatus: "pending",
         calendarSyncLastAttemptAt: args.attemptedAt,

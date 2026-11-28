@@ -217,7 +217,7 @@ export const listActivePrivacyBlocks = internalQuery({
  *
  * Consulta los bloqueos vigentes del destinatario antes de reservar la fila.
  * Si alguno cubre `notifications`, devuelve el término del bloqueo para que
- * la entrega quede programada y se reintente cuando el bloqueo termine.
+ * la entrega quede programada y pueda enviarse cuando el bloqueo termine.
  */
 export const privacyDeliveryGate = internalQuery({
   args: { deliveryId: v.string(), now: v.number() },

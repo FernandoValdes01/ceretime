@@ -27,7 +27,7 @@ import type {
  *
  * Antes de reservar, la compuerta del bloqueo (TI2-168) suspende el aviso
  * cuando el destinatario tiene un bloqueo vigente que cubre `notifications`:
- * la fila queda pendiente y se reprograma para cuando el bloqueo termine. No
+ * la fila queda pendiente y vuelve a programarse al terminar el bloqueo. No
  * se envía, no se cuenta como intento y no se marca como entregada: suspender
  * el tratamiento no borra ni modifica el aviso ni su entrega.
  */

@@ -84,7 +84,7 @@ export interface CalendarSyncStore {
       | { readonly kind: "noop"; readonly eventId?: string }
       | { readonly kind: "failure"; readonly errorCode: "not_connected" | "unavailable" }
       | { readonly kind: "not_linked" }
-      /** Bloqueo vigente: suspender y reprogramar para cuando termine. */
+      /** Bloqueo vigente: suspender y volver a programar para cuando termine. */
       | { readonly kind: "blocked"; readonly retryAt: number };
   }): Promise<"recorded" | "stale">;
 }
@@ -221,7 +221,7 @@ export async function syncAppointmentToGoogleCalendar(deps: {
     }
     if (outcome.kind === "not_linked" || outcome.kind === "blocked") {
       // Nadie vinculó o hay un bloqueo vigente: la fila queda pendiente y se
-      // reprograma para cuando termine el bloqueo, sin marcarla sincronizada.
+      // vuelve a programarse al terminar el bloqueo, sin marcarla sincronizada.
       return okResult({ status: "pending" });
     }
     return okResult({
@@ -403,7 +403,7 @@ export async function syncAppointmentToGoogleCalendar(deps: {
   if (sawUnavailable) return await finish({ kind: "failure", errorCode: "unavailable" });
   if (sawNotConnected) return await finish({ kind: "failure", errorCode: "not_connected" });
   // Con un bloqueo vigente no se escribe en Calendar: la fila queda pendiente
-  // y se reprograma al terminar el bloqueo, sin borrar ni modificar el evento.
+  // y vuelve a programarse al terminar el bloqueo, sin borrar ni modificar el evento.
   if (blockedUntilAt !== null) {
     return await finish({ kind: "blocked", retryAt: blockedUntilAt });
   }
