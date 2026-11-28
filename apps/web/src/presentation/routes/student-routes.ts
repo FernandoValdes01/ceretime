@@ -5,6 +5,8 @@ import {
   StudentAppointmentsRouteComponent,
   StudentIndexRouteComponent,
   StudentLayoutRouteComponent,
+  StudentPrivacyDetailRouteComponent,
+  StudentPrivacyRouteComponent,
   StudentRequestDetailRouteComponent,
   StudentRequestFormRouteComponent,
   StudentRequestsRouteComponent,
@@ -102,6 +104,18 @@ const studentAccompanimentDetailRoute = createRoute({
   component: StudentAccompanimentDetailRouteComponent,
 });
 
+const studentPrivacyRoute = createRoute({
+  getParentRoute: () => studentLayoutRoute,
+  path: "privacidad",
+  component: StudentPrivacyRouteComponent,
+});
+
+const studentPrivacyDetailRoute = createRoute({
+  getParentRoute: () => studentLayoutRoute,
+  path: "privacidad/$requestId",
+  component: StudentPrivacyDetailRouteComponent,
+});
+
 export const studentRoutes = [
   studentLayoutRoute.addChildren([
     studentIndexRoute,
@@ -113,5 +127,7 @@ export const studentRoutes = [
     studentRequestFormRoute,
     studentRequestDetailRoute,
     studentAccompanimentDetailRoute,
+    studentPrivacyRoute,
+    studentPrivacyDetailRoute,
   ]),
 ] as const;

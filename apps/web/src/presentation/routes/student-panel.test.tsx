@@ -157,6 +157,21 @@ describe("panel inicial del Estudiante", () => {
     expect(screen.getByRole("region", { name: "Acompañamientos" }).id).toBe("acompanamientos");
   });
 
+  test("privacidad lleva a las solicitudes de derechos, sin «Próximamente» (TI2-171)", async () => {
+    mockSession = SESSION;
+    mockRequests = EMPTY_PAGE;
+    mockAccompaniments = EMPTY_PAGE;
+    renderPanel();
+
+    expect(await screen.findByText(greetingText())).toBeDefined();
+    const section = screen.getByRole("region", { name: "Solicitudes de privacidad" });
+    expect(section.textContent).not.toMatch(/Próximamente/);
+    expect(screen.queryByText("Sin solicitudes de privacidad.")).toBeNull();
+    expect(screen.getByRole("link", { name: "Ir a privacidad" }).getAttribute("href")).toBe(
+      "/estudiante/privacidad",
+    );
+  });
+
   test("con datos muestra estados con etiquetas en español", async () => {
     mockSession = SESSION;
     mockRequests = {

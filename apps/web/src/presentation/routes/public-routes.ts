@@ -3,11 +3,13 @@ import {
   DeniedRouteComponent,
   IndexRouteComponent,
   LoginRouteComponent,
+  PrivacyNoticeRouteComponent,
 } from "./route-components.tsx";
 import { rootRoute } from "./root-route.ts";
 
 /**
- * Rutas públicas (TI2-133): índice, acceso y estado denegado.
+ * Rutas públicas (TI2-133, TI2-171): índice, acceso, estado denegado y aviso
+ * de privacidad, que se lee sin iniciar sesión.
  *
  * Sin sesión no cargan contenido protegido y conservan intactos el callback
  * OAuth y la ruta de retorno.
@@ -34,4 +36,10 @@ const deniedRoute = createRoute({
   component: DeniedRouteComponent,
 });
 
-export const publicRoutes = [indexRoute, loginRoute, deniedRoute] as const;
+const privacyNoticeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/privacidad",
+  component: PrivacyNoticeRouteComponent,
+});
+
+export const publicRoutes = [indexRoute, loginRoute, deniedRoute, privacyNoticeRoute] as const;
