@@ -10,6 +10,7 @@ import {
   ProfessionalLayoutRouteComponent,
   ProfessionalNotificationsRouteComponent,
   ProfessionalOfficialRequestRouteComponent,
+  ProfessionalPracticantesRouteComponent,
   ProfessionalRequestDetailRouteComponent,
   ProfessionalRequestsRouteComponent,
 } from "./route-components.tsx";
@@ -87,6 +88,12 @@ const professionalAgendaDetailRoute = createRoute({
   component: ProfessionalAgendaDetailRouteComponent,
 });
 
+const professionalPracticantesRoute = createRoute({
+  getParentRoute: () => professionalLayoutRoute,
+  path: "practicantes",
+  component: ProfessionalPracticantesRouteComponent,
+});
+
 // `calendar` es el marcador de retorno de la autorización de Google (TI2-172).
 const professionalNotificationsRoute = createRoute({
   getParentRoute: () => professionalLayoutRoute,
@@ -108,6 +115,7 @@ export const professionalRoutes = [
     professionalAvailabilityRoute,
     professionalAgendaRoute,
     professionalAgendaDetailRoute,
+    professionalPracticantesRoute,
     professionalNotificationsRoute,
   ]),
 ] as const;

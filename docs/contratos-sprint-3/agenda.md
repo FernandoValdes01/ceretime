@@ -141,3 +141,9 @@ Siguen en otras issues, que se apoyan en lo que entrega esta:
 - Sacar de las atenciones futuras a un profesional que se retira del acompañamiento: TI2-152. Hoy solo sale al reagendar la atención.
 - La búsqueda de cupos comunes a varios profesionales (`searchSlots` recibe un solo `professionalId`) queda para la coordinación en Web; la reserva igual revalida la disponibilidad de cada uno.
 - El máximo de profesionales por atención y los topes de apoyos son provisionales.
+
+## TI2-155: explicación del rechazo y cambios desde el inicio
+
+`reviewAppointmentJustification` acepta `explanation?: string`. Al rechazar una justificación entregada, la explicación es obligatoria: sin texto (o en blanco) responde `conflict` sin escribir. Al aceptar, o al cerrar una inasistencia vencida sin entrega, no se exige. La explicación se recorta y se guarda en `appointments.justificationReviewExplanation`, sin tabla nueva; la vista `full` y la vista `shared` del Estudiante la entregan, igual que `justificationExplanation`, `justificationSubmittedAt`, `justificationReview` y `supportingDocumentReceived`. Ningún aviso la copia.
+
+La política de estados rechaza cambiar una atención una vez iniciada: `occurredAt >= currentStartAt` responde `conflict` para `cancelled_by_student`, `cancelled_by_cereti` y `rescheduled`, con causa `cancel_after_start` o `reschedule_after_start`. La fila conserva su estado y su horario, no se ocupa otro cupo y no se escribe auditoría ni aviso.

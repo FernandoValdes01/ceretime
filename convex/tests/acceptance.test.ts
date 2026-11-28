@@ -678,7 +678,7 @@ test("Reagendar atención conserva fecha original (TI2-107)", async () => {
     from: "scheduled",
     to: "rescheduled",
     actorId: pro,
-    occurredAt: TI84_SLOT_END,
+    occurredAt: TI84_SLOT_START - 1000,
     currentStartAt: TI84_SLOT_START,
     newStartAt: movedStart,
     newEndAt: movedEnd,
@@ -769,7 +769,7 @@ test("Cambiar solo la sala no marca reagendamiento y dos reagendas conservan la 
     from: "scheduled",
     to: "rescheduled",
     actorId: pro,
-    occurredAt: TI84_SLOT_END,
+    occurredAt: TI84_SLOT_START - 1000,
     currentStartAt: TI84_SLOT_START,
     newStartAt: firstMoveStart,
     newEndAt: TI84_SLOT_END + 86_400_000,
@@ -803,7 +803,7 @@ test("Cambiar solo la sala no marca reagendamiento y dos reagendas conservan la 
     from: "rescheduled",
     to: "rescheduled",
     actorId: pro,
-    occurredAt: TI84_SLOT_END,
+    occurredAt: TI84_SLOT_START - 1000,
     currentStartAt: firstMoveStart,
     currentOriginalStartAt: TI84_SLOT_START,
     newStartAt: secondMoveStart,
@@ -877,7 +877,7 @@ test("Cancelar atención conserva historial y motivo (TI2-107)", async () => {
       appointmentId: created.data.appointmentId,
       to: "cancelled_by_cereti",
       actorId: pro,
-      occurredAt: TI84_SLOT_START,
+      occurredAt: TI84_SLOT_START - 1000,
       reason: "Sala no disponible",
     });
   });
@@ -1012,7 +1012,7 @@ test("Leer atenciones previas de un profesional por rango de fechas (TI2-107)", 
       appointmentId: created2.data.appointmentId,
       to: "completed",
       actorId: pro,
-      occurredAt: TI84_SLOT_END + 3_600_000,
+      occurredAt: TI84_SLOT_START + 1000,
     });
   });
 

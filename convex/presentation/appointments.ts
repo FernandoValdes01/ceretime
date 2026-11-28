@@ -302,10 +302,11 @@ export const reviewAppointmentJustification = mutation({
   args: {
     appointmentId: v.string(),
     review: justificationDecisionUnion,
+    explanation: v.optional(v.string()),
     version: v.literal(APPOINTMENT_CONTRACT_VERSION),
   },
   returns: appointmentResultValidator,
-  handler: async (ctx, { version: _version, appointmentId, review }) => {
+  handler: async (ctx, { version: _version, appointmentId, review, explanation }) => {
     const identity = await ctx.auth.getUserIdentity();
     return unwrapApiResult(
       await reviewAppointmentJustificationUseCase(
@@ -319,6 +320,7 @@ export const reviewAppointmentJustification = mutation({
           tokenIdentifier: identity?.tokenIdentifier ?? null,
           appointmentId,
           review,
+          ...(explanation === undefined ? {} : { explanation }),
         },
       ),
     );
@@ -342,6 +344,7 @@ const appointmentProjectionValidator = v.union(
     justificationExplanation: v.optional(v.string()),
     justificationSubmittedAt: v.optional(v.number()),
     justificationReview: v.optional(justificationReviewUnion),
+    justificationReviewExplanation: v.optional(v.string()),
     supportingDocumentReceived: v.optional(v.boolean()),
     status: appointmentStatusUnion,
     version,
@@ -360,6 +363,7 @@ const appointmentProjectionValidator = v.union(
     justificationExplanation: v.optional(v.string()),
     justificationSubmittedAt: v.optional(v.number()),
     justificationReview: v.optional(justificationReviewUnion),
+    justificationReviewExplanation: v.optional(v.string()),
     supportingDocumentReceived: v.optional(v.boolean()),
     status: appointmentStatusUnion,
     version,

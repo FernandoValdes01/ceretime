@@ -1,0 +1,23 @@
+# Proxy por hostname delante de Convex. El Ingress de Kubero termina HTTPS y
+# entrega los dos dominios en `PORT`; Caddy conserva el host y los WebSockets.
+{
+	admin off
+	auto_https off
+	persist_config off
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
+:{$PORT} {
+	# Dominio de `CONVEX_SITE_ORIGIN`: acciones HTTP y Better Auth.
+	@site host {$CONVEX_SITE_HOST}
+	handle @site {
+		reverse_proxy 127.0.0.1:3211
+	}
+
+	# Cualquier otro host: API, WebSockets y el despliegue con la CLI.
+	handle {
+		reverse_proxy 127.0.0.1:3210
+	}
+}

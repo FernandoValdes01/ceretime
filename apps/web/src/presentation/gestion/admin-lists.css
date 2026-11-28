@@ -48,6 +48,13 @@
   grid-template-columns: 1fr;
 }
 
+/* Columnas de practicantes: cuenta, estado y acción. Sin columna de rol
+   porque la sección ya es de practicantes; las acciones quedan en la última
+   columna estrecha, al final de la fila. */
+.admin-list__row--interns {
+  grid-template-columns: 1fr;
+}
+
 .admin-list__cell--main {
   min-width: 0;
   overflow-wrap: anywhere;
@@ -247,5 +254,12 @@
   .admin-list__head--spaces,
   .admin-list__row--spaces {
     grid-template-columns: 1.4fr 1fr 1fr 2.75rem;
+  }
+
+  .admin-list__head--interns,
+  .admin-list__row--interns {
+    /* Como las cuentas pero sin la columna de rol: la acción conserva la
+       columna estrecha del botón de tres puntos al final de la fila. */
+    grid-template-columns: 2fr 1.2fr 2.75rem;
   }
 }

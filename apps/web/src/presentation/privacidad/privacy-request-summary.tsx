@@ -66,7 +66,7 @@ export function PrivacyRequestSummary({ request }: { request: PrivacyRequestView
                 ) : null}
                 {claimApplies ? (
                   <Row term="Reclamo ante la Agencia">
-                    {`Puedes reclamar ante la Agencia de Protección de Datos Personales dentro de los ${PRIVACY_AGENCY_CLAIM_BUSINESS_DAYS} días hábiles siguientes a la notificación de esta respuesta.`}
+                    {`${request.view === "review" ? "El titular puede" : "Puedes"} reclamar ante la Agencia de Protección de Datos Personales dentro de los ${PRIVACY_AGENCY_CLAIM_BUSINESS_DAYS} días hábiles siguientes a la notificación de esta respuesta.`}
                   </Row>
                 ) : null}
               </>

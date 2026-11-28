@@ -136,6 +136,13 @@ vi.mock("convex/react", async () => {
             | undefined,
         );
       }
+      if (
+        name === "presentation/accompaniments:listAccompanimentInterns" ||
+        name === "presentation/accompaniments:listAccompanimentProfessionals" ||
+        name === "presentation/accounts:listInternAccounts"
+      ) {
+        return undefined;
+      }
       return sessionMocks.getSession();
     },
   };

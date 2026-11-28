@@ -103,6 +103,8 @@ export type {
 export {
   API_ERROR_CODE_VALUES,
   API_ERROR_MESSAGES,
+  ASSIGNMENT_FIELDS_INVALID_ERROR_CODE,
+  ASSIGNMENT_FIELDS_INVALID_ERROR_MESSAGE,
   CONFLICT_ERROR_CODE,
   CONFLICT_ERROR_MESSAGE,
   NO_AVAILABILITY_ERROR_CODE,
@@ -132,7 +134,7 @@ export {
   AVAILABILITY_EXCEPTION_KIND_VALUES,
 } from "./availability/availability";
 // Fecha civil de un instante en una zona horaria, para comparar con lo que escribe la persona.
-export { civilDateOfInstant } from "./calendar/civil_days";
+export { addCivilDays, civilDateOfInstant, midnightToEpochMs } from "./calendar/civil_days";
 export type {
   AvailabilityBlock,
   AvailabilityContractVersion,
