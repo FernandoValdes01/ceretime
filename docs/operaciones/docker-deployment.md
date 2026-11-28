@@ -21,7 +21,7 @@ Cambiar cualquiera de las variables `VITE_*` exige construir otra imagen.
 
 `apps/web/Dockerfile` construye la SPA con Bun y la sirve con nginx sin privilegios en el puerto `8080`, configurable con la variable de entorno `PORT` al arrancar el contenedor. nginx reproduce `apps/web/vercel.json`: entrega `index.html` para cualquier ruta que no sea un archivo y aplica las cabeceras de seguridad, que se generan en el build desde ese mismo archivo con `apps/web/docker/security-headers.ts`. Los assets con hash se cachean sin expirar; `index.html` y `push-sw.js` se revalidan en cada visita.
 
-`apps/web/Dockerfile.dockerignore` limita el contexto a los manifiestos, `convex/` y `apps/web`, y excluye los `.env*` para que un `apps/web/.env.local` no termine en el bundle.
+`apps/web/Dockerfile.dockerignore` limita el contexto a los manifiestos, `convex/`, `apps/web` y `docs/privacidad-aviso.md`, que la Web importa para mostrar el aviso de privacidad, y excluye los `.env*` para que un `apps/web/.env.local` no termine en el bundle.
 
 ## Comprobación local
 
