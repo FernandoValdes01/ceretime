@@ -24,15 +24,12 @@ vi.stubEnv("TEST_SEEDS_ENABLED", "true");
 
 const ISSUER = "https://accounts.google.com";
 
-// Exacto y no por inclusión: un mensaje que agregue el motivo debe fallar.
-const DENIED = /^No autorizado$/;
-
 /**
- * Denegación exacta de solicitudes: desde TI2-181 todo el módulo responde
- * `{ code: "unauthorized" }` del contrato común. Igual que `DENIED`, un motivo
- * agregado o una clave de más hacen fallar la prueba.
+ * Denegación exacta del contrato común: desde TI2-181 las solicitudes y desde
+ * TI4-84 las lecturas de acompañamientos responden `{ code: "unauthorized" }`.
+ * Un motivo agregado o una clave de más hacen fallar la prueba.
  */
-function isExactRequestDenial(error: unknown): boolean {
+function isExactDenial(error: unknown): boolean {
   if (!(error instanceof ConvexError)) return false;
   const data: unknown = error.data;
   return (
@@ -196,7 +193,7 @@ describe.each([
     const t = convexTest(schema, modules);
     const scenario = await seedRequests(t);
 
-    await expect(operation.call(asRole(t, role), scenario)).rejects.toSatisfy(isExactRequestDenial);
+    await expect(operation.call(asRole(t, role), scenario)).rejects.toSatisfy(isExactDenial);
   });
 });
 
@@ -205,16 +202,14 @@ describe("bandeja y toma fuera del Profesional (TI2-12)", () => {
     const t = convexTest(schema, modules);
     const scenario = await seedRequests(t);
 
-    await expect(operation.call(asRole(t, "student"), scenario)).rejects.toSatisfy(
-      isExactRequestDenial,
-    );
+    await expect(operation.call(asRole(t, "student"), scenario)).rejects.toSatisfy(isExactDenial);
   });
 
   test.each(TRIAGE_OPERATIONS)("sin identidad no se puede $name", async (operation) => {
     const t = convexTest(schema, modules);
     const scenario = await seedRequests(t);
 
-    await expect(operation.call(t, scenario)).rejects.toSatisfy(isExactRequestDenial);
+    await expect(operation.call(t, scenario)).rejects.toSatisfy(isExactDenial);
   });
 });
 
@@ -298,7 +293,7 @@ describe("acompañamientos por rol (TI2-12)", () => {
       asRole(t, "professional").query(api.presentation.accompaniments.listOwnedAccompaniments, {
         paginationOpts: PAGE,
       }),
-    ).rejects.toThrow(DENIED);
+    ).rejects.toSatisfy(isExactDenial);
   });
 
   test("el Estudiante no lista acompañamientos como asignados", async () => {
@@ -309,7 +304,7 @@ describe("acompañamientos por rol (TI2-12)", () => {
       asRole(t, "student").query(api.presentation.accompaniments.listAssignedAccompaniments, {
         limit: 10,
       }),
-    ).rejects.toThrow(DENIED);
+    ).rejects.toSatisfy(isExactDenial);
   });
 
   test("sin identidad no se listan acompañamientos propios ni asignados", async () => {
@@ -318,10 +313,10 @@ describe("acompañamientos por rol (TI2-12)", () => {
 
     await expect(
       t.query(api.presentation.accompaniments.listOwnedAccompaniments, { paginationOpts: PAGE }),
-    ).rejects.toThrow(DENIED);
+    ).rejects.toSatisfy(isExactDenial);
     await expect(
       t.query(api.presentation.accompaniments.listAssignedAccompaniments, { limit: 10 }),
-    ).rejects.toThrow(DENIED);
+    ).rejects.toSatisfy(isExactDenial);
   });
 
   test("sin identidad no se leen notas internas", async () => {
@@ -333,6 +328,6 @@ describe("acompañamientos por rol (TI2-12)", () => {
         accompanimentId,
         paginationOpts: PAGE,
       }),
-    ).rejects.toThrow(DENIED);
+    ).rejects.toSatisfy(isExactDenial);
   });
 });

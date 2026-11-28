@@ -67,11 +67,13 @@ function asReader(t: ReturnType<typeof convexTest>, subject: string) {
 }
 
 /** Mensaje de la denegación, o falla si la operación fue permitida. */
-async function denyMessage(promise: Promise<unknown>): Promise<string> {
+/** `data` del `ConvexError` con que se rechaza la operación. */
+async function denialData(promise: Promise<unknown>): Promise<unknown> {
   try {
     await promise;
   } catch (error) {
-    return error instanceof Error ? error.message : String(error);
+    if (error instanceof ConvexError) return error.data as unknown;
+    throw error;
   }
   throw new Error("Se esperaba denegación y la operación fue permitida");
 }
@@ -120,27 +122,28 @@ test("sin identidad, sin perfil o sin vigencia responde denegación sin filtrar"
   await seedCatalog(t);
   await seedUser(t, "ti99-inhabilitado", "professional", false);
 
-  const denied = /^No autorizado$/;
-  const anonymous = await denyMessage(
+  // Claves exactas del contrato común (TI4-84): un motivo o una clave de más fallan.
+  const denied = { code: "unauthorized", message: "No autorizado" };
+  const anonymous = await denialData(
     t.query(api.presentation.spaces.listSpaces, { limit: 10, version: "v1" }),
   );
-  expect(anonymous).toMatch(denied);
-  const missing = await denyMessage(
+  expect(anonymous).toStrictEqual(denied);
+  const missing = await denialData(
     asReader(t, "ti99-fantasma").query(api.presentation.spaces.listSpaces, {
       limit: 10,
       version: "v1",
     }),
   );
-  expect(missing).toMatch(denied);
-  const disabled = await denyMessage(
+  expect(missing).toStrictEqual(denied);
+  const disabled = await denialData(
     asReader(t, "ti99-inhabilitado").query(api.presentation.spaces.listSpaces, {
       limit: 10,
       version: "v1",
     }),
   );
-  expect(disabled).toMatch(denied);
-  for (const message of [anonymous, missing, disabled]) {
-    expect(message).not.toContain("Sala Ficticia");
+  expect(disabled).toStrictEqual(denied);
+  for (const data of [anonymous, missing, disabled]) {
+    expect(JSON.stringify(data)).not.toContain("Sala Ficticia");
   }
 });
 

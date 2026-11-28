@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 import { convexTest, type TestConvex } from "convex-test";
+import { ConvexError } from "convex/values";
 import { expect, test } from "vitest";
 import { api, internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
@@ -97,13 +98,32 @@ async function findAssignmentRow(
   });
 }
 
+/**
+ * Mensaje de la denegación, o falla si la operación fue permitida. Las vías
+ * internas rechazan con el texto en `error.data`; las lecturas de
+ * acompañamientos, desde TI4-84, con `{ code: "unauthorized", message }`, y
+ * solo esa forma exacta, sin claves de más, cuenta como su mensaje.
+ */
 async function denyMessage(promise: Promise<unknown>): Promise<string> {
   try {
     await promise;
   } catch (error) {
+    if (error instanceof ConvexError && isExactDenialData(error.data)) return error.data.message;
     return error instanceof Error ? error.message : String(error);
   }
   throw new Error("Se esperaba denegación y la operación fue permitida");
+}
+
+function isExactDenialData(data: unknown): data is { code: "unauthorized"; message: string } {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    Object.keys(data).length === 2 &&
+    "code" in data &&
+    data.code === "unauthorized" &&
+    "message" in data &&
+    typeof data.message === "string"
+  );
 }
 
 async function missingAccompanimentId(t: ReturnType<typeof convexTest>, studentId: Id<"users">) {

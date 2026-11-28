@@ -171,7 +171,7 @@ Desde TI2-183 la solicitud aceptada y el acompañamiento que abrió se enlazan e
 - La vista completa del acompañamiento suma también `referenceCode`, siempre presente. Es el mismo código `CER-XXXX-XXXX` que `searchSlots` entrega en `coordination.referenceCode` cuando no hay horario compatible (TI2-144, ver `agenda.md`): ambos salen de `deriveCoordinationReferenceCode` con el `_id` del acompañamiento y no se persiste. Así el Profesional autorizado reconoce el código que el Estudiante le entrega por un canal oficial. Lo entregan las mismas cuatro operaciones.
 - La vista minimizada del Practicante no cambia: sigue siendo `_id`, `status`, `objective` y `view`, sin `requestId` ni `referenceCode`.
 
-`requestId` y `accompanimentId` son opcionales en el tipo. `referenceCode` es obligatorio en `Accompaniment`: un dato de prueba tipado de la vista completa tiene que incluirlo, y en este cambio se agregó a los de Web y Mobile; el código de las pantallas no cambia. Las denegaciones no cambian: `getRequest` responde `unauthorized` del contrato común y `getAccompaniment` conserva su error genérico de Sprint 1.
+`requestId` y `accompanimentId` son opcionales en el tipo. `referenceCode` es obligatorio en `Accompaniment`: un dato de prueba tipado de la vista completa tiene que incluirlo, y en este cambio se agregó a los de Web y Mobile; el código de las pantallas no cambia. `getRequest` responde `unauthorized` del contrato común, y desde TI4-84 también `getAccompaniment` (ver «Denegación de los acompañamientos»).
 
 ```json
 {
@@ -184,6 +184,12 @@ Desde TI2-183 la solicitud aceptada y el acompañamiento que abrió se enlazan e
   "accompanimentId": "m33ghi..."
 }
 ```
+
+### Denegación de los acompañamientos
+
+Desde TI4-84, `getAccompaniment`, `listOwnedAccompaniments`, `listAssignedAccompaniments` y `getInternalNotes` deniegan con el contrato común: `{ "code": "unauthorized", "message": "No autorizado" }`, con esas dos claves y sin motivo. La respuesta es la misma exista o no el acompañamiento, sea ajeno, falte la identidad, la cuenta no esté vigente o el rol no corresponda, como el Administrador sin acceso general.
+
+Hasta TI4-84 estas cuatro operaciones denegaban con `ConvexError("No autorizado")`, con el texto en `error.data`. Web lee el código con `publicErrorOf` (`apps/web/src/infrastructure/convex/public-error.ts`), que acepta las dos formas, y Mobile también (`apps/mobile/src/infrastructure/student-contract-mappers.ts`). Un cliente que compare `error.data` con el texto deja de reconocer la denegación.
 
 ## Errores
 

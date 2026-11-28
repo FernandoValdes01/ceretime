@@ -537,10 +537,8 @@ test("TI2-152 API: quien se retira pierde acceso en la siguiente consulta y el �
     }),
   ).toBe(1);
 
-  // La lectura conserva su denegación genérica en texto plano (TI2-8).
-  await expect(retiring.query(getAccompaniment, args)).rejects.toMatchObject({
-    data: "No autorizado",
-  });
+  // La lectura responde la denegación del contrato común (TI4-84).
+  await expectPublicError(retiring.query(getAccompaniment, args), "unauthorized");
   await expectPublicError(retiring.mutation(pauseAccompaniment, args), "unauthorized");
   const revoked = await t.run(async (ctx) => {
     return await ctx.db

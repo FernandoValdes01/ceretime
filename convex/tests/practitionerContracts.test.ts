@@ -152,14 +152,32 @@ async function countAccompanimentsFor(t: ReturnType<typeof convexTest>, requestI
   });
 }
 
-/** Mensaje de la denegación, o falla si la operación fue permitida. */
+/**
+ * Mensaje de la denegación, o falla si la operación fue permitida. Las vías
+ * internas rechazan con el texto en `error.data`; las lecturas de
+ * acompañamientos, desde TI4-84, con `{ code: "unauthorized", message }`, y
+ * solo esa forma exacta, sin claves de más, cuenta como su mensaje.
+ */
 async function denyMessage(promise: Promise<unknown>): Promise<string> {
   try {
     await promise;
   } catch (error) {
+    if (error instanceof ConvexError && isExactDenialData(error.data)) return error.data.message;
     return error instanceof Error ? error.message : String(error);
   }
   throw new Error("Se esperaba denegación y la operación fue permitida");
+}
+
+function isExactDenialData(data: unknown): data is { code: "unauthorized"; message: string } {
+  return (
+    typeof data === "object" &&
+    data !== null &&
+    Object.keys(data).length === 2 &&
+    "code" in data &&
+    data.code === "unauthorized" &&
+    "message" in data &&
+    typeof data.message === "string"
+  );
 }
 
 /** Rechazo del contrato común: `data` lleva el código y `message` lo que llega al cliente. */
@@ -318,17 +336,21 @@ test("modificación y autoasignación del practicante se rechazan", async () => 
     }),
   ).rejects.toThrow(DENIED);
 
-  await expect(
-    asIntern.query(api.presentation.accompaniments.listOwnedAccompaniments, {
-      paginationOpts: pageOpts(10),
-    }),
-  ).rejects.toThrow(DENIED);
-  await expect(
-    asIntern.query(api.presentation.accompaniments.getInternalNotes, {
-      accompanimentId,
-      paginationOpts: pageOpts(10),
-    }),
-  ).rejects.toThrow(DENIED);
+  expect(
+    await denyMessage(
+      asIntern.query(api.presentation.accompaniments.listOwnedAccompaniments, {
+        paginationOpts: pageOpts(10),
+      }),
+    ),
+  ).toMatch(DENIED);
+  expect(
+    await denyMessage(
+      asIntern.query(api.presentation.accompaniments.getInternalNotes, {
+        accompanimentId,
+        paginationOpts: pageOpts(10),
+      }),
+    ),
+  ).toMatch(DENIED);
 });
 
 test("revocación inmediata cierra lectura y listado sin filtrar", async () => {

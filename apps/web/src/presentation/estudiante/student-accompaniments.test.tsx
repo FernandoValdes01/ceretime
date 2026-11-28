@@ -263,6 +263,16 @@ describe("detalle del acompañamiento propio (TI2-90)", () => {
     expect(screen.getByRole("link", { name: "Volver al inicio" })).toBeDefined();
   });
 
+  test("la denegación con código del contrato común también muestra el acceso denegado", async () => {
+    // Desde TI4-84 el Backend responde `{ code, message }`; la forma de texto sigue aceptada.
+    detailThrows = new ConvexError({ code: "unauthorized", message: "No autorizado" });
+    renderAt("/estudiante/acompanamientos/acc-ajeno");
+
+    expect(await screen.findByText("No tienes acceso a este acompañamiento.")).toBeDefined();
+    expect(screen.queryByText(/objetivo ficticio/i)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Reintentar" })).toBeNull();
+  });
+
   test("el acompañamiento cerrado conserva su vista en solo lectura", async () => {
     mockedDetail = detallePropio({ _id: "acc-1", status: "closed" });
     renderAt("/estudiante/acompanamientos/acc-1");

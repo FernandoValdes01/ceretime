@@ -1,9 +1,9 @@
 import { ConvexError } from "convex/values";
 import { SPACE_CATALOG_CONTRACT_VERSION, type Space } from "../../domain/spaces/space";
 import {
-  AUTHORIZATION_DENIED_MESSAGE,
   authorizeSpaceCatalogManage,
   authorizeSpaceCatalogRead,
+  deniedPublicError,
   type AuthorizationReader,
 } from "../authorization/authorize";
 import type { SpaceCatalogReader } from "./ports";
@@ -29,8 +29,12 @@ import {
 /** Tope de elementos por página: se rechaza el exceso, nunca se trunca en silencio. */
 export const SPACE_CATALOG_PAGE_LIMIT_MAX = 100;
 
+/**
+ * Denegación del catálogo con el código común (TI2-88): igual exista o no la
+ * sala, sin revelar el motivo. Hasta TI4-84 viajaba como texto.
+ */
 function deny(): never {
-  throw new ConvexError(AUTHORIZATION_DENIED_MESSAGE);
+  throw new ConvexError({ ...deniedPublicError() });
 }
 
 /**

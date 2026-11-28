@@ -2,8 +2,8 @@ import type { PaginationOptions, UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
 import type { Doc, Id } from "../../_generated/dataModel";
 import {
-  AUTHORIZATION_DENIED_MESSAGE,
   authorizeAccompanimentRead,
+  deniedPublicError,
   authorizeInternalNoteRead,
   listingScopeForRole,
   type AuthorizableAssignment,
@@ -26,12 +26,14 @@ import type { AccompanimentReadStore } from "./ports";
  *
  * Toda denegación (sin identidad, sin perfil, cuenta inhabilitada, fuera de
  * alcance, acompañamiento inexistente o acceso general de Administrador)
- * lanza el mismo error genérico, sin exponer el motivo ni la existencia del
- * recurso. Opera con datos ficticios.
+ * lanza el mismo `{ code: "unauthorized", message: "No autorizado" }` del
+ * contrato común (TI2-88), sin exponer el motivo ni la existencia del recurso.
+ * Hasta TI4-84 la denegación viajaba como texto en `error.data`. Opera con
+ * datos ficticios.
  */
 
 function deny(): never {
-  throw new ConvexError(AUTHORIZATION_DENIED_MESSAGE);
+  throw new ConvexError({ ...deniedPublicError() });
 }
 
 function toAuthorizableProfile(profile: Doc<"users">) {
