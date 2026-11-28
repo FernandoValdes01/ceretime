@@ -18,11 +18,11 @@ Este documento está en curso. Fecha de corte: 27/11/2026.
 
 | Criterio | Tarea | Entrega | Versión | Resultado |
 | --- | --- | --- | --- | --- |
-| Proceso completo con los cuatro roles en una misma secuencia | TI2-179 | S4 | `1cfbe37b` y `572fa661` | Cumplido en pruebas automáticas. Recorrido en la interfaz en curso |
+| Proceso completo con los cuatro roles en una misma secuencia | TI2-179 | S4 | `1cfbe37b` y `572fa661` | Cumplido en pruebas automáticas y en el recorrido, con el Estudiante en la interfaz y los demás roles por la API pública |
 | Permisos entre usuarios | TI2-179 sobre TI2-86, TI2-127 y TI2-140 | S4 | `1cfbe37b` | Cumplido en pruebas automáticas |
-| Revocación del practicante | TI2-179 sobre TI2-127 y TI2-140 | S4 | `1cfbe37b` | Cumplido en pruebas automáticas |
+| Revocación del practicante | TI2-179 sobre TI2-127 y TI2-140 | S4 | `1cfbe37b` y `572fa661` | Cumplido en pruebas automáticas y en el recorrido |
 | Reservas simultáneas | TI2-179 sobre TI2-84, TI2-96 y TI2-120 | S4 | `1cfbe37b` | Cumplido en pruebas automáticas |
-| Estados y cierre sin reapertura | TI2-179 sobre TI2-152 | S4 | `1cfbe37b` | Cumplido en pruebas automáticas |
+| Estados y cierre sin reapertura | TI2-179 sobre TI2-152 | S4 | `1cfbe37b` y `572fa661` | Cumplido en pruebas automáticas y en el recorrido |
 | Plazos de justificación | TI2-119 y TI2-147 | S4 | `572fa661` | Cumplido en pruebas existentes |
 | Reintentos y recuperación de avisos y Calendar | TI2-159, TI2-160 y TI2-162 | S4 | `572fa661` | Cumplido en pruebas existentes con dobles. Envío real pendiente |
 | Contratos completos para Web y Mobile | TI2-179 | S4 | `1a96cdff` | Cumplido con un hallazgo abierto |
@@ -67,8 +67,14 @@ Este documento está en curso. Fecha de corte: 27/11/2026.
 | 9 | Estudiante, Google Calendar | El evento aparece a las 21:45 con el título genérico «Atención programada» y sin ubicación |
 | 10 | Estudiante, interfaz | `.ics` descargado y abierto correctamente |
 | 11 | Profesional, `recordAppointmentAttendance` y `saveFollowUpRecord` a las 21:26 | Rechazados con `conflict` sin escribir: la atención todavía no empezaba y no admite seguimiento |
+| 12 | Profesional, los mismos comandos a las 21:46 | Atención «Realizada» y seguimiento guardado con un acuerdo, una tarea del Estudiante, próximos pasos y una nota interna |
+| 13 | Profesional y Practicante, `getFollowUpRecord` | El Profesional recibe la vista `professional` con la nota interna; el Practicante, la vista `minimized` con acuerdos, tareas y próximos pasos, sin la nota |
+| 14 | Estudiante, interfaz | El historial muestra «Atención del viernes, 27 de noviembre de 2026 · Realizada» con acuerdos, tareas y próximos pasos. La nota interna no está en la página ni en el HTML |
+| 15 | Profesional, `revokeAccompanimentAccess` | Practicante revocado. Desde la llamada siguiente, `getAccompaniment` y `getFollowUpRecord` lo deniegan |
+| 16 | Profesional, `closeAccompaniment` y `reactivateAccompaniment` | Acompañamiento cerrado; reactivarlo responde `conflict` |
+| 17 | Estudiante, interfaz | Estado «Cerrado» con aviso de solo lectura, atenciones sin acciones de calendario, historial visible y sin el formulario de necesidades |
 
-Pendiente: registrar la atención y el seguimiento después de las 21:45, las lecturas por rol, la revocación del Practicante y el cierre.
+**Capturas.** Calendar conectado, solicitud enviada, atención agregada a Google Calendar, evento en Google Calendar, seguimiento del Estudiante sin la nota interna y acompañamiento cerrado. Están en el cuerpo de la PR de TI2-179.
 
 ## Cobertura existente por tema
 
@@ -99,6 +105,6 @@ Pendiente: registrar la atención y el seguimiento después de las 21:45, las le
 - **Recorrido en la interfaz con los cuatro roles.** Hay una sola cuenta institucional; el Estudiante recorre la interfaz y los demás roles operan por la API pública con `--identity`. Ver las pantallas del Profesional, el Practicante y el Administrador requiere cuentas que puedan iniciar sesión.
 - **Correo real.** El deployment propio no tiene `GMAIL_SENDER_ADDRESS` ni `GMAIL_SENDER_REFRESH_TOKEN`.
 - **Push real.** Falta cargar `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` y `VAPID_SUBJECT`. Además, la Web tiene el service worker y el adaptador del navegador, pero ninguna pantalla permite activar push.
-- **Formato de error de acompañamientos.** Las consultas de `presentation/accompaniments` rechazan con el mensaje «No autorizado» sin el objeto `{ code, message }` que solicitudes adoptó en TI2-181. No impide el uso, pero un cliente nuevo debe tratar las dos formas.
+- **Formato de error de acompañamientos.** Las consultas de `presentation/accompaniments` rechazan con el mensaje «No autorizado» sin el objeto `{ code, message }` que solicitudes adoptó en TI2-181. El recorrido lo confirma: al Practicante revocado, `getAccompaniment` responde `No autorizado` y `getFollowUpRecord`, `{"code":"unauthorized","message":"No autorizado"}`. No impide el uso, pero un cliente nuevo debe tratar las dos formas.
 - **Validaciones de CERETI.** Sin fecha ni responsable.
 - **Dependencias.** TI2-178 (WCAG) y TI2-174 (conservación) bloquean esta tarea y no están integradas; «todo funciona junto en la misma versión» se vuelve a comprobar cuando lo estén.
