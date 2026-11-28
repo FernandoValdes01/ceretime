@@ -1,6 +1,5 @@
 import {
   AVAILABILITY_CONTRACT_VERSION,
-  expandAvailabilitySlots,
   type AvailabilitySearchResult,
   type AvailabilitySlot,
   type SearchedAvailabilitySlot,
@@ -25,18 +24,17 @@ import {
   unauthorizedError,
   type ApiResult,
 } from "../../domain/errors/api_error";
-import { assessCompatibility, type CompatibilityOption } from "../../domain/spaces/compatibility";
-import { toSpaceFields } from "../../domain/spaces/space";
+import type { CompatibilityOption } from "../../domain/spaces/compatibility";
+import { authorizeAvailabilityRead, type AuthorizationReader } from "../authorization/authorize";
 import {
-  authorizeAvailabilityRead,
-  isBookableProfessional,
-  type AuthorizationReader,
-} from "../authorization/authorize";
-import {
+  classifySlotCompatibility,
+  expandProfessionalSlots,
+  findBookableProfessionalIds,
+  isCandidateSlotOccupied,
   isValidSearchRange,
   isValidTimeZone,
-  resolveCompatibilityOption,
   SEARCH_AVAILABILITY_PAGE_LIMIT_MAX,
+  toSearchedSlot,
 } from "./availability";
 import type {
   AccompanimentNeedsReader,
@@ -100,45 +98,6 @@ function conflict<T>(): ApiResult<T> {
   return errResult(conflictError());
 }
 
-/** Profesionales reservables del acompañamiento, o `null` si la lectura no alcanzó. */
-async function bookableProfessionalIds(
-  deps: Pick<SearchAccompanimentSlotsDeps, "auth" | "professionals">,
-  accompanimentId: string,
-): Promise<string[] | null> {
-  const candidates = await deps.professionals.listActiveProfessionalIds(accompanimentId);
-  if (candidates === null) return null;
-  const bookable: string[] = [];
-  for (const professionalId of candidates) {
-    if (await isBookableProfessional(deps.auth, { accompanimentId, professionalId })) {
-      bookable.push(professionalId);
-    }
-  }
-  return bookable;
-}
-
-/** Cupos expandidos del profesional, o `null` si su disponibilidad no se pudo leer. */
-async function expandedSlotsOf(
-  availability: AvailabilityReader,
-  input: { readonly professionalId: string; readonly from: string; readonly to: string },
-  timeZone: string,
-): Promise<AvailabilitySlot[] | null> {
-  const [blocks, exceptions] = await Promise.all([
-    availability.listActiveBlocks(input.professionalId),
-    availability.listExceptions(input),
-  ]);
-  if (blocks.status === "error" || exceptions.status === "error") return null;
-  try {
-    return expandAvailabilitySlots({
-      ...input,
-      blocks: blocks.data,
-      exceptions: exceptions.data,
-      timeZone,
-    });
-  } catch {
-    return null;
-  }
-}
-
 /**
  * Cupos compatibles y libres de los profesionales reservables de un
  * acompañamiento activo, agrupados y paginados (TI4-84).
@@ -171,7 +130,7 @@ export async function searchAccompanimentSlots(
   });
   if (grant.status === "error") return errResult(unauthorizedError());
 
-  const professionalIds = await bookableProfessionalIds(deps, input.accompanimentId);
+  const professionalIds = await findBookableProfessionalIds(deps, input.accompanimentId);
   if (professionalIds === null) return conflict();
   const [needsEntry, onlineSupports, accompaniment] = await Promise.all([
     deps.needs.findAccompanimentNeeds(input.accompanimentId),
@@ -186,24 +145,28 @@ export async function searchAccompanimentSlots(
   let incompatible = 0;
   let readable = 0;
   for (const professionalId of professionalIds) {
-    const expanded = await expandedSlotsOf(
-      deps.availability,
-      { professionalId, from: input.from, to: input.to },
-      input.timeZone,
-    );
+    const expanded = await expandProfessionalSlots(deps.availability, {
+      professionalId,
+      from: input.from,
+      to: input.to,
+      timeZone: input.timeZone,
+    });
     if (expanded === null) continue;
     readable += 1;
     for (const slot of expanded) {
-      const option = await resolveCompatibilityOption(deps.compatibility, onlineSupports, slot);
-      if (option === null) continue;
-      const decision = assessCompatibility(needsEntry.needs, option);
-      if (!decision.compatible) {
-        if (decision.issues.some((issue) => issue.code === "unmet_needs")) incompatible += 1;
+      const compatibility = await classifySlotCompatibility(
+        deps.compatibility,
+        { needs: needsEntry.needs, onlineSupports },
+        slot,
+      );
+      if (compatibility.status === "unavailable") continue;
+      if (compatibility.status === "incompatible") {
+        if (compatibility.unmetNeeds) incompatible += 1;
         continue;
       }
       const key = equivalentSlotKey(slot);
       const group = groups.get(key) ?? { startAt: slot.startAt, key, candidates: [] };
-      group.candidates.push({ slot, option });
+      group.candidates.push({ slot, option: compatibility.option });
       groups.set(key, group);
     }
   }
@@ -231,10 +194,13 @@ export async function searchAccompanimentSlots(
   let occupied = 0;
   for (const group of ordered) {
     if (items.length > input.limit) break;
+    // La carga semanal solo decide entre varios profesionales del mismo grupo.
     const groupLoads = new Map<string, number>();
-    for (const candidate of group.candidates) {
-      const { professionalId } = candidate.slot;
-      groupLoads.set(professionalId, await weekLoad(professionalId, group.startAt));
+    if (group.candidates.length > 1) {
+      for (const candidate of group.candidates) {
+        const { professionalId } = candidate.slot;
+        groupLoads.set(professionalId, await weekLoad(professionalId, group.startAt));
+      }
     }
     const preferred = preferredSlotOrder(
       group.candidates.map((candidate) => ({
@@ -244,21 +210,13 @@ export async function searchAccompanimentSlots(
       (professionalId) => groupLoads.get(professionalId) ?? 0,
     );
     for (const { slot, option } of preferred) {
-      const taken = await deps.occupancy.isSlotOccupied({
-        professionalId: slot.professionalId,
-        studentId: accompaniment.studentId,
-        ...(slot.spaceId === undefined ? {} : { spaceId: slot.spaceId }),
-        startAt: slot.startAt,
-        endAt: slot.endAt,
-      });
-      if (taken) {
+      if (await isCandidateSlotOccupied(deps.occupancy, slot, accompaniment.studentId)) {
         occupied += 1;
         continue;
       }
       items.push({
         position: { startAt: group.startAt, key: group.key },
-        slot:
-          option.space === undefined ? slot : { ...slot, space: toSpaceFields(option.space.space) },
+        slot: toSearchedSlot(slot, option),
       });
       break;
     }

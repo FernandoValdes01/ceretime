@@ -544,6 +544,117 @@ export async function resolveCompatibilityOption(
 }
 
 /**
+ * Cupos de un profesional en el rango: bloques vigentes y excepciones
+ * expandidos con TI2-81, o `null` si su disponibilidad no se pudo leer o
+ * expandir. La comparten la búsqueda de un profesional y la del
+ * acompañamiento (TI4-84).
+ */
+export async function expandProfessionalSlots(
+  availability: AvailabilityReader,
+  input: {
+    readonly professionalId: string;
+    readonly from: string;
+    readonly to: string;
+    readonly timeZone: string;
+  },
+): Promise<AvailabilitySlot[] | null> {
+  const [blocks, exceptions] = await Promise.all([
+    availability.listActiveBlocks(input.professionalId),
+    availability.listExceptions({
+      professionalId: input.professionalId,
+      from: input.from,
+      to: input.to,
+    }),
+  ]);
+  if (blocks.status === "error" || exceptions.status === "error") return null;
+  try {
+    return expandAvailabilitySlots({
+      professionalId: input.professionalId,
+      blocks: blocks.data,
+      exceptions: exceptions.data,
+      from: input.from,
+      to: input.to,
+      timeZone: input.timeZone,
+    });
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Compatibilidad de un cupo con las necesidades vigentes (TI2-82), sin
+ * rebajarlas. `unavailable` es una sala sin catálogo: no se ofrece a nadie y
+ * no es una necesidad sin cubrir, así que no cambia el motivo de la ausencia.
+ * `incompatible` cuenta para `needs_not_met` solo cuando faltan necesidades.
+ */
+export async function classifySlotCompatibility(
+  compatibility: CompatibilitySpaceSource,
+  context: {
+    readonly needs: readonly AccessNeed[];
+    readonly onlineSupports: readonly AccessNeed[];
+  },
+  slot: AvailabilitySlot,
+): Promise<
+  | { readonly status: "compatible"; readonly option: CompatibilityOption }
+  | { readonly status: "incompatible"; readonly unmetNeeds: boolean }
+  | { readonly status: "unavailable" }
+> {
+  const option = await resolveCompatibilityOption(compatibility, context.onlineSupports, slot);
+  if (option === null) return { status: "unavailable" };
+  const decision = assessCompatibility(context.needs, option);
+  if (decision.compatible) return { status: "compatible", option };
+  return {
+    status: "incompatible",
+    unmetNeeds: decision.issues.some((issue) => issue.code === "unmet_needs"),
+  };
+}
+
+/**
+ * Si el cupo cruza una atención del profesional, del estudiante del
+ * acompañamiento o de la sala: los mismos recursos que comprueba la reserva.
+ */
+export async function isCandidateSlotOccupied(
+  occupancy: SlotOccupancyReader,
+  slot: AvailabilitySlot,
+  studentId: string,
+): Promise<boolean> {
+  return await occupancy.isSlotOccupied({
+    professionalId: slot.professionalId,
+    studentId,
+    ...(slot.spaceId === undefined ? {} : { spaceId: slot.spaceId }),
+    startAt: slot.startAt,
+    endAt: slot.endAt,
+  });
+}
+
+/** Cupo ofrecido: el presencial suma la ubicación y el acceso de su sala. */
+export function toSearchedSlot(
+  slot: AvailabilitySlot,
+  option: CompatibilityOption,
+): SearchedAvailabilitySlot {
+  return option.space === undefined ? slot : { ...slot, space: toSpaceFields(option.space.space) };
+}
+
+/**
+ * Profesionales reservables del acompañamiento (TI2-123), o `null` si la
+ * lectura acotada de candidatos no alcanzó. Única regla para el listado y la
+ * búsqueda por acompañamiento (TI4-84).
+ */
+export async function findBookableProfessionalIds(
+  deps: { readonly auth: AuthorizationReader; readonly professionals: BookableProfessionalSource },
+  accompanimentId: string,
+): Promise<string[] | null> {
+  const candidates = await deps.professionals.listActiveProfessionalIds(accompanimentId);
+  if (candidates === null) return null;
+  const bookable = await Promise.all(
+    candidates.map((professionalId) =>
+      isBookableProfessional(deps.auth, { accompanimentId, professionalId }),
+    ),
+  );
+  return candidates.filter((_, index) => bookable[index]);
+}
+
+/**
  * Consulta cupos compatibles para un acompañamiento activo.
  *
  * Autoriza con TI2-86 (acompañamiento activo con pertenencia o asignación
@@ -593,36 +704,13 @@ export async function searchAvailabilitySlots(
     return noCompatibleSlot(input.accompanimentId, "no_published_slots");
   }
 
-  const [blocksResult, exceptionsResult, needsEntry, onlineSupports, accompaniment] =
-    await Promise.all([
-      deps.availability.listActiveBlocks(input.professionalId),
-      deps.availability.listExceptions({
-        professionalId: input.professionalId,
-        from: input.from,
-        to: input.to,
-      }),
-      deps.needs.findAccompanimentNeeds(input.accompanimentId),
-      deps.compatibility.listOnlineSupports(),
-      deps.auth.getAccompaniment(input.accompanimentId),
-    ]);
-  if (blocksResult.status === "error" || exceptionsResult.status === "error") {
-    return conflict();
-  }
-  if (needsEntry === null || accompaniment === null) return conflict();
-
-  let expanded: AvailabilitySlot[];
-  try {
-    expanded = expandAvailabilitySlots({
-      professionalId: input.professionalId,
-      blocks: blocksResult.data,
-      exceptions: exceptionsResult.data,
-      from: input.from,
-      to: input.to,
-      timeZone: input.timeZone,
-    });
-  } catch {
-    return conflict();
-  }
+  const [expanded, needsEntry, onlineSupports, accompaniment] = await Promise.all([
+    expandProfessionalSlots(deps.availability, input),
+    deps.needs.findAccompanimentNeeds(input.accompanimentId),
+    deps.compatibility.listOnlineSupports(),
+    deps.auth.getAccompaniment(input.accompanimentId),
+  ]);
+  if (expanded === null || needsEntry === null || accompaniment === null) return conflict();
 
   const compatible: SearchedAvailabilitySlot[] = [];
   // Lo descartado solo decide el motivo de la ausencia; nunca se ofrece.
@@ -631,34 +719,22 @@ export async function searchAvailabilitySlots(
   // de cuánto ocupan otras personas.
   const discarded = { occupied: 0, incompatible: 0 };
   for (const slot of expanded) {
-    const option = await resolveCompatibilityOption(deps.compatibility, onlineSupports, slot);
-    // Una sala sin catálogo no se puede ofrecer a nadie: no es una necesidad
-    // sin cubrir, así que no cambia el motivo.
-    if (option === null) continue;
-    const decision = assessCompatibility(needsEntry.needs, option);
-    if (!decision.compatible) {
-      if (decision.issues.some((issue) => issue.code === "unmet_needs")) {
-        discarded.incompatible += 1;
-      }
+    const compatibility = await classifySlotCompatibility(
+      deps.compatibility,
+      { needs: needsEntry.needs, onlineSupports },
+      slot,
+    );
+    if (compatibility.status === "unavailable") continue;
+    if (compatibility.status === "incompatible") {
+      if (compatibility.unmetNeeds) discarded.incompatible += 1;
       continue;
     }
-    // Los mismos recursos que comprueba la reserva: el profesional, el
-    // estudiante del acompañamiento (también cuando busca el profesional) y
-    // la sala del cupo presencial.
-    const occupied = await deps.occupancy.isSlotOccupied({
-      professionalId: input.professionalId,
-      studentId: accompaniment.studentId,
-      ...(slot.spaceId === undefined ? {} : { spaceId: slot.spaceId }),
-      startAt: slot.startAt,
-      endAt: slot.endAt,
-    });
-    if (occupied) {
+    // El estudiante del acompañamiento se revisa también cuando busca el profesional.
+    if (await isCandidateSlotOccupied(deps.occupancy, slot, accompaniment.studentId)) {
       discarded.occupied += 1;
       continue;
     }
-    compatible.push(
-      option.space === undefined ? slot : { ...slot, space: toSpaceFields(option.space.space) },
-    );
+    compatible.push(toSearchedSlot(slot, compatibility.option));
   }
 
   let startIndex = 0;
@@ -722,18 +798,7 @@ export async function listBookableProfessionals(
     privacyCategory: "appointments",
   });
   if (grant.status === "error") return denied();
-  const candidates = await deps.professionals.listActiveProfessionalIds(input.accompanimentId);
-  if (candidates === null) return conflict();
-  const bookable = await Promise.all(
-    candidates.map((professionalId) =>
-      isBookableProfessional(deps.auth, {
-        accompanimentId: input.accompanimentId,
-        professionalId,
-      }),
-    ),
-  );
-  return okResult({
-    professionalIds: candidates.filter((_, index) => bookable[index]),
-    version: AVAILABILITY_CONTRACT_VERSION,
-  });
+  const professionalIds = await findBookableProfessionalIds(deps, input.accompanimentId);
+  if (professionalIds === null) return conflict();
+  return okResult({ professionalIds, version: AVAILABILITY_CONTRACT_VERSION });
 }
