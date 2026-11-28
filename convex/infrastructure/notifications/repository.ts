@@ -20,6 +20,7 @@ import {
 } from "../../domain/notifications/delivery";
 import {
   isAppointmentNotificationEventKind,
+  isPrivacyNotificationEventKind,
   isRequestNotificationEventKind,
   notificationIdempotencyKey,
   toNotificationEvent,
@@ -139,6 +140,7 @@ export async function recordNotificationEvent(
 
   let appointmentId: Id<"appointments"> | undefined;
   let requestId: Id<"requests"> | undefined;
+  let privacyRequestId: Id<"privacyRequests"> | undefined;
   if ("appointmentId" in event) {
     const normalized = ctx.db.normalizeId("appointments", event.appointmentId);
     if (normalized === null) return { status: "invalid_reference" };
@@ -147,6 +149,14 @@ export async function recordNotificationEvent(
       return { status: "invalid_reference" };
     }
     appointmentId = normalized;
+  } else if ("privacyRequestId" in event) {
+    const normalized = ctx.db.normalizeId("privacyRequests", event.privacyRequestId);
+    if (normalized === null) return { status: "invalid_reference" };
+    const privacyRequest = await ctx.db.get(normalized);
+    if (privacyRequest === null || privacyRequest.requesterId !== recipientId) {
+      return { status: "invalid_reference" };
+    }
+    privacyRequestId = normalized;
   } else {
     const normalized = ctx.db.normalizeId("requests", event.requestId);
     if (normalized === null) return { status: "invalid_reference" };
@@ -164,6 +174,7 @@ export async function recordNotificationEvent(
     kind: event.kind,
     ...(appointmentId === undefined ? {} : { appointmentId }),
     ...(requestId === undefined ? {} : { requestId }),
+    ...(privacyRequestId === undefined ? {} : { privacyRequestId }),
     recipientId,
     occurredAt: event.occurredAt,
     version: event.version,
@@ -266,7 +277,8 @@ async function queuePushDeliveryIfSubscribed(
 export type StoredNotificationEvent = StoredNotification<
   Id<"notificationEvents">,
   Id<"users">,
-  Id<"requests">
+  Id<"requests">,
+  Id<"privacyRequests">
 >;
 
 /** Traduce la fila al contrato; la clave de idempotencia no sale del repositorio. */
@@ -284,6 +296,14 @@ function toStoredNotificationEvent(row: Doc<"notificationEvents">): StoredNotifi
       throw new Error("El aviso guardado tiene una clase que no corresponde a su atención.");
     }
     return { ...base, kind: row.kind, appointmentId: row.appointmentId };
+  }
+  if (row.privacyRequestId !== undefined) {
+    if (!isPrivacyNotificationEventKind(row.kind)) {
+      throw new Error(
+        "El aviso guardado tiene una clase que no corresponde a una solicitud de privacidad.",
+      );
+    }
+    return { ...base, kind: row.kind, privacyRequestId: row.privacyRequestId };
   }
   if (row.requestId === undefined) {
     throw new Error("El evento de notificación guardado no tiene recurso.");
@@ -769,9 +789,17 @@ export async function claimEmailDelivery(
 function notificationEventFromRow(row: Doc<"notificationEvents">): NotificationEvent {
   const stored = toStoredNotificationEvent(row);
   const base = { recipientId: stored.recipientId, occurredAt: stored.occurredAt };
-  return "appointmentId" in stored
-    ? toNotificationEvent({ ...base, kind: stored.kind, appointmentId: stored.appointmentId })
-    : toNotificationEvent({ ...base, kind: stored.kind, requestId: stored.requestId });
+  if ("appointmentId" in stored) {
+    return toNotificationEvent({ ...base, kind: stored.kind, appointmentId: stored.appointmentId });
+  }
+  if ("privacyRequestId" in stored) {
+    return toNotificationEvent({
+      ...base,
+      kind: stored.kind,
+      privacyRequestId: stored.privacyRequestId,
+    });
+  }
+  return toNotificationEvent({ ...base, kind: stored.kind, requestId: stored.requestId });
 }
 
 /** Tope de entregas por canal que un barrido vuelve a programar: el resto espera al siguiente. */

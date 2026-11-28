@@ -46,14 +46,17 @@ export const PRIVACY_REQUEST_KIND_LABELS: Record<PrivacyRequestKind, string> = {
 
 /**
  * Derechos que esta entrega acepta por la aplicación, en el orden en que se
- * ofrecen. Bloqueo y oposición son la siguiente tarea del módulo (TI2-168).
- * Es la única lista: el caso de uso rechaza los demás y la Web solo ofrece
+ * ofrecen. TI2-168 habilita el bloqueo temporal y la oposición además de los
+ * anteriores. Es la única lista: el caso de uso rechaza los demás y la Web
+ * solo ofrece
  * estos, así no se ofrece un derecho que el Backend no recibe.
  */
 export const SUBMITTABLE_PRIVACY_REQUEST_KINDS = [
   "access",
   "rectification",
   "erasure",
+  "objection",
+  "blocking",
   "portability",
 ] as const satisfies readonly PrivacyRequestKind[];
 

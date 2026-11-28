@@ -327,6 +327,8 @@ export async function cancelAppointment(
   const grant = await authorizeAppointmentCancel(deps.auth, {
     tokenIdentifier: input.tokenIdentifier,
     appointment: toAuthorizableAppointment(stored),
+    privacyCategory: "appointments",
+    ...(deps.now === undefined ? {} : { now: deps.now }),
   });
   if (grant.status === "error") return denied();
 
@@ -371,6 +373,8 @@ export async function rescheduleAppointment(
   const grant = await authorizeAppointmentReschedule(deps.auth, {
     tokenIdentifier: input.tokenIdentifier,
     appointment: toAuthorizableAppointment(stored),
+    privacyCategory: "appointments",
+    ...(deps.now === undefined ? {} : { now: deps.now }),
   });
   if (grant.status === "error") return denied();
 
@@ -507,6 +511,8 @@ export async function recordAppointmentAttendance(
   const grant = await authorizeAppointmentAttendance(deps.auth, {
     tokenIdentifier: input.tokenIdentifier,
     appointment: toAuthorizableAppointment(stored),
+    privacyCategory: "appointments",
+    ...(deps.now === undefined ? {} : { now: deps.now }),
   });
   if (grant.status === "error") return denied();
 
@@ -581,6 +587,8 @@ export async function submitAppointmentJustification(
   const grant = await authorizeAppointmentJustificationSubmit(deps.auth, {
     tokenIdentifier: input.tokenIdentifier,
     appointment: toAuthorizableAppointment(stored),
+    privacyCategory: "appointments",
+    ...(deps.now === undefined ? {} : { now: deps.now }),
   });
   if (grant.status === "error") return denied();
 
@@ -645,6 +653,8 @@ export async function reviewAppointmentJustification(
   const grant = await authorizeAppointmentJustificationReview(deps.auth, {
     tokenIdentifier: input.tokenIdentifier,
     appointment: toAuthorizableAppointment(stored),
+    privacyCategory: "appointments",
+    ...(deps.now === undefined ? {} : { now: deps.now }),
   });
   if (grant.status === "error") return denied();
 

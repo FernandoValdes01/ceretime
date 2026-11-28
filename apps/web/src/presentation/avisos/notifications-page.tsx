@@ -254,6 +254,12 @@ function useNotificationTarget(audience: NotificationsAudience) {
         : navigate({ to: "/profesional/agenda/$appointmentId", params }));
       return;
     }
+    if ("privacyRequestId" in notification) {
+      if (audience !== "student") return;
+      const params = { requestId: notification.privacyRequestId };
+      void navigate({ to: "/estudiante/privacidad/$requestId", params });
+      return;
+    }
     const params = { requestId: notification.requestId };
     void (audience === "student"
       ? navigate({ to: "/estudiante/solicitudes/$requestId", params })

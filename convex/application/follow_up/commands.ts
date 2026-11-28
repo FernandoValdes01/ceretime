@@ -131,6 +131,7 @@ export async function saveFollowUpRecord(
   const grant = await authorizeFollowUpWrite(deps.auth, {
     tokenIdentifier,
     accompanimentId: appointment.accompanimentId,
+    privacyCategory: "appointments",
   });
   if (grant.status === "error") return grant;
 

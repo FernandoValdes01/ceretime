@@ -25,6 +25,7 @@ function context(
 ): CalendarSyncAppointmentContext {
   return {
     appointmentId: "appointment-1",
+    studentId: "user-student",
     status: "scheduled",
     startAt: START_AT,
     endAt: END_AT,
@@ -399,6 +400,7 @@ describe("sincronización automática con Calendar (TI2-162)", () => {
     } = { startsAt: newStart, endsAt: newEnd, status: "rescheduled" };
     const loadFresh = async (): Promise<CalendarSyncAppointmentContext> => ({
       appointmentId: "appointment-1",
+      studentId: "user-student",
       status: row.status as CalendarSyncAppointmentContext["status"],
       startAt: row.startsAt,
       endAt: row.endsAt,
@@ -503,5 +505,83 @@ describe("sincronización automática con Calendar (TI2-162)", () => {
       status: "error",
       error: { code: "conflict", message: expect.any(String) },
     });
+  });
+});
+
+describe("bloqueo de privacidad en la sincronización con Calendar (TI2-168)", () => {
+  function blockedGuard(
+    subject: string,
+  ): import("../privacy/blocking").PrivacyBlockGuardDeps<string> {
+    return {
+      blocks: {
+        listActiveBlocksForSubject: async (id) =>
+          id === subject
+            ? [
+                {
+                  id: "block-calendar",
+                  scope: "calendar",
+                  startsAt: NOW - 1000,
+                  endsAt: NOW + 1000,
+                },
+              ]
+            : [],
+      },
+      now: () => NOW,
+    };
+  }
+
+  test("un bloqueo vigente impide crear el evento y deja la fila pendiente hasta su término", async () => {
+    const { deps, calls, recorded, reschedules } = depsFor(context(), {
+      access: { [STUDENT]: okToken("token-student") },
+    });
+
+    const result = await syncAppointmentToGoogleCalendar({
+      ...deps,
+      privacy: blockedGuard("user-student"),
+    });
+
+    expect(result).toEqual({ status: "ok", data: { status: "pending" } });
+    expect(calls).toHaveLength(0);
+    expect(recorded).toEqual([{ kind: "blocked", retryAt: NOW + 1000 }]);
+    expect(reschedules()).toBe(0);
+  });
+
+  test("con el titular bloqueado tampoco se actualiza el evento existente", async () => {
+    const { deps, calls, recorded } = depsFor(
+      context({
+        ownerId: STUDENT,
+        reference: { eventId: "event-1", addedAt: CREATED_AT },
+        referenceIsCurrent: false,
+      }),
+      { access: { [STUDENT]: okToken("token-student") } },
+    );
+
+    const result = await syncAppointmentToGoogleCalendar({
+      ...deps,
+      privacy: blockedGuard("user-student"),
+    });
+
+    expect(result).toEqual({ status: "ok", data: { status: "pending" } });
+    expect(calls).toHaveLength(0);
+    expect(recorded).toEqual([{ kind: "blocked", retryAt: NOW + 1000 }]);
+  });
+
+  test("sin bloqueo la sincronización escribe y guarda al dueño como antes", async () => {
+    const { deps, calls, recorded } = depsFor(context(), {
+      access: { [STUDENT]: okToken("token-student") },
+    });
+    const guard: import("../privacy/blocking").PrivacyBlockGuardDeps<string> = {
+      blocks: { listActiveBlocksForSubject: async () => [] },
+      now: () => NOW,
+    };
+
+    const result = await syncAppointmentToGoogleCalendar({ ...deps, privacy: guard });
+
+    expect(result).toEqual({
+      status: "ok",
+      data: { status: "synced", eventId: expect.any(String) },
+    });
+    expect(calls.filter((call) => call.op === "create")).toHaveLength(1);
+    expect(recorded).toEqual([{ kind: "success", eventId: expect.any(String), ownerId: STUDENT }]);
   });
 });

@@ -11,7 +11,6 @@ import {
   getOwnPushStatus as getOwnPushStatusUseCase,
 } from "../application/notifications/push";
 import { env, mutation, query } from "../_generated/server";
-import { authorizationReader } from "../infrastructure/accompaniments/repository";
 import { appointmentAgendaReader } from "../infrastructure/appointments/repository";
 import {
   notificationInboxReader,
@@ -24,9 +23,11 @@ import {
   appointmentNotificationEventKindUnion,
   notificationContractVersionLiteral,
   notificationReadStatusUnion,
+  privacyNotificationEventKindUnion,
   requestNotificationEventKindUnion,
 } from "../infrastructure/validators";
 import { unwrapApiResult } from "./session";
+import { privacyAwareAuthorizationReader } from "./privacyAuthorization";
 
 /**
  * Borde de Presentación: bandeja de avisos (TI2-154).
@@ -66,6 +67,11 @@ const notificationValidator = v.union(
     kind: requestNotificationEventKindUnion,
     requestId: v.id("requests"),
   }),
+  v.object({
+    ...notificationBaseFields,
+    kind: privacyNotificationEventKindUnion,
+    privacyRequestId: v.string(),
+  }),
 );
 
 const notificationPageValidator = paginationResultValidator(notificationValidator);
@@ -89,7 +95,10 @@ export const listOwnNotifications = query({
     const identity = await ctx.auth.getUserIdentity();
     return unwrapApiResult(
       await listOwnNotificationsUseCase(
-        { auth: authorizationReader(ctx), notifications: notificationInboxReader(ctx) },
+        {
+          auth: privacyAwareAuthorizationReader(ctx),
+          notifications: notificationInboxReader(ctx),
+        },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,
           paginationOpts: args.paginationOpts,
@@ -113,7 +122,7 @@ export const openNotification = query({
     return unwrapApiResult(
       await openNotificationUseCase(
         {
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           notifications: notificationInboxReader(ctx),
           appointments: appointmentAgendaReader(ctx),
           requests: { viewers: activeRequestViewerReader(ctx), requests: requestReader(ctx) },
@@ -137,7 +146,7 @@ export const markNotificationRead = mutation({
     const marked = unwrapApiResult(
       await markNotificationReadUseCase(
         {
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           notifications: notificationReadMarker(ctx),
           now: Date.now,
         },
@@ -165,7 +174,7 @@ export const getOwnPushStatus = query({
     return unwrapApiResult(
       await getOwnPushStatusUseCase(
         {
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           subscriptions: pushSubscriptionReader(ctx),
           vapidPublicKey: publicKey === "" ? null : publicKey,
         },
@@ -189,7 +198,7 @@ export const activatePushSubscription = mutation({
     return unwrapApiResult(
       await activateOwnPushSubscriptionUseCase(
         {
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           subscriptions: pushSubscriptionStore(ctx),
           now: Date.now,
         },
@@ -216,7 +225,7 @@ export const deactivatePushSubscription = mutation({
     return unwrapApiResult(
       await deactivateOwnPushSubscriptionUseCase(
         {
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           subscriptions: pushSubscriptionStore(ctx),
           now: Date.now,
         },

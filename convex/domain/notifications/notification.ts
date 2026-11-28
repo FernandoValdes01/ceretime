@@ -84,10 +84,30 @@ export function isRequestNotificationEventKind(
   return (REQUEST_NOTIFICATION_EVENT_KIND_VALUES as readonly string[]).includes(value);
 }
 
+/**
+ * Clases de comunicación de una resolución de privacidad (TI2-168). Su
+ * recurso es una solicitud de privacidad (`privacyRequests`), no una solicitud
+ * de acompañamiento: por eso tienen tipo y validación propios.
+ */
+export const PRIVACY_NOTIFICATION_EVENT_KIND_VALUES = [
+  "privacy_request_granted",
+  "privacy_request_denied",
+] as const;
+
+export type PrivacyNotificationEventKind = (typeof PRIVACY_NOTIFICATION_EVENT_KIND_VALUES)[number];
+
+/** Verdadero cuando la clase pertenece a una comunicación de privacidad. */
+export function isPrivacyNotificationEventKind(
+  value: string,
+): value is PrivacyNotificationEventKind {
+  return (PRIVACY_NOTIFICATION_EVENT_KIND_VALUES as readonly string[]).includes(value);
+}
+
 /** Todas las clases conocidas, sin perder el recurso al que pertenecen. */
 export const NOTIFICATION_EVENT_KIND_VALUES = [
   ...APPOINTMENT_NOTIFICATION_EVENT_KIND_VALUES,
   ...REQUEST_NOTIFICATION_EVENT_KIND_VALUES,
+  ...PRIVACY_NOTIFICATION_EVENT_KIND_VALUES,
 ] as const;
 
 export type NotificationEventKind = (typeof NOTIFICATION_EVENT_KIND_VALUES)[number];
@@ -123,6 +143,8 @@ export const NOTIFICATION_EVENT_KIND_LABELS: Record<NotificationEventKind, strin
   request_referred: "Se derivó una solicitud",
   request_closed: "Se cerró una solicitud",
   request_cancelled: "Se canceló una solicitud",
+  privacy_request_granted: "Tu solicitud de privacidad fue concedida",
+  privacy_request_denied: "Tu solicitud de privacidad fue denegada",
 };
 
 /**
@@ -167,7 +189,19 @@ export interface RequestNotificationEvent {
   readonly version: NotificationContractVersion;
 }
 
-export type NotificationEvent = AppointmentNotificationEvent | RequestNotificationEvent;
+/** Comunicación de privacidad: referencia su solicitud en `privacyRequests`. */
+export interface PrivacyNotificationEvent {
+  readonly kind: PrivacyNotificationEventKind;
+  readonly privacyRequestId: string;
+  readonly recipientId: string;
+  readonly occurredAt: number;
+  readonly version: NotificationContractVersion;
+}
+
+export type NotificationEvent =
+  | AppointmentNotificationEvent
+  | RequestNotificationEvent
+  | PrivacyNotificationEvent;
 
 /** Referencia mínima a la atención y a su destinatario, ambos opacos. */
 export interface NotificationReference {
@@ -181,6 +215,12 @@ export interface RequestNotificationReference {
   readonly recipientId: string;
 }
 
+/** Referencia mínima a la solicitud de privacidad y a su destinatario. */
+export interface PrivacyNotificationReference {
+  readonly privacyRequestId: string;
+  readonly recipientId: string;
+}
+
 /** Entrada del constructor: la clase y el recurso se validan en tiempo de ejecución. */
 export type NotificationEventInput =
   | (NotificationReference & {
@@ -189,6 +229,10 @@ export type NotificationEventInput =
     })
   | (RequestNotificationReference & {
       readonly kind: RequestNotificationEventKind;
+      readonly occurredAt: number;
+    })
+  | (PrivacyNotificationReference & {
+      readonly kind: PrivacyNotificationEventKind;
       readonly occurredAt: number;
     });
 
@@ -254,8 +298,26 @@ export function toNotificationEvent(input: NotificationEventInput): Notification
 
   const hasAppointment = "appointmentId" in input;
   const hasRequest = "requestId" in input;
-  if (hasAppointment === hasRequest) {
+  const hasPrivacyRequest = "privacyRequestId" in input;
+  const resources = [hasAppointment, hasRequest, hasPrivacyRequest].filter(Boolean).length;
+  if (resources !== 1) {
     throw new Error("El evento de notificación requiere exactamente un recurso.");
+  }
+  if (hasPrivacyRequest) {
+    if (!isPrivacyNotificationEventKind(input.kind)) {
+      throw new Error("La clase del evento no corresponde a una solicitud de privacidad.");
+    }
+    const privacyRequestId = (input as PrivacyNotificationReference).privacyRequestId.trim();
+    if (privacyRequestId === "") {
+      throw new Error("El evento de notificación requiere una solicitud de privacidad.");
+    }
+    return {
+      kind: input.kind,
+      privacyRequestId,
+      recipientId,
+      occurredAt: input.occurredAt,
+      version: NOTIFICATION_CONTRACT_VERSION,
+    };
   }
   if (hasAppointment) {
     if (!isAppointmentNotificationEventKind(input.kind)) {
@@ -599,6 +661,29 @@ export function notificationEventsForRequestTransition(
 }
 
 /**
+ * Comunicación de una resolución de privacidad al titular (TI2-168).
+ *
+ * El evento referencia la solicitud de privacidad y al destinatario, sin el
+ * fundamento ni datos sensibles. El texto externo es genérico y no revela el
+ * derecho ni la decisión; el titular la lee en su sesión.
+ */
+export function notificationEventsForPrivacyResolution(input: {
+  readonly privacyRequestId: string;
+  readonly recipientId: string;
+  readonly granted: boolean;
+  readonly occurredAt: number;
+}): readonly NotificationEvent[] {
+  return [
+    toNotificationEvent({
+      kind: input.granted ? "privacy_request_granted" : "privacy_request_denied",
+      privacyRequestId: input.privacyRequestId,
+      recipientId: input.recipientId,
+      occurredAt: input.occurredAt,
+    }),
+  ];
+}
+
+/**
  * Clave de idempotencia estable para reintentos de la misma emisión.
  *
  * Se compone de versión, clase, recurso, destinatario e instante persistido.
@@ -617,6 +702,16 @@ export function notificationIdempotencyKey(event: NotificationEvent): string {
       event.version,
       event.kind,
       event.appointmentId,
+      event.recipientId,
+      event.occurredAt,
+    ]);
+  }
+  if ("privacyRequestId" in event) {
+    return JSON.stringify([
+      event.version,
+      event.kind,
+      "privacyRequest",
+      event.privacyRequestId,
       event.recipientId,
       event.occurredAt,
     ]);
@@ -691,6 +786,8 @@ const EXTERNAL_NOTIFICATION_TEXTS: Record<NotificationEventKind, ExternalNotific
   request_referred: PENDING_UPDATE_TEXT,
   request_closed: PENDING_UPDATE_TEXT,
   request_cancelled: PENDING_UPDATE_TEXT,
+  privacy_request_granted: PENDING_UPDATE_TEXT,
+  privacy_request_denied: PENDING_UPDATE_TEXT,
 };
 
 /**

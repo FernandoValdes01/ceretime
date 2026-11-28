@@ -135,7 +135,10 @@ async function decideStatusChange(
   to: AccompanimentStatus,
   occurredAt: number,
 ): Promise<ApiResult<{ readonly actorId: string; readonly change: AccompanimentStateChange }>> {
-  const grant = await authorizeAccompanimentStatusChange(deps.auth, input);
+  const grant = await authorizeAccompanimentStatusChange(deps.auth, {
+    ...input,
+    privacyCategory: "accompaniments",
+  });
   if (grant.status === "error") return denied();
   const outcome = transitionAccompaniment({
     from: grant.data.status,

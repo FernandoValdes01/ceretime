@@ -10,6 +10,7 @@ import {
   unauthorizedError,
   type ApiResult,
 } from "../../domain/errors/api_error";
+import { guardPrivacyTreatment, type PrivacyBlockGuardDeps } from "../privacy/blocking";
 
 /** Acceso resuelto para un participante: token vigente o motivo genérico. */
 export type CalendarSyncAccess =
@@ -82,13 +83,17 @@ export interface CalendarSyncStore {
       | { readonly kind: "success"; readonly eventId: string; readonly ownerId: string }
       | { readonly kind: "noop"; readonly eventId?: string }
       | { readonly kind: "failure"; readonly errorCode: "not_connected" | "unavailable" }
-      | { readonly kind: "not_linked" };
+      | { readonly kind: "not_linked" }
+      /** Bloqueo vigente: suspender y volver a programar para cuando termine. */
+      | { readonly kind: "blocked"; readonly retryAt: number };
   }): Promise<"recorded" | "stale">;
 }
 
 /** Atención cargada para sincronizar, con dueño y participantes. */
 export interface CalendarSyncAppointmentContext {
   readonly appointmentId: string;
+  /** `users._id` del Estudiante titular, para evaluar su bloqueo de privacidad. */
+  readonly studentId: string;
   readonly status: AppointmentStatus;
   readonly startAt: number;
   readonly endAt: number;
@@ -159,6 +164,8 @@ export async function syncAppointmentToGoogleCalendar(deps: {
   readonly reschedule: () => Promise<void>;
   readonly now: () => number;
   readonly timeZone: string;
+  /** Guardia del bloqueo de privacidad (TI2-168); opcional para pruebas previas. */
+  readonly privacy?: PrivacyBlockGuardDeps<string>;
 }): Promise<ApiResult<CalendarSyncResult>> {
   const context = await deps.loadAppointment();
   if (context === null) return errResult(unauthorizedError());
@@ -167,6 +174,23 @@ export async function syncAppointmentToGoogleCalendar(deps: {
   if (!Number.isFinite(attemptedAt) || attemptedAt <= 0) {
     return errResult(conflictError());
   }
+
+  /**
+   * Término del bloqueo del Estudiante titular de la atención, o `null`.
+   *
+   * Se evalúa una sola vez con `users._id`, igual que la autorización de
+   * consultas y cambios; los `subject` de Better Auth de los participantes no
+   * identifican al titular y nunca encontrarían el bloqueo.
+   */
+  const blockedAt = async (): Promise<number | null> => {
+    if (deps.privacy === undefined) return null;
+    const treatment = await guardPrivacyTreatment(deps.privacy, {
+      subjectId: context.studentId,
+      category: "calendar",
+      treatment: "change",
+    });
+    return treatment.status === "blocked" ? treatment.endsAt : null;
+  };
 
   const expected: CalendarSyncExpectation = {
     startsAt: context.startAt,
@@ -199,10 +223,9 @@ export async function syncAppointmentToGoogleCalendar(deps: {
     if (outcome.kind === "success") {
       return okResult({ status: "synced", eventId: outcome.eventId });
     }
-    if (outcome.kind === "not_linked") {
-      // Nadie vinculó: queda registrado sin pedir nada y el reintento no lo
-      // vuelve a programar; si alguien vincula después, la confirmación del
-      // vínculo programa las atenciones futuras vigentes.
+    if (outcome.kind === "not_linked" || outcome.kind === "blocked") {
+      // Nadie vinculó o hay un bloqueo vigente: la fila queda pendiente y se
+      // vuelve a programarse al terminar el bloqueo, sin marcarla sincronizada.
       return okResult({ status: "pending" });
     }
     return okResult({
@@ -210,6 +233,11 @@ export async function syncAppointmentToGoogleCalendar(deps: {
       ...(outcome.eventId === undefined ? {} : { eventId: outcome.eventId }),
     });
   }
+
+  // El bloqueo del titular suspende toda escritura en Calendar, sin importar
+  // en qué calendario se escribiría ni a qué participante va el aviso.
+  const until = await blockedAt();
+  if (until !== null) return await finish({ kind: "blocked", retryAt: until });
 
   const isCancelled = isCancelledStatus(context.status);
   if (isCancelled) {
