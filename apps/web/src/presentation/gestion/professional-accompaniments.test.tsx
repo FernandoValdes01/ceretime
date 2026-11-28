@@ -144,6 +144,17 @@ vi.mock("./professional-accompaniments-data.ts", async (importOriginal) => {
   };
 });
 
+vi.mock("./professional-interns-data.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./professional-interns-data.ts")>();
+  return {
+    ...original,
+    useAccompanimentInterns: () => ({ assigned: [], assignable: [], assignableComplete: true }),
+    useAssignInternAccess: () => mutations.assign,
+    useUpdateInternAccess: () => vi.fn(),
+    useRevokeInternAccess: () => mutations.revoke,
+  };
+});
+
 vi.mock("../shared/follow-up/follow-up-data.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("../shared/follow-up/follow-up-data.ts")>();
   const { useSyncExternalStore } = await import("react");

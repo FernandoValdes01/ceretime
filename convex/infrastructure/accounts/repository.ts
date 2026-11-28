@@ -111,6 +111,20 @@ export async function paginateStaffAccounts(
     .paginate(paginationOpts);
 }
 
+/**
+ * Página de cuentas practicantes para la gestión del Profesional (TI2-170).
+ *
+ * Solo persistencia: la autorización vive en el caso de uso, que admite al
+ * profesional de personal vigente y al administrador vigente. Devuelve las
+ * filas tal como las entrega el índice `by_role`, sin filtrar en memoria.
+ */
+export async function paginateInternAccounts(ctx: QueryCtx, paginationOpts: PaginationOptions) {
+  return await ctx.db
+    .query("users")
+    .withIndex("by_role", (q) => q.eq("role", "intern"))
+    .paginate(paginationOpts);
+}
+
 /** Perfil propio mínimo que ven la interfaz y los casos de uso de sesión. */
 function toAuthenticatedProfile(profile: Doc<"users">): AuthenticatedProfile {
   return {
