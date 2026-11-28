@@ -1,10 +1,12 @@
 import { createRoute } from "@tanstack/react-router";
+import { toCalendarCallbackStatus } from "../../application/calendar/calendar-link.ts";
 import {
   StudentAccompanimentDetailRouteComponent,
   StudentAppointmentDetailRouteComponent,
   StudentAppointmentsRouteComponent,
   StudentIndexRouteComponent,
   StudentLayoutRouteComponent,
+  StudentNotificationsRouteComponent,
   StudentPrivacyDetailRouteComponent,
   StudentPrivacyRouteComponent,
   StudentRequestDetailRouteComponent,
@@ -104,6 +106,16 @@ const studentAccompanimentDetailRoute = createRoute({
   component: StudentAccompanimentDetailRouteComponent,
 });
 
+// `calendar` es el marcador de retorno de la autorización de Google (TI2-172).
+const studentNotificationsRoute = createRoute({
+  getParentRoute: () => studentLayoutRoute,
+  path: "avisos",
+  validateSearch: (search: Record<string, unknown>): { calendar?: "connected" | "error" } => ({
+    calendar: toCalendarCallbackStatus(search.calendar),
+  }),
+  component: StudentNotificationsRouteComponent,
+});
+
 const studentPrivacyRoute = createRoute({
   getParentRoute: () => studentLayoutRoute,
   path: "privacidad",
@@ -127,6 +139,7 @@ export const studentRoutes = [
     studentRequestFormRoute,
     studentRequestDetailRoute,
     studentAccompanimentDetailRoute,
+    studentNotificationsRoute,
     studentPrivacyRoute,
     studentPrivacyDetailRoute,
   ]),
