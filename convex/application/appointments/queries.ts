@@ -181,7 +181,12 @@ async function readAccompanimentAgenda(
   accompanimentId: string,
   range: InstantRange,
 ): Promise<ApiResult<readonly AppointmentProjectionWithCoordination[]>> {
-  const grant = await authorizeAppointmentRead(deps.auth, { tokenIdentifier, accompanimentId });
+  const grant = await authorizeAppointmentRead(deps.auth, {
+    tokenIdentifier,
+    accompanimentId,
+    privacyCategory: "appointments",
+    ...(deps.now === undefined ? {} : { now: deps.now }),
+  });
   if (grant.status === "error") return denied();
   const rows = await deps.appointments.listByAccompaniment(accompanimentId, range);
   if (rows.status === "error") return conflict();
@@ -238,6 +243,8 @@ async function readOwnAgenda(
       const grant = await authorizeAppointmentRead(deps.auth, {
         tokenIdentifier,
         accompanimentId: row.accompanimentId,
+        privacyCategory: "appointments",
+        now: () => now,
       });
       view = grant.status === "ok" ? grant.data.view : null;
       views.set(row.accompanimentId, view);
@@ -268,7 +275,7 @@ function positionCursors(items: readonly AppointmentProjection[]): readonly stri
 }
 
 /**
- * Lista atenciones por rango civil y con paginación. El cursor es opaco y
+ * Lista atenciones por rango civil y con páginas acotadas. El cursor es opaco y
  * describe el tramo ya entregado: si ese tramo cambió o el cursor no figura en
  * lo visible, responde `conflict` para reiniciar la consulta, nunca omite
  * atenciones en silencio. Sin atenciones responde una página vacía.
@@ -338,6 +345,8 @@ export async function getAppointment(
 export interface AppointmentReadDeps {
   readonly auth: AuthorizationReader;
   readonly appointments: Pick<AppointmentAgendaReader, "getAppointment">;
+  /** Categoría de datos de la vía que abre la atención (TI2-168). */
+  readonly privacyCategory?: import("../../domain/privacy/privacy_controls").PrivacyDataCategory;
 }
 
 /**
@@ -354,6 +363,7 @@ export async function findReadableAppointment(
   const grant = await authorizeAppointmentRead(deps.auth, {
     tokenIdentifier: input.tokenIdentifier,
     accompanimentId: appointment.accompanimentId,
+    privacyCategory: deps.privacyCategory ?? "appointments",
   });
   return grant.status === "ok" ? { appointment, view: grant.data.view } : null;
 }
@@ -413,6 +423,7 @@ export async function listAccompanimentAppointmentsUseCase(
   const grant = await authorizeAppointmentRead(deps.auth, {
     tokenIdentifier: input.tokenIdentifier,
     accompanimentId: input.accompanimentId,
+    privacyCategory: "appointments",
   });
   if (grant.status === "error") return denied();
 

@@ -14,6 +14,7 @@ import {
 } from "../application/privacy/queries";
 import { mutation, query } from "../_generated/server";
 import {
+  privacyBlockWriter,
   privacyProfileReader,
   privacyRequestReader,
   privacyRequestStore,
@@ -28,6 +29,7 @@ import {
   privacyResponseRuleUnion,
   roleUnion,
 } from "../infrastructure/validators";
+import { notificationEventRecorder } from "../infrastructure/notifications/repository";
 import { unwrapApiResult } from "./session";
 
 /**
@@ -248,6 +250,8 @@ export const resolvePrivacyRequest = mutation({
           profiles: privacyProfileReader(ctx),
           requests: privacyRequestStore(ctx),
           now: Date.now,
+          notifications: notificationEventRecorder(ctx),
+          blocks: privacyBlockWriter(ctx),
         },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,

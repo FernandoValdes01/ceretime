@@ -26,7 +26,7 @@ Cada aviso referencia exactamente un recurso:
 | `readAt` | `number`, opcional | Instante de la primera lectura; ausente si está pendiente |
 | `version` | `"v1"` | Versión del contrato del evento (`NOTIFICATION_CONTRACT_VERSION`) |
 
-El aviso no trae títulos, motivos, respuestas, explicaciones, notas, necesidades ni datos del recurso. El cliente compone el texto en sesión a partir de `kind` y lee el contenido en el detalle del recurso, con su propio permiso. Fuera de sesión solo se usa el texto genérico de `toExternalNotification`.
+El aviso no trae títulos, motivos, respuestas, explicaciones, notas, necesidades ni datos del recurso. El cliente compone el texto en sesión a partir de `kind` con `NOTIFICATION_EVENT_KIND_LABELS` del dominio, el mismo para Web y Mobile, y lee el contenido en el detalle del recurso, con su propio permiso. Fuera de sesión solo se usa el texto genérico de `toExternalNotification`.
 
 ## Reglas
 
@@ -90,4 +90,6 @@ Canal opcional fuera de sesión. Cada persona activa o retira la suscripción de
 
 ## Impacto en los clientes
 
-Es un módulo nuevo (`api.presentation.notifications`). No cambia ninguna operación existente. Web consume la bandeja en TI2-172. Para push tiene el service worker (`apps/web/public/push-sw.js`) y el adaptador del navegador (`apps/web/src/infrastructure/notifications/web-push.ts`), pero al 27/11/2026 ninguna pantalla los usa, así que todavía no se puede activar desde la interfaz. Mobile no consume ninguna de las dos, y una notificación nativa de Mobile no usaría Web Push.
+Es un módulo nuevo (`api.presentation.notifications`). No cambia ninguna operación existente. Mobile no consume ninguna de las dos, y una notificación nativa de Mobile no usaría Web Push.
+
+Web lo consume desde TI2-172 en `/estudiante/avisos` y `/profesional/avisos`, los dos roles que reciben avisos. La bandeja filtra por `readStatus`; al abrir un aviso llama a `openNotification`, lo marca con `markNotificationRead` si estaba pendiente y navega al detalle de la atención o de la solicitud en el área de quien lo recibió; si marcarlo falla, navega igual y el aviso queda pendiente. Si el permiso ya no está vigente, muestra un aviso genérico, no navega y deja el aviso en la bandeja. La misma pantalla ofrece activar push en el navegador (`getOwnPushStatus`, `activatePushSubscription` y `deactivatePushSubscription`), que se dan por activos solo si el navegador está suscrito y `getOwnPushStatus` responde `enabled`, y vincular o desconectar Google Calendar (ver `calendar.md`).

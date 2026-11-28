@@ -44,6 +44,7 @@ import {
   type PrivacyResponseInput,
 } from "../../domain/privacy/privacy_request";
 import type { Role } from "../../domain/identity/roles";
+import type { PrivacyBlockWriter } from "../../application/privacy/ports";
 import { findProfileByTokenIdentifier } from "../accounts/repository";
 
 /**
@@ -1175,6 +1176,45 @@ export function privacyRequestReader(ctx: DbReader) {
 }
 
 /** Escrituras y lecturas de la misma transacción para Aplicación. */
+/** Bloqueos vigentes del titular para el guardia de tratamiento (TI2-168). */
+export function privacyBlockReader(ctx: DbReader) {
+  return {
+    listActiveBlocksForSubject: async (subjectId: string, now: number) => {
+      const id = ctx.db.normalizeId("users", subjectId);
+      if (id === null) return [];
+      const rows = await listActivePrivacyBlocksForSubject(ctx, id, now);
+      return rows.map((row) => ({
+        id: row.id as string,
+        scope: row.scope,
+        startsAt: row.startsAt,
+        endsAt: row.endsAt,
+        ...(row.liftedAt === undefined ? {} : { liftedAt: row.liftedAt }),
+      }));
+    },
+  };
+}
+
+/** Escritura de bloqueos para el caso de uso de resolución (TI2-168). */
+export function privacyBlockWriter(ctx: MutationCtx): PrivacyBlockWriter {
+  return {
+    create: async (input) => {
+      const subjectId = ctx.db.normalizeId("users", input.subjectId);
+      const requestId = ctx.db.normalizeId("privacyRequests", input.requestId);
+      const createdBy = ctx.db.normalizeId("users", input.createdBy);
+      if (subjectId === null || requestId === null || createdBy === null) {
+        return { status: "invalid_reference" };
+      }
+      return await createPrivacyBlock(ctx, {
+        ...input,
+        subjectId,
+        requestId,
+        createdBy,
+        createdAt: input.startsAt,
+      });
+    },
+  };
+}
+
 export function privacyRequestStore(ctx: MutationCtx) {
   return {
     ...privacyRequestReader(ctx),

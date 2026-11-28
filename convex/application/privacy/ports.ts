@@ -1,6 +1,9 @@
 import type { PaginationOptions, PaginationResult } from "convex/server";
 import type { AccountStatus, InstitutionalStatus, Role } from "../../domain/identity/roles";
-import type { PrivacyResponseDeliveryChannel } from "../../domain/privacy/privacy_controls";
+import type {
+  PrivacyBlockScope,
+  PrivacyResponseDeliveryChannel,
+} from "../../domain/privacy/privacy_controls";
 import type {
   PrivacyExtensionRejectionCause,
   PrivacyResponseRule,
@@ -175,6 +178,21 @@ export interface ExtendPrivacyRequestCommand<RequestId extends string, UserId ex
   readonly extendedBy: UserId;
   readonly extendedAt: number;
   readonly reason: string;
+}
+
+/** Escritura de un bloqueo temporal vinculado a una resolución (TI2-168). */
+export interface PrivacyBlockWriter {
+  create(input: {
+    readonly subjectId: string;
+    readonly requestId: string;
+    readonly scope: PrivacyBlockScope;
+    readonly startsAt: number;
+    readonly endsAt: number;
+    readonly createdBy: string;
+    readonly reason: string;
+  }): Promise<{
+    readonly status: "created" | "invalid_reference" | "request_not_granted" | "deadline_mismatch";
+  }>;
 }
 
 /** Entrada de la constancia de envío; quien registra sale de la sesión. */

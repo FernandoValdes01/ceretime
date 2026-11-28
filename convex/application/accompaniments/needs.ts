@@ -73,6 +73,7 @@ export async function updateAccompanimentNeeds(
   const grant = await authorizeAccompanimentNeedsUpdate(auth, {
     tokenIdentifier: input.tokenIdentifier,
     accompanimentId: input.accompanimentId,
+    privacyCategory: "accompaniments",
   });
   if (grant.status === "error") return grant;
   const validated = toLegacyAccessNeeds(input.accessNeeds);

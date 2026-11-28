@@ -10,17 +10,25 @@
  * configurado por entorno.
  */
 
+import type { GenericActionCtx } from "convex/server";
 import { v } from "convex/values";
 import { internal } from "../_generated/api";
-import { env, internalAction, internalMutation } from "../_generated/server";
+import type { DataModel } from "../_generated/dataModel";
+import { env, internalAction, internalMutation, internalQuery } from "../_generated/server";
 import {
   dispatchEmailDelivery as dispatchEmailDeliveryUseCase,
   dispatchPushDelivery as dispatchPushDeliveryUseCase,
   type DeliveryDispatchOutcome,
 } from "../application/notifications/dispatch";
-import type { EmailDeliveryClaim, PushDeliveryClaim } from "../application/notifications/ports";
+import type {
+  EmailDeliveryClaim,
+  PrivacyDeliveryGate,
+  PushDeliveryClaim,
+} from "../application/notifications/ports";
+import { guardPrivacyTreatment } from "../application/privacy/blocking";
 import {
   isAppointmentNotificationEventKind,
+  isPrivacyNotificationEventKind,
   isRequestNotificationEventKind,
   toNotificationEvent,
   type NotificationEvent,
@@ -40,9 +48,11 @@ import {
   webPushConfigFromEnv,
   webPushSender,
 } from "../infrastructure/notifications/web_push_sender";
+import { privacyBlockReader } from "../infrastructure/privacy/repository";
 import {
   notificationDeliveryErrorUnion,
   notificationEventKindUnion,
+  privacyBlockScopeUnion,
 } from "../infrastructure/validators";
 
 /** Campos serializados del aviso mínimo, compartidos entre correo y push. */
@@ -50,6 +60,7 @@ const serializedEventFields = {
   kind: notificationEventKindUnion,
   appointmentId: v.optional(v.string()),
   requestId: v.optional(v.string()),
+  privacyRequestId: v.optional(v.string()),
   recipientId: v.string(),
   occurredAt: v.number(),
 };
@@ -90,11 +101,25 @@ const sendResultValidator = v.union(
 );
 
 function serializeEvent(event: NotificationEvent) {
+  if ("appointmentId" in event) {
+    return {
+      kind: event.kind,
+      appointmentId: event.appointmentId,
+      recipientId: event.recipientId,
+      occurredAt: event.occurredAt,
+    };
+  }
+  if ("privacyRequestId" in event) {
+    return {
+      kind: event.kind,
+      privacyRequestId: event.privacyRequestId,
+      recipientId: event.recipientId,
+      occurredAt: event.occurredAt,
+    };
+  }
   return {
     kind: event.kind,
-    ...("appointmentId" in event
-      ? { appointmentId: event.appointmentId }
-      : { requestId: event.requestId }),
+    requestId: event.requestId,
     recipientId: event.recipientId,
     occurredAt: event.occurredAt,
   };
@@ -104,6 +129,7 @@ function deserializeEvent(raw: {
   readonly kind: typeof notificationEventKindUnion.type;
   readonly appointmentId?: string;
   readonly requestId?: string;
+  readonly privacyRequestId?: string;
   readonly recipientId: string;
   readonly occurredAt: number;
 }): NotificationEvent {
@@ -119,6 +145,14 @@ function deserializeEvent(raw: {
     return toNotificationEvent({
       kind: raw.kind,
       requestId: raw.requestId,
+      recipientId: raw.recipientId,
+      occurredAt: raw.occurredAt,
+    });
+  }
+  if (raw.privacyRequestId !== undefined && isPrivacyNotificationEventKind(raw.kind)) {
+    return toNotificationEvent({
+      kind: raw.kind,
+      privacyRequestId: raw.privacyRequestId,
       recipientId: raw.recipientId,
       occurredAt: raw.occurredAt,
     });
@@ -162,6 +196,99 @@ function toEmailDeliveryClaim(claim: typeof claimValidator.type): EmailDeliveryC
   };
 }
 
+/** Bloqueos vigentes que las acciones consultan antes de tratar datos (TI2-168). */
+export const listActivePrivacyBlocks = internalQuery({
+  args: { subjectId: v.string(), now: v.number() },
+  returns: v.array(
+    v.object({
+      id: v.string(),
+      scope: privacyBlockScopeUnion,
+      startsAt: v.number(),
+      endsAt: v.number(),
+      liftedAt: v.optional(v.number()),
+    }),
+  ),
+  handler: async (ctx, args) =>
+    privacyBlockReader(ctx).listActiveBlocksForSubject(args.subjectId, args.now),
+});
+
+/**
+ * Compuerta de bloqueo de una entrega (TI2-168).
+ *
+ * Consulta los bloqueos vigentes del titular de los datos antes de reservar
+ * la fila, no los del destinatario: un aviso al Profesional sobre la atención
+ * de un Estudiante bloqueado es tratamiento de esos datos. Si hay bloqueo,
+ * devuelve su término para programar la entrega cuando termine. Las respuestas
+ * a una solicitud de privacidad se entregan siempre: son la comunicación del
+ * ejercicio del derecho, no un tratamiento suspendido.
+ */
+export const privacyDeliveryGate = internalQuery({
+  args: { deliveryId: v.string(), now: v.number() },
+  returns: v.union(
+    v.object({ status: v.literal("ok") }),
+    v.object({ status: v.literal("blocked"), retryAt: v.number() }),
+  ),
+  handler: async (ctx, args) => {
+    const deliveryId = ctx.db.normalizeId("notificationDeliveries", args.deliveryId);
+    if (deliveryId === null) return { status: "ok" as const };
+    const delivery = await ctx.db.get(deliveryId);
+    if (delivery === null || delivery.status === "sent") return { status: "ok" as const };
+    const event = await ctx.db.get(delivery.eventId);
+    if (event === null) return { status: "ok" as const };
+    // La respuesta a la propia solicitud de privacidad no se suspende: el
+    // titular debe enterarse de la concesión aunque el bloqueo recién creado
+    // cubra `notifications` (TI2-168).
+    if (isPrivacyNotificationEventKind(event.kind)) return { status: "ok" as const };
+
+    // El bloqueo se evalúa sobre el titular del recurso, igual que en las
+    // consultas y cambios: el estudiante de la atención o de la solicitud.
+    let subjectId: typeof event.recipientId = event.recipientId;
+    if (event.appointmentId !== undefined) {
+      const appointment = await ctx.db.get(event.appointmentId);
+      if (appointment !== null) subjectId = appointment.studentId;
+    } else if (event.privacyRequestId !== undefined) {
+      const privacyRequest = await ctx.db.get(event.privacyRequestId);
+      if (privacyRequest !== null) subjectId = privacyRequest.requesterId;
+    } else if (event.requestId !== undefined) {
+      const request = await ctx.db.get(event.requestId);
+      if (request !== null) subjectId = request.studentId;
+    }
+    const treatment = await guardPrivacyTreatment(
+      { blocks: privacyBlockReader(ctx), now: () => args.now },
+      { subjectId, category: "notifications", treatment: "notice" },
+    );
+    if (treatment.status === "ok") return { status: "ok" as const };
+    return { status: "blocked" as const, retryAt: treatment.endsAt };
+  },
+});
+
+/** Difiere una entrega suspendida sin tocar su estado ni contar un intento. */
+export const deferNotificationDelivery = internalMutation({
+  args: { deliveryId: v.string(), nextAttemptAt: v.number() },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    const deliveryId = ctx.db.normalizeId("notificationDeliveries", args.deliveryId);
+    if (deliveryId === null) return null;
+    const delivery = await ctx.db.get(deliveryId);
+    if (delivery === null || delivery.status === "sent") return null;
+    await ctx.db.patch(deliveryId, { nextAttemptAt: args.nextAttemptAt });
+    return null;
+  },
+});
+
+function privacyDeliveryGateFor(ctx: GenericActionCtx<DataModel>): PrivacyDeliveryGate {
+  return {
+    check: (deliveryId, now) =>
+      ctx.runQuery(internal.operations.notifications.privacyDeliveryGate, { deliveryId, now }),
+    defer: async (deliveryId, nextAttemptAt) => {
+      await ctx.runMutation(internal.operations.notifications.deferNotificationDelivery, {
+        deliveryId,
+        nextAttemptAt,
+      });
+    },
+  };
+}
+
 /** Intenta una entrega por correo con el remitente configurado por entorno. */
 export const dispatchEmailDelivery = internalAction({
   args: { deliveryId: v.string() },
@@ -187,6 +314,7 @@ export const dispatchEmailDelivery = internalAction({
         },
         sender: gmailEmailSender(gmailSenderConfigFromEnv(env)),
         now: () => Date.now(),
+        privacy: privacyDeliveryGateFor(ctx),
       },
       args.deliveryId,
     );
@@ -268,6 +396,7 @@ export const dispatchPushDelivery = internalAction({
         },
         sender: webPushSender(webPushConfigFromEnv(env)),
         now: () => Date.now(),
+        privacy: privacyDeliveryGateFor(ctx),
       },
       args.deliveryId,
     );

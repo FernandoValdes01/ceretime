@@ -475,3 +475,233 @@ test("TI2-159: un corte entre la confirmación de Gmail y el registro de sent no
   expect(secondDispatch).toBe("skipped");
   expect(gmailSendCount).toBe(0);
 });
+
+test("TI2-168: un bloqueo vigente difiere el correo y se entrega cuando termina", async () => {
+  stubGmailEnv();
+  const sentRawPayloads: string[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+    const target = String(url);
+    if (target.includes("oauth2.googleapis.com/token")) {
+      return jsonResponse({ access_token: "access-ok" });
+    }
+    if (target.includes("gmail.googleapis.com")) {
+      const parsed = JSON.parse(String(init?.body ?? "{}")) as { raw?: string };
+      if (parsed.raw) sentRawPayloads.push(decodeRawMime(parsed.raw));
+      return jsonResponse({ id: "gmail-bloqueo" });
+    }
+    throw new Error(`URL inesperada: ${target}`);
+  });
+
+  const t = convexTest(schema, modules);
+  const studentId = await seedStudent(t, "ti168-est-email", "destino-bloqueo@alu.uct.cl");
+  const endsAt = NOW + 5000;
+  await t.run(async (ctx) => {
+    await ctx.db.insert("privacyBlocks", {
+      subjectId: studentId,
+      scope: "notifications",
+      startsAt: NOW - 1000,
+      endsAt,
+      createdBy: studentId,
+      createdAt: NOW - 1000,
+      reason: "Bloqueo temporal de prueba",
+    });
+  });
+
+  const student = t.withIdentity(identityFor("ti168-est-email"));
+  await student.mutation(api.presentation.requests.createRequest, REQUEST_SUBMISSION);
+
+  // El despacho ve el bloqueo: no hay envío y la fila queda pendiente hasta endsAt.
+  await t.finishAllScheduledFunctions(() => {
+    vi.setSystemTime(NOW + 1000);
+  });
+  expect(sentRawPayloads).toHaveLength(0);
+  const deferred = await deliveries(t);
+  expect(deferred).toHaveLength(1);
+  expect(deferred[0]).toMatchObject({ status: "pending", attempts: 0 });
+  expect(deferred[0]?.nextAttemptAt).toBe(endsAt);
+  expect(deferred[0]?.errorCode).toBeUndefined();
+
+  // Vencido el bloqueo, el barrido recoge la entrega y el correo sale.
+  vi.setSystemTime(endsAt + 1);
+  await t.mutation(internal.operations.notifications.scheduleDueNotificationDeliveries, {});
+  await t.finishAllScheduledFunctions(() => {
+    vi.setSystemTime(endsAt + 2);
+  });
+
+  expect(sentRawPayloads).toHaveLength(1);
+  const sent = await deliveries(t);
+  expect(sent[0]).toMatchObject({ status: "sent", attempts: 1 });
+  expect(sent[0]?.nextAttemptAt).toBeUndefined();
+});
+
+test("TI2-168: la respuesta de un bloqueo se envía aunque se difiera un aviso del mismo titular", async () => {
+  stubGmailEnv();
+  const sentRawPayloads: string[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+    const target = String(url);
+    if (target.includes("oauth2.googleapis.com/token")) {
+      return jsonResponse({ access_token: "access-ok" });
+    }
+    if (target.includes("gmail.googleapis.com")) {
+      const parsed = JSON.parse(String(init?.body ?? "{}")) as { raw?: string };
+      if (parsed.raw) sentRawPayloads.push(decodeRawMime(parsed.raw));
+      return jsonResponse({ id: "gmail-mixto" });
+    }
+    throw new Error(`URL inesperada: ${target}`);
+  });
+
+  const t = convexTest(schema, modules);
+  const studentId = await seedStudent(t, "ti168-res-est", "estudiante-bloqueo@alu.uct.cl");
+  await t.run(async (ctx) => {
+    await ctx.db.insert("users", {
+      email: "admin-bloqueo@uct.cl",
+      fullName: "Administrador Ficticio",
+      role: "admin",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti168-res-adm`,
+    });
+  });
+
+  // Aviso sobre una solicitud del Estudiante dirigido a otra persona: el
+  // bloqueo se decide por el titular del recurso, no por el destinatario.
+  const proId = await t.run(async (ctx) =>
+    ctx.db.insert("users", {
+      email: "profesional-aviso@uct.cl",
+      fullName: "Profesional Ficticio",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti168-res-pro`,
+    }),
+  );
+  const deferredDeliveryId = await t.run(async (ctx) => {
+    const requestId = await ctx.db.insert("requests", {
+      studentId,
+      status: "received",
+      accessNeeds: "Necesidad ficticia",
+      createdAt: NOW - 10_000,
+    });
+    const eventId = await ctx.db.insert("notificationEvents", {
+      kind: "request_received",
+      requestId,
+      recipientId: proId,
+      occurredAt: NOW - 1000,
+      version: "v1",
+      idempotencyKey: "ti168-aviso-profesional",
+    });
+    return await ctx.db.insert("notificationDeliveries", {
+      eventId,
+      channel: "email",
+      status: "pending",
+      attempts: 0,
+      nextAttemptAt: NOW,
+    });
+  });
+
+  const asStudent = t.withIdentity(identityFor("ti168-res-est"));
+  const asAdmin = t.withIdentity(identityFor("ti168-res-adm"));
+  const endsAt = NOW + 10 * 24 * 60 * 60 * 1000;
+  const blocking = await asStudent.mutation(api.presentation.privacy.submitPrivacyRequest, {
+    kind: "blocking",
+    version: "v1",
+  });
+  await asAdmin.mutation(api.presentation.privacy.startPrivacyRequestReview, {
+    requestId: blocking.id,
+    version: "v1",
+  });
+  await asAdmin.mutation(api.presentation.privacy.resolvePrivacyRequest, {
+    requestId: blocking.id,
+    outcome: "granted",
+    reasons: "Bloqueo temporal concedido.",
+    temporaryBlockUntil: endsAt,
+    version: "v1",
+  });
+
+  const deferredOutcome = await t.action(internal.operations.notifications.dispatchEmailDelivery, {
+    deliveryId: deferredDeliveryId,
+  });
+  expect(deferredOutcome).toBe("skipped");
+  await t.finishAllScheduledFunctions(() => {
+    vi.setSystemTime(NOW + 1000);
+  });
+
+  // La respuesta a la propia solicitud llega de inmediato; el aviso sobre los
+  // datos del titular dirigido al Profesional queda suspendido.
+  expect(sentRawPayloads).toHaveLength(1);
+  expect(sentRawPayloads[0]).toContain("To: estudiante-bloqueo@alu.uct.cl\r\n");
+  expect(sentRawPayloads[0]).not.toContain("profesional-aviso@uct.cl");
+  const rows = await deliveries(t);
+  const deferred = rows.find((row) => row._id === deferredDeliveryId);
+  expect(deferred).toMatchObject({ status: "pending", attempts: 0 });
+  expect(deferred?.nextAttemptAt).toBe(endsAt);
+});
+
+test("TI2-168: un aviso de atención al Profesional se difiere por el bloqueo del Estudiante", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedStudent(t, "ti168-cita-est", "ti168-cita-est@alu.uct.cl");
+  const proId = await t.run(async (ctx) =>
+    ctx.db.insert("users", {
+      email: "ti168-cita-pro@uct.cl",
+      fullName: "Profesional Ficticio",
+      role: "professional",
+      institutionalStatus: "enabled",
+      accountStatus: "active",
+      tokenIdentifier: `${ISSUER}|ti168-cita-pro`,
+    }),
+  );
+  const deliveryId = await t.run(async (ctx) => {
+    const accompanimentId = await ctx.db.insert("accompaniments", {
+      studentId,
+      status: "active",
+      objective: "Objetivo ficticio",
+      accessNeeds: "",
+    });
+    const appointmentId = await ctx.db.insert("appointments", {
+      accompanimentId,
+      studentId,
+      professionalId: proId,
+      modality: "online",
+      status: "scheduled",
+      startsAt: NOW + 60 * 60_000,
+      endsAt: NOW + 2 * 60 * 60_000,
+      createdAt: NOW - 10_000,
+    });
+    const eventId = await ctx.db.insert("notificationEvents", {
+      kind: "appointment_reminder",
+      appointmentId,
+      recipientId: proId,
+      occurredAt: NOW - 1000,
+      version: "v1",
+      idempotencyKey: "ti168-recordatorio-profesional",
+    });
+    return await ctx.db.insert("notificationDeliveries", {
+      eventId,
+      channel: "email",
+      status: "pending",
+      attempts: 0,
+      nextAttemptAt: NOW,
+    });
+  });
+  const endsAt = NOW + 60_000;
+  await t.run(async (ctx) => {
+    await ctx.db.insert("privacyBlocks", {
+      subjectId: studentId,
+      scope: "all_personal_data",
+      startsAt: NOW - 1000,
+      endsAt,
+      createdBy: studentId,
+      createdAt: NOW - 1000,
+      reason: "Bloqueo temporal de prueba",
+    });
+  });
+
+  const outcome = await t.action(internal.operations.notifications.dispatchEmailDelivery, {
+    deliveryId,
+  });
+
+  expect(outcome).toBe("skipped");
+  const row = await t.run(async (ctx) => ctx.db.get(deliveryId));
+  expect(row).toMatchObject({ status: "pending", attempts: 0 });
+  expect(row?.nextAttemptAt).toBe(endsAt);
+});

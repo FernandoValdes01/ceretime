@@ -548,6 +548,7 @@ describe("navegación del portal con agenda (TI2-115)", () => {
       "Practicantes",
       "Agenda",
       "Disponibilidad",
+      "Avisos",
     ]);
     expect(within(nav).getByRole("link", { name: "Agenda" }).getAttribute("aria-current")).toBe(
       "page",

@@ -715,3 +715,48 @@ test("TI2-122 API: una cuenta inhabilitada no descarga ni agrega la atención", 
     }),
   );
 });
+
+test("TI2-168 API: un bloqueo vigente de appointments deniega el listado real sin borrar atenciones", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "privacidad-listado");
+  const appointmentId = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: BASE_START,
+    endsAt: BASE_START + HOUR,
+  });
+  const asStudent = t.withIdentity(agenda.studentIdentity);
+  const input = { accompanimentId: agenda.accompanimentId };
+
+  expect(
+    await asStudent.query(api.presentation.appointments.listAccompanimentAppointments, input),
+  ).toHaveLength(1);
+
+  const blockId = await t.run(async (ctx) =>
+    ctx.db.insert("privacyBlocks", {
+      subjectId: agenda.student,
+      scope: "appointments",
+      startsAt: Date.now() - 1000,
+      endsAt: Date.now() + 60_000,
+      createdBy: agenda.pro,
+      createdAt: Date.now() - 1000,
+      reason: "Bloqueo temporal de prueba",
+    }),
+  );
+
+  await expectUnauthorized(
+    asStudent.query(api.presentation.appointments.listAccompanimentAppointments, input),
+  );
+
+  // La atención sigue en la base: suspender no es borrar ni modificar.
+  const stored = await t.run(async (ctx) => await ctx.db.get(appointmentId));
+  expect(stored?._id).toBe(appointmentId);
+
+  await t.run(async (ctx) => {
+    await ctx.db.patch(blockId, { liftedAt: Date.now() });
+  });
+  expect(
+    await asStudent.query(api.presentation.appointments.listAccompanimentAppointments, input),
+  ).toHaveLength(1);
+});

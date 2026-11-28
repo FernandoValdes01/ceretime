@@ -305,6 +305,71 @@ test("TI2-162 API: la escritura con verificación deja pasar solo lo vigente", a
   expect(afterStale).toMatchObject({ status: "pending" });
 }, 20_000);
 
+test("TI2-168 API: un bloqueo de Calendar deja la fila pendiente hasta su término", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "bloqueo-calendar");
+  const appointmentId = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: START_AT,
+    endsAt: END_AT,
+  });
+  const retryAt = Date.now() + 60_000;
+
+  const recorded = await t.mutation(internal.operations.calendar.recordCalendarSyncOutcome, {
+    appointmentId,
+    attemptedAt: Date.now(),
+    expected: { startsAt: START_AT, endsAt: END_AT, status: "scheduled" as const },
+    outcome: { kind: "blocked", retryAt },
+  });
+
+  expect(recorded).toBe("recorded");
+  const row = await t.run(async (ctx) => {
+    const id = ctx.db.normalizeId("appointments", appointmentId);
+    return id === null ? null : await ctx.db.get(id);
+  });
+  expect(row).toMatchObject({ calendarSyncStatus: "pending", calendarSyncScheduledAt: retryAt });
+  expect(row?.calendarEventId).toBeUndefined();
+  expect(row?.calendarSyncErrorCode).toBeUndefined();
+}, 20_000);
+
+test("TI2-168 API: syncAppointmentCalendar suspende la escritura con el bloqueo calendar del Estudiante", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "bloqueo-ejecución");
+  const appointmentId = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: START_AT,
+    endsAt: END_AT,
+  });
+  const endsAt = Date.now() + 60_000;
+  await t.run(async (ctx) => {
+    await ctx.db.insert("privacyBlocks", {
+      subjectId: agenda.student,
+      scope: "calendar",
+      startsAt: Date.now() - 1000,
+      endsAt,
+      createdBy: agenda.pro,
+      createdAt: Date.now() - 1000,
+      reason: "Bloqueo temporal de Calendar",
+    });
+  });
+
+  const result = await t.action(internal.operations.calendar.syncAppointmentCalendar, {
+    appointmentId,
+  });
+
+  expect(result).toEqual({ status: "pending" });
+  const row = await t.run(async (ctx) => {
+    const id = ctx.db.normalizeId("appointments", appointmentId);
+    return id === null ? null : await ctx.db.get(id);
+  });
+  expect(row).toMatchObject({ calendarSyncStatus: "pending", calendarSyncScheduledAt: endsAt });
+  expect(row?.calendarEventId).toBeUndefined();
+}, 20_000);
+
 test("TI2-162 API: vincular recorre más de una página y las atenciones donde es adicional", async () => {
   const t = convexTest(schema, modules);
   const agenda = await seedAgenda(t, "paged");

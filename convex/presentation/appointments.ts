@@ -31,7 +31,6 @@ import { AGENDA_TIME_ZONE } from "../domain/availability/availability";
 import {
   accompanimentNeedsAtDateReader,
   accompanimentNeedsReader,
-  authorizationReader,
 } from "../infrastructure/accompaniments/repository";
 import { appointmentAuditRecorder } from "../infrastructure/audit/repository";
 import {
@@ -64,6 +63,7 @@ import {
   modalityUnion,
 } from "../infrastructure/validators";
 import { unwrapApiResult } from "./session";
+import { privacyAwareAuthorizationReader } from "./privacyAuthorization";
 
 /**
  * Borde de Presentación: reserva, cambios y consulta de atenciones
@@ -130,7 +130,7 @@ export const bookAppointment = mutation({
     return unwrapApiResult(
       await bookAppointmentUseCase(
         {
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           availability: availabilityReader(ctx),
           needs: accompanimentNeedsReader(ctx),
           compatibility: compatibilitySpaceSource(ctx),
@@ -162,7 +162,7 @@ export const cancelAppointment = mutation({
     return unwrapApiResult(
       await cancelAppointmentUseCase(
         {
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           appointments: appointmentChangeReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
           audit: appointmentAuditRecorder(ctx),
@@ -201,7 +201,7 @@ export const rescheduleAppointment = mutation({
     return unwrapApiResult(
       await rescheduleAppointmentUseCase(
         {
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           appointments: appointmentChangeReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
           audit: appointmentAuditRecorder(ctx),
@@ -240,7 +240,7 @@ export const recordAppointmentAttendance = mutation({
     return unwrapApiResult(
       await recordAppointmentAttendanceUseCase(
         {
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           appointments: appointmentChangeReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
           audit: appointmentAuditRecorder(ctx),
@@ -277,7 +277,7 @@ export const submitAppointmentJustification = mutation({
     return unwrapApiResult(
       await submitAppointmentJustificationUseCase(
         {
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           appointments: appointmentChangeReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
           notifications: notificationEventRecorder(ctx),
@@ -311,7 +311,7 @@ export const reviewAppointmentJustification = mutation({
     return unwrapApiResult(
       await reviewAppointmentJustificationUseCase(
         {
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           appointments: appointmentChangeReader(ctx),
           persister: appointmentTransitionRepository(ctx).persister,
           notifications: notificationEventRecorder(ctx),
@@ -407,7 +407,7 @@ export const listAppointments = query({
     const page = unwrapApiResult(
       await listAppointmentsUseCase(
         {
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           appointments: appointmentAgendaReader(ctx),
           availability: availabilityReader(ctx),
           needsAtDate: accompanimentNeedsAtDateReader(ctx),
@@ -431,7 +431,7 @@ export const getAppointment = query({
     return unwrapApiResult(
       await getAppointmentUseCase(
         {
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           appointments: appointmentAgendaReader(ctx),
           availability: availabilityReader(ctx),
           needsAtDate: accompanimentNeedsAtDateReader(ctx),
@@ -514,7 +514,7 @@ export const listAccompanimentAppointments = query({
     return unwrapApiResult(
       await listAccompanimentAppointmentsUseCase(
         {
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           appointments: appointmentListReader(ctx),
         },
         {
@@ -542,7 +542,7 @@ export const getAppointmentCalendarFile = query({
           loadAppointment: (input) =>
             loadCalendarAppointment(
               {
-                auth: authorizationReader(ctx),
+                auth: privacyAwareAuthorizationReader(ctx),
                 appointments: appointmentCalendarReader(ctx),
               },
               input,
@@ -572,7 +572,7 @@ export const getCalendarConnection = query({
     return unwrapApiResult(
       await getCalendarConnectionUseCase(
         {
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           connection: googleCalendarConnectionReader(ctx),
           store: calendarLinkReader(ctx),
         },
@@ -641,7 +641,7 @@ export const setOnlineAccessLink = mutation({
     return unwrapApiResult(
       await setOnlineAccessLinkUseCase(
         {
-          auth: authorizationReader(ctx),
+          auth: privacyAwareAuthorizationReader(ctx),
           appointments: onlineAccessStore(ctx),
           notifications: notificationEventRecorder(ctx),
         },
@@ -681,7 +681,7 @@ export const getOnlineAccess = query({
     const identity = await ctx.auth.getUserIdentity();
     const view = unwrapApiResult(
       await getOnlineAccessUseCase(
-        { auth: authorizationReader(ctx), appointments: onlineAccessReader(ctx) },
+        { auth: privacyAwareAuthorizationReader(ctx), appointments: onlineAccessReader(ctx) },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, appointmentId },
       ),
     );

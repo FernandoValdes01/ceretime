@@ -713,6 +713,7 @@ describe("editor de disponibilidad (TI2-103)", () => {
       "Practicantes",
       "Agenda",
       "Disponibilidad",
+      "Avisos",
     ]);
     expect(
       within(nav).getByRole("link", { name: "Disponibilidad" }).getAttribute("aria-current"),

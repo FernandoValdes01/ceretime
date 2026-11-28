@@ -83,6 +83,7 @@ export async function getFollowUpRecord(
   const grant = await authorizeFollowUpRead(deps.auth, {
     tokenIdentifier: query.tokenIdentifier,
     accompanimentId: appointment.accompanimentId,
+    privacyCategory: "appointments",
   });
   if (grant.status === "error") return grant;
 
@@ -115,6 +116,7 @@ export async function listAccompanimentFollowUpRecords(
   const grant = await authorizeFollowUpRead(deps.auth, {
     tokenIdentifier: query.tokenIdentifier,
     accompanimentId: query.accompanimentId,
+    privacyCategory: "appointments",
   });
   if (grant.status === "error") return grant;
 

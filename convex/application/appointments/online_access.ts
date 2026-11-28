@@ -108,6 +108,7 @@ async function loadAuthorizedAppointment(
       professionalId: appointment.professionalId,
       additionalProfessionalIds: appointment.additionalProfessionalIds,
     },
+    privacyCategory: "appointments",
   });
   if (grant.status === "error") return denied();
   return okResult({ appointment, callerId: grant.data.callerId });

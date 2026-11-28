@@ -4,6 +4,7 @@ import type {
   DeliverySendResult,
   EmailDeliveryStore,
   EmailSender,
+  PrivacyDeliveryGate,
   PushDeliveryStore,
   PushSender,
   PushSendResult,
@@ -23,12 +24,22 @@ import type {
  * El despacho corre fuera de la mutation que originó el aviso: un fallo del
  * proveedor queda registrado en la entrega y nunca deshace ese cambio. En el
  * canal push, una suscripción vencida (`404`/`410`) se retira de inmediato.
+ *
+ * Antes de reservar, la compuerta del bloqueo (TI2-168) suspende el aviso
+ * cuando el titular de su recurso —no necesariamente el destinatario— tiene
+ * un bloqueo vigente que cubre `notifications`: la fila queda pendiente y
+ * vuelve a programarse al terminar el bloqueo. No se envía, no se cuenta como
+ * intento y no se marca como entregada: suspender el tratamiento no borra ni
+ * modifica el aviso ni su entrega. Las respuestas a una solicitud de
+ * privacidad se entregan siempre, aunque ese bloqueo recién se haya creado.
  */
 
 export interface EmailDispatchDeps {
   readonly store: EmailDeliveryStore;
   readonly sender: EmailSender;
   readonly now: () => number;
+  /** Compuerta de bloqueo de privacidad (TI2-168): opcional para pruebas previas. */
+  readonly privacy?: PrivacyDeliveryGate;
 }
 
 /** Resultado del despacho de una entrega por canal. */
@@ -51,6 +62,14 @@ export async function dispatchEmailDelivery(
   deps: EmailDispatchDeps,
   deliveryId: string,
 ): Promise<DeliveryDispatchOutcome> {
+  if (deps.privacy !== undefined) {
+    const gate = await deps.privacy.check(deliveryId, deps.now());
+    if (gate.status === "blocked") {
+      await deps.privacy.defer(deliveryId, gate.retryAt);
+      return "skipped";
+    }
+  }
+
   const claim = await deps.store.claim(deliveryId, deps.now());
   if (claim.status === "skipped") return "skipped";
   if (claim.status === "no_destination") {
@@ -76,6 +95,8 @@ export interface PushDispatchDeps {
   readonly store: PushDeliveryStore;
   readonly sender: PushSender;
   readonly now: () => number;
+  /** Compuerta de bloqueo de privacidad (TI2-168): opcional para pruebas previas. */
+  readonly privacy?: PrivacyDeliveryGate;
 }
 
 async function sendPushSafely(
@@ -98,6 +119,14 @@ export async function dispatchPushDelivery(
   deps: PushDispatchDeps,
   deliveryId: string,
 ): Promise<DeliveryDispatchOutcome> {
+  if (deps.privacy !== undefined) {
+    const gate = await deps.privacy.check(deliveryId, deps.now());
+    if (gate.status === "blocked") {
+      await deps.privacy.defer(deliveryId, gate.retryAt);
+      return "skipped";
+    }
+  }
+
   const claim = await deps.store.claim(deliveryId, deps.now());
   if (claim.status === "skipped") return "skipped";
   if (claim.status === "no_subscriptions" || claim.subscriptions.length === 0) {
