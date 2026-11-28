@@ -33,6 +33,16 @@ export const PRIVACY_RESPONSE_DELIVERY_CHANNEL_VALUES = [
 export type PrivacyResponseDeliveryChannel =
   (typeof PRIVACY_RESPONSE_DELIVERY_CHANNEL_VALUES)[number];
 
+/** Etiqueta en español de cada canal de envío. */
+export const PRIVACY_RESPONSE_DELIVERY_CHANNEL_LABELS: Record<
+  PrivacyResponseDeliveryChannel,
+  string
+> = {
+  student_app: "Aplicación",
+  email: "Correo",
+  institutional_channel: "Canal institucional",
+};
+
 /** Verdadero cuando el valor es un canal de envío de respuesta conocido. */
 export function isPrivacyResponseDeliveryChannel(
   value: string,

@@ -302,11 +302,18 @@ function StudentPanelContent() {
       <section aria-labelledby="student-privacy-title" className="student-portal__section">
         <div className="student-portal__section-head">
           <h2 id="student-privacy-title">Solicitudes de privacidad</h2>
-          <span className="student-portal__soon">Próximamente</span>
         </div>
         <div className="student-portal__empty student-portal__empty--blue">
-          <p className="student-portal__empty-title">Sin solicitudes de privacidad.</p>
-          <p>Podrás pedir acceso, corrección, bloqueo, exportación o supresión de tus datos.</p>
+          <p className="student-portal__empty-title">Ejerce tus derechos sobre tus datos.</p>
+          <p>Presenta una solicitud y sigue su estado y su plazo de respuesta.</p>
+          <div className="student-portal__cta">
+            <Link
+              to="/estudiante/privacidad"
+              className="student-portal__btn student-portal__btn--ghost"
+            >
+              Ir a privacidad
+            </Link>
+          </div>
         </div>
       </section>
     </>

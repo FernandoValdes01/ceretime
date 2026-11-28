@@ -50,6 +50,12 @@ import { StudentHome, StudentLayout } from "./student-portal.tsx";
 import { toRequestListSearch } from "../gestion/paged-requests.ts";
 import { ScheduleSearchPage } from "../estudiante/schedule-search.tsx";
 import { ReservationFormPage } from "../estudiante/reservation-form.tsx";
+import { PrivacyNoticePage } from "../privacidad/privacy-notice-page.tsx";
+import {
+  StudentPrivacyPage,
+  StudentPrivacyRequestDetailPage,
+} from "../privacidad/student-privacy.tsx";
+import { AdminPrivacyPage, AdminPrivacyRequestDetailPage } from "../privacidad/admin-privacy.tsx";
 
 /**
  * Componentes de ruta (TI2-6, TI2-20, TI2-89, TI2-90, TI2-91, TI2-103, TI2-04,
@@ -96,6 +102,15 @@ export function LoginRouteComponent() {
   return (
     <PublicMain>
       <LoginPage session={useSessionState()} />
+    </PublicMain>
+  );
+}
+
+export function PrivacyNoticeRouteComponent() {
+  useDocumentTitle("Aviso de privacidad");
+  return (
+    <PublicMain>
+      <PrivacyNoticePage />
     </PublicMain>
   );
 }
@@ -188,6 +203,19 @@ export function StudentAccompanimentDetailRouteComponent() {
   return (
     <StudentAccompanimentDetailPage accompanimentId={accompanimentId} calendarStatus={calendar} />
   );
+}
+
+const studentPrivacyDetailApi = getRouteApi("/estudiante/privacidad/$requestId");
+
+export function StudentPrivacyRouteComponent() {
+  useDocumentTitle("Privacidad");
+  return <StudentPrivacyPage />;
+}
+
+export function StudentPrivacyDetailRouteComponent() {
+  useDocumentTitle("Solicitud de privacidad");
+  const { requestId } = studentPrivacyDetailApi.useParams();
+  return <StudentPrivacyRequestDetailPage requestId={requestId} />;
 }
 
 export function ProfessionalLayoutRouteComponent() {
@@ -326,4 +354,17 @@ export function AdminAccountsRouteComponent() {
 export function AdminSpacesRouteComponent() {
   useDocumentTitle("Espacios de atención");
   return <AdminSpaceEditorPage />;
+}
+
+const adminPrivacyDetailApi = getRouteApi("/administrador/privacidad/$requestId");
+
+export function AdminPrivacyRouteComponent() {
+  useDocumentTitle("Solicitudes de privacidad");
+  return <AdminPrivacyPage />;
+}
+
+export function AdminPrivacyDetailRouteComponent() {
+  useDocumentTitle("Revisar solicitud de privacidad");
+  const { requestId } = adminPrivacyDetailApi.useParams();
+  return <AdminPrivacyRequestDetailPage requestId={requestId} />;
 }
