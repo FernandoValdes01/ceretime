@@ -3879,9 +3879,17 @@ test("TI2-179: el proceso completo funciona junto con los cuatro roles", async (
         endAt: ti179At(11),
         version: APPOINTMENT_CONTRACT_VERSION,
       });
+    // convex-test ejecuta las mutations en serie: esto prueba que la segunda
+    // reserva del mismo cupo se rechaza por conflicto, no la concurrencia real
+    // de un deployment.
     const race = await Promise.allSettled([book(), book()]);
     const won = race.filter((outcome) => outcome.status === "fulfilled");
     expect(won).toHaveLength(1);
+    const lost = race.filter((outcome) => outcome.status === "rejected");
+    expect(lost).toHaveLength(1);
+    expect(await ti179ErrorCode(Promise.reject((lost[0] as PromiseRejectedResult).reason))).toBe(
+      "conflict",
+    );
     const appointmentId = (won[0] as PromiseFulfilledResult<{ appointmentId: string }>).value
       .appointmentId;
     expect(await t.run(async (ctx) => (await ctx.db.query("appointments").take(5)).length)).toBe(1);
