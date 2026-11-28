@@ -10,6 +10,7 @@ import {
   revokeStaffAccount,
 } from "../application/accounts/enablement";
 import { mutation, query } from "../_generated/server";
+import { accountReader, accountStore } from "../infrastructure/accounts/repository";
 import {
   accountStatusUnion,
   institutionalStatusUnion,
@@ -67,7 +68,7 @@ export const listAccounts = query({
   returns: paginationResultValidator(accountSummaryValidator),
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(await listAccountsUseCase(ctx, identity, args));
+    return unwrapApiResult(await listAccountsUseCase(accountReader(ctx), identity, args));
   },
 });
 
@@ -77,7 +78,7 @@ export const getAccount = query({
   returns: accountSummaryValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(await getAccountDetailUseCase(ctx, identity, args));
+    return unwrapApiResult(await getAccountDetailUseCase(accountReader(ctx), identity, args));
   },
 });
 
@@ -90,7 +91,7 @@ export const enableAccount = mutation({
   returns: accountIdValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(await enableStaffAccount(ctx, identity, args));
+    return unwrapApiResult(await enableStaffAccount(accountStore(ctx), identity, args));
   },
 });
 
@@ -103,7 +104,7 @@ export const revokeAccount = mutation({
   returns: accountIdValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(await revokeStaffAccount(ctx, identity, args));
+    return unwrapApiResult(await revokeStaffAccount(accountStore(ctx), identity, args));
   },
 });
 
@@ -120,7 +121,7 @@ export const enableIntern = mutation({
   returns: accountIdValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(await enableInternByProfessional(ctx, identity, args));
+    return unwrapApiResult(await enableInternByProfessional(accountStore(ctx), identity, args));
   },
 });
 
@@ -138,7 +139,7 @@ export const enableTestProfessional = mutation({
   returns: accountIdValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(await enableTestProfessionalAccount(ctx, identity, args));
+    return unwrapApiResult(await enableTestProfessionalAccount(accountStore(ctx), identity, args));
   },
 });
 
@@ -156,6 +157,6 @@ export const listInternAccounts = query({
   returns: paginationResultValidator(accountSummaryValidator),
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(await listInternAccountsUseCase(ctx, identity, args));
+    return unwrapApiResult(await listInternAccountsUseCase(accountReader(ctx), identity, args));
   },
 });

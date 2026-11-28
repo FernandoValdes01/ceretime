@@ -1,6 +1,5 @@
 import type { UserIdentity } from "convex/server";
 import type { Doc, Id } from "../../_generated/dataModel";
-import type { MutationCtx } from "../../_generated/server";
 import { isPersonalProfessionalActive, isTestProfessional } from "../../domain/accounts/enablement";
 import {
   validateAssignmentValidity,
@@ -24,21 +23,7 @@ import {
   unauthorizedError,
   type ApiResult,
 } from "../../domain/errors/api_error";
-import {
-  expireAssignmentRow,
-  findExistingActiveAssignment,
-  findProfileByTokenIdentifier,
-  getAccompanimentById,
-  getAssignmentById,
-  getUserById,
-  hasActiveProfessionalAssignment,
-  insertActiveAssignment,
-  listProfessionalAssignmentHolders,
-  patchAssignmentValidity,
-  revokeAssignmentRow,
-  takeActiveTripleRows,
-  type AssignmentTriple,
-} from "../../infrastructure/accompaniments/repository";
+import type { AccompanimentAssignmentStore, AssignmentTriple } from "./ports";
 
 /**
  * Casos de uso de escritura de asignaciones (S2, TI2-28, TI2-140).
@@ -47,7 +32,7 @@ import {
  * `ctx.auth.getUserIdentity()`, exige llamante profesional de personal con
  * cuenta habilitada y vigente (la cuenta de prueba jamás concede, modifica
  * ni retira: `isPersonalProfessionalActive`, la misma regla que habilita),
- * y persiste con Infraestructura. Devuelve el `ApiResult` común de TI2-88
+ * y persiste por el puerto `AccompanimentAssignmentStore`. Devuelve el `ApiResult` común de TI2-88
  * para que Presentación traduzca con `unwrapApiResult` y las vías internas
  * desenvuelvan el mensaje. Nadie puede asignarse acceso a sí mismo.
  *
@@ -144,11 +129,11 @@ function staffValidityError<T>(
 
 /** Profesional de personal con cuenta habilitada y vigente, o `null` sin permiso. */
 async function findStaffProfessionalCaller(
-  ctx: MutationCtx,
+  store: AccompanimentAssignmentStore,
   identity: UserIdentity | null,
 ): Promise<Doc<"users"> | null> {
   if (identity === null) return null;
-  const caller = await findProfileByTokenIdentifier(ctx, identity.tokenIdentifier);
+  const caller = await store.findProfileByTokenIdentifier(identity.tokenIdentifier);
   if (caller === null || !isPersonalProfessionalActive(caller)) return null;
   return caller;
 }
@@ -201,24 +186,24 @@ function assertSchedulerFor(
  * vigente además de `status === "active"`.
  */
 export async function assignAccompaniment(
-  ctx: MutationCtx,
+  store: AccompanimentAssignmentStore,
   identity: UserIdentity | null,
   triple: AssignmentTriple,
   validity?: AssignmentValidity,
   options?: { readonly bootstrapStaff?: boolean; readonly schedule?: AssignmentScheduler },
 ): Promise<ApiResult<Id<"accompanimentAssignments">>> {
   assertSchedulerFor(validity, options?.schedule);
-  const caller = await findStaffProfessionalCaller(ctx, identity);
+  const caller = await findStaffProfessionalCaller(store, identity);
   if (caller === null) return unauthorized();
   if (caller._id === triple.userId) return unauthorized();
 
-  const accompaniment = await getAccompanimentById(ctx, triple.accompanimentId);
+  const accompaniment = await store.getAccompanimentById(triple.accompanimentId);
   if (accompaniment === null) return unauthorized();
-  const target = await getUserById(ctx, triple.userId);
+  const target = await store.getUserById(triple.userId);
   if (target === null) return unauthorized();
 
   if (triple.assignedRole === "intern") {
-    const callerAssigned = await hasActiveProfessionalAssignment(ctx, {
+    const callerAssigned = await store.hasActiveProfessionalAssignment({
       accompanimentId: triple.accompanimentId,
       userId: caller._id,
     });
@@ -253,7 +238,7 @@ export async function assignAccompaniment(
     // siempre, salvo arranque explícito de la vía interna (`bootstrapStaff`).
     if (isTestProfessional(target) || options?.bootstrapStaff !== true) {
       if (!isProfileActive(target)) return unauthorized();
-      const callerAssigned = await hasActiveProfessionalAssignment(ctx, {
+      const callerAssigned = await store.hasActiveProfessionalAssignment({
         accompanimentId: triple.accompanimentId,
         userId: caller._id,
       });
@@ -271,11 +256,11 @@ export async function assignAccompaniment(
         validityError<Id<"accompanimentAssignments">>(validity));
   if (invalid !== null) return invalid;
 
-  const existing = await findExistingActiveAssignment(ctx, triple);
+  const existing = await store.findExistingActiveAssignment(triple);
   if (existing !== null) {
     return conflict("Ya existe una asignación activa para este acompañamiento y rol");
   }
-  const id = await insertActiveAssignment(ctx, triple, caller._id, {
+  const id = await store.insertActiveAssignment(triple, caller._id, {
     ...(validity?.validFrom === null || validity?.validFrom === undefined
       ? {}
       : { validFrom: validity.validFrom }),
@@ -298,32 +283,32 @@ export async function assignAccompaniment(
  * o sin fila activa responde el mismo error genérico, sin revelar existencia.
  */
 export async function updateAccompanimentAssignment(
-  ctx: MutationCtx,
+  store: AccompanimentAssignmentStore,
   identity: UserIdentity | null,
   triple: AssignmentTriple,
   validity: { readonly validFrom?: number | null; readonly validUntil?: number | null },
   options?: { readonly schedule?: AssignmentScheduler },
 ): Promise<ApiResult<Id<"accompanimentAssignments">>> {
   assertSchedulerFor(validity, options?.schedule);
-  const caller = await findStaffProfessionalCaller(ctx, identity);
+  const caller = await findStaffProfessionalCaller(store, identity);
   if (caller === null) return unauthorized();
 
-  const accompaniment = await getAccompanimentById(ctx, triple.accompanimentId);
+  const accompaniment = await store.getAccompanimentById(triple.accompanimentId);
   if (accompaniment === null) return unauthorized();
 
-  const callerAssigned = await hasActiveProfessionalAssignment(ctx, {
+  const callerAssigned = await store.hasActiveProfessionalAssignment({
     accompanimentId: triple.accompanimentId,
     userId: caller._id,
   });
   if (!callerAssigned) return unauthorized();
 
-  const target = await getUserById(ctx, triple.userId);
+  const target = await store.getUserById(triple.userId);
   if (target === null) return unauthorized();
   if (target.role !== triple.assignedRole) {
     return conflict("El rol del usuario no coincide con el rol asignado");
   }
 
-  const existing = await findExistingActiveAssignment(ctx, triple);
+  const existing = await store.findExistingActiveAssignment(triple);
   if (existing === null) return unauthorized();
   if (accompaniment.status === "closed") return conflict(CLOSED_ACCOMPANIMENT_MESSAGE);
 
@@ -337,7 +322,7 @@ export async function updateAccompanimentAssignment(
     validityError<Id<"accompanimentAssignments">>(next);
   if (invalid !== null) return invalid;
 
-  await patchAssignmentValidity(ctx, existing._id, validity);
+  await store.patchAssignmentValidity(existing._id, validity);
   await scheduleValidityWindow(options?.schedule, existing._id, validity);
   return okResult(existing._id);
 }
@@ -357,21 +342,21 @@ export async function updateAccompanimentAssignment(
  * `status === "revoked"`.
  */
 export async function revokeAccompaniment(
-  ctx: MutationCtx,
+  store: AccompanimentAssignmentStore,
   identity: UserIdentity | null,
   triple: AssignmentTriple,
   options?: { readonly bootstrapStaff?: boolean },
 ): Promise<ApiResult<number | null>> {
-  const caller = await findStaffProfessionalCaller(ctx, identity);
+  const caller = await findStaffProfessionalCaller(store, identity);
   if (caller === null) return unauthorized();
 
-  const accompaniment = await getAccompanimentById(ctx, triple.accompanimentId);
+  const accompaniment = await store.getAccompanimentById(triple.accompanimentId);
   if (accompaniment === null) return unauthorized();
 
   if (triple.assignedRole === "intern") {
-    const target = await getUserById(ctx, triple.userId);
+    const target = await store.getUserById(triple.userId);
     if (target === null) return unauthorized();
-    const callerAssigned = await hasActiveProfessionalAssignment(ctx, {
+    const callerAssigned = await store.hasActiveProfessionalAssignment({
       accompanimentId: triple.accompanimentId,
       userId: caller._id,
     });
@@ -395,13 +380,13 @@ export async function revokeAccompaniment(
       return unauthorized();
     }
   } else {
-    const target = await getUserById(ctx, triple.userId);
+    const target = await store.getUserById(triple.userId);
     if (target === null) return unauthorized();
     if (target.role !== triple.assignedRole) {
       return conflict("El rol del usuario no coincide con el rol asignado");
     }
     if (isTestProfessional(target) || options?.bootstrapStaff !== true) {
-      const callerAssigned = await hasActiveProfessionalAssignment(ctx, {
+      const callerAssigned = await store.hasActiveProfessionalAssignment({
         accompanimentId: triple.accompanimentId,
         userId: caller._id,
       });
@@ -417,10 +402,10 @@ export async function revokeAccompaniment(
     mustKeepAProfessional(accompaniment.status) &&
     options?.bootstrapStaff !== true
   ) {
-    const holdsAssignment = (await takeActiveTripleRows(ctx, triple, 1)).length > 0;
+    const holdsAssignment = (await store.takeActiveTripleRows(triple, 1)).length > 0;
     // Sobre el tope de filas leídas el retiro se rechaza, nunca se permite de más.
     const holders = holdsAssignment
-      ? await listProfessionalAssignmentHolders(ctx, triple.accompanimentId)
+      ? await store.listProfessionalAssignmentHolders(triple.accompanimentId)
       : [];
     if (
       holders === null ||
@@ -432,16 +417,16 @@ export async function revokeAccompaniment(
 
   let revoked = 0;
   for (let round = 0; round < 10; round++) {
-    const rows = await takeActiveTripleRows(ctx, triple, 50);
+    const rows = await store.takeActiveTripleRows(triple, 50);
     if (rows.length === 0) break;
     for (const row of rows) {
-      await revokeAssignmentRow(ctx, row._id, caller._id);
+      await store.revokeAssignmentRow(row._id, caller._id);
     }
     revoked += rows.length;
     if (rows.length < 50) break;
   }
   if (revoked === 0) return okResult(null);
-  const remaining = await takeActiveTripleRows(ctx, triple, 1);
+  const remaining = await store.takeActiveTripleRows(triple, 1);
   if (remaining.length > 0) {
     return conflict("Quedaron asignaciones activas sin revocar");
   }
@@ -459,13 +444,13 @@ export async function revokeAccompaniment(
  * `revokedAt`), distinto de la revocación de una persona.
  */
 export async function expireAssignmentWindow(
-  ctx: MutationCtx,
+  store: AccompanimentAssignmentStore,
   input: { readonly assignmentId: Id<"accompanimentAssignments">; readonly validUntil: number },
 ): Promise<Id<"accompanimentAssignments"> | null> {
-  const row = await getAssignmentById(ctx, input.assignmentId);
+  const row = await store.getAssignmentById(input.assignmentId);
   if (row === null || row.status !== "active") return null;
   if (row.validUntil !== input.validUntil) return null;
   if (Date.now() < input.validUntil) return null;
-  await expireAssignmentRow(ctx, row._id);
+  await store.expireAssignmentRow(row._id);
   return row._id;
 }

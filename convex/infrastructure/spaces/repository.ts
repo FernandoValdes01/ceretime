@@ -49,8 +49,8 @@ export function toSpace<SpaceId extends string>(doc: {
   };
 }
 
-/** Página cruda del catálogo vigente con cursor de continuación. */
-export interface SpaceCatalogRowPage {
+/** Página cruda del catálogo con cursor de continuación. */
+interface SpaceCatalogRowPage {
   readonly items: ReadonlyArray<Doc<"spaces">>;
   readonly hasMore: boolean;
   readonly nextCursor: string | null;
@@ -64,7 +64,7 @@ export interface SpaceCatalogRowPage {
  * ajeno o corrupto lo rechaza la plataforma. Nunca trunca en silencio: si
  * hay más filas, `hasMore` lo dice y `nextCursor` las alcanza.
  */
-export async function listActiveSpaceRows(
+async function listActiveSpaceRows(
   ctx: QueryCtx,
   input: { readonly limit: number; readonly cursor: string | null },
 ): Promise<SpaceCatalogRowPage> {
@@ -86,7 +86,7 @@ export async function listActiveSpaceRows(
  * Usa el mismo índice `by_isActive` por igualdad: solo trae retiradas, sin
  * filtrar en memoria. Nunca trunca en silencio.
  */
-export async function listInactiveSpaceRows(
+async function listInactiveSpaceRows(
   ctx: QueryCtx,
   input: { readonly limit: number; readonly cursor: string | null },
 ): Promise<SpaceCatalogRowPage> {
@@ -245,12 +245,22 @@ export function spaceReader(ctx: DbReader) {
   };
 }
 
-/** Lectura paginada de salas retiradas para Administración (TI2-156). */
-export function inactiveSpaceReader(ctx: QueryCtx) {
+/**
+ * Adaptador del puerto `SpaceCatalogReader` (TI2-99, TI2-156): las salas
+ * vigentes del catálogo publicado y las retiradas para Administración, ya
+ * convertidas al contrato `Space` con `toSpace`.
+ */
+export function spaceCatalogReader(ctx: QueryCtx) {
   return {
-    listInactiveSpaces: (input: { readonly limit: number; readonly cursor: string | null }) =>
-      listInactiveSpaceRows(ctx, input),
+    listActiveSpaces: async (input: { readonly limit: number; readonly cursor: string | null }) =>
+      toSpaceCatalogPage(await listActiveSpaceRows(ctx, input)),
+    listInactiveSpaces: async (input: { readonly limit: number; readonly cursor: string | null }) =>
+      toSpaceCatalogPage(await listInactiveSpaceRows(ctx, input)),
   };
+}
+
+function toSpaceCatalogPage(page: SpaceCatalogRowPage) {
+  return { items: page.items.map(toSpace), hasMore: page.hasMore, nextCursor: page.nextCursor };
 }
 
 // ── TI2-111/TI2-121: necesidades y condiciones de compatibilidad ──────────

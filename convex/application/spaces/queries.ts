@@ -1,7 +1,4 @@
-import type { UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
-import type { Id } from "../../_generated/dataModel";
-import type { QueryCtx } from "../../_generated/server";
 import { SPACE_CATALOG_CONTRACT_VERSION, type Space } from "../../domain/spaces/space";
 import {
   AUTHORIZATION_DENIED_MESSAGE,
@@ -9,12 +6,7 @@ import {
   authorizeSpaceCatalogRead,
   type AuthorizationReader,
 } from "../authorization/authorize";
-import { authorizationReader } from "../../infrastructure/accompaniments/repository";
-import {
-  listActiveSpaceRows,
-  toSpace,
-  type SpaceCatalogRowPage,
-} from "../../infrastructure/spaces/repository";
+import type { SpaceCatalogReader } from "./ports";
 import {
   conflictError,
   errResult,
@@ -28,7 +20,8 @@ import {
  *
  * Capa de Aplicación: recibe la identidad ya resuelta en el borde con
  * `ctx.auth.getUserIdentity()`, exige cuenta vigente de cualquier rol con
- * `authorizeSpaceCatalogRead` y lee el catálogo vigente con Infraestructura.
+ * `authorizeSpaceCatalogRead` y lee el catálogo por el puerto
+ * `SpaceCatalogReader`, que Presentación compone con el `ctx` de la consulta.
  * El dominio institucional no autoriza por sí solo: sin perfil vinculado la
  * respuesta es denegación genérica. Opera con datos ficticios.
  */
@@ -48,10 +41,15 @@ function deny(): never {
  * vigente y el límite un entero entre 1 y el máximo; lo demás se rechaza con
  * error de regla en español.
  */
-export async function listSpaceCatalogUseCase(
-  ctx: QueryCtx,
-  identity: UserIdentity | null,
-  args: { readonly limit: number; readonly cursor?: string; readonly version: string },
+export async function listSpaceCatalogUseCase<SpaceId extends string>(
+  auth: AuthorizationReader,
+  catalog: SpaceCatalogReader<SpaceId>,
+  args: {
+    readonly tokenIdentifier: string | null;
+    readonly limit: number;
+    readonly cursor?: string;
+    readonly version: string;
+  },
 ) {
   if (args.version !== SPACE_CATALOG_CONTRACT_VERSION) {
     throw new Error("La versión del contrato de espacios debe ser la vigente.");
@@ -64,15 +62,13 @@ export async function listSpaceCatalogUseCase(
       `El límite del catálogo supera el máximo de ${SPACE_CATALOG_PAGE_LIMIT_MAX} por página.`,
     );
   }
-  const grant = await authorizeSpaceCatalogRead(authorizationReader(ctx), {
-    tokenIdentifier: identity?.tokenIdentifier ?? null,
-  });
+  const grant = await authorizeSpaceCatalogRead(auth, { tokenIdentifier: args.tokenIdentifier });
   if (grant.status === "error") {
     deny();
   }
-  const page = await listActiveSpaceRows(ctx, { limit: args.limit, cursor: args.cursor ?? null });
+  const page = await catalog.listActiveSpaces({ limit: args.limit, cursor: args.cursor ?? null });
   return {
-    items: page.items.map(toSpace),
+    items: page.items,
     hasMore: page.hasMore,
     nextCursor: page.nextCursor,
     version: SPACE_CATALOG_CONTRACT_VERSION,
@@ -83,19 +79,12 @@ export async function listSpaceCatalogUseCase(
  * Lista las salas retiradas para Administración (TI2-156, nota TI2-169).
  *
  * Solo administración con cuenta vigente, con el mismo permiso que gestiona
- * el catálogo. Sigue puertos (sin importar Infraestructura) y devuelve
- * `ApiResult` para que Presentación lo traduzca con `unwrapApiResult`.
+ * el catálogo. Devuelve `ApiResult` para que Presentación lo traduzca con
+ * `unwrapApiResult`.
  */
-export interface InactiveSpaceReader {
-  listInactiveSpaces(input: {
-    readonly limit: number;
-    readonly cursor: string | null;
-  }): Promise<SpaceCatalogRowPage>;
-}
-
-export async function listInactiveSpaceCatalogUseCase(
+export async function listInactiveSpaceCatalogUseCase<SpaceId extends string>(
   auth: AuthorizationReader,
-  store: InactiveSpaceReader,
+  catalog: SpaceCatalogReader<SpaceId>,
   input: {
     readonly tokenIdentifier: string | null;
     readonly limit: number;
@@ -104,7 +93,7 @@ export async function listInactiveSpaceCatalogUseCase(
   },
 ): Promise<
   ApiResult<{
-    readonly items: (Space & { readonly id: Id<"spaces"> })[];
+    readonly items: (Space & { readonly id: SpaceId })[];
     readonly hasMore: boolean;
     readonly nextCursor: string | null;
     readonly version: typeof SPACE_CATALOG_CONTRACT_VERSION;
@@ -117,9 +106,12 @@ export async function listInactiveSpaceCatalogUseCase(
     tokenIdentifier: input.tokenIdentifier,
   });
   if (grant.status === "error") return errResult(unauthorizedError());
-  const page = await store.listInactiveSpaces({ limit: input.limit, cursor: input.cursor ?? null });
+  const page = await catalog.listInactiveSpaces({
+    limit: input.limit,
+    cursor: input.cursor ?? null,
+  });
   return okResult({
-    items: page.items.map(toSpace),
+    items: page.items,
     hasMore: page.hasMore,
     nextCursor: page.nextCursor,
     version: SPACE_CATALOG_CONTRACT_VERSION,

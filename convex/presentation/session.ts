@@ -178,6 +178,6 @@ export const getSessionWithRole = query({
   }),
   handler: async (ctx) => {
     const identity = await ctx.auth.getUserIdentity();
-    return await resolveSessionAndRole(ctx, identity);
+    return await resolveSessionAndRole(ownProfileReader(ctx), identity);
   },
 });

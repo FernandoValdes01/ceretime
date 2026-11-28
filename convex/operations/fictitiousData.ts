@@ -12,6 +12,7 @@ import {
 import { AGENDA_TIME_ZONE, civilRangeToInstantRange } from "../domain/availability/availability";
 import type { ApiResult } from "../domain/errors/api_error";
 import {
+  accompanimentAssignmentStore,
   accompanimentOpener,
   findProfileByTokenIdentifier,
 } from "../infrastructure/accompaniments/repository";
@@ -248,7 +249,7 @@ export const load = internalMutation({
         objective: "Coordinar los apoyos de acceso para las clases prácticas del semestre.",
       }),
     );
-    const granted = await assignAccompaniment(ctx, professional, {
+    const granted = await assignAccompaniment(accompanimentAssignmentStore(ctx), professional, {
       accompanimentId: accompaniment._id,
       userId: internId,
       assignedRole: "intern",

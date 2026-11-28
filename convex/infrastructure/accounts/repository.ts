@@ -1,7 +1,11 @@
 import type { PaginationOptions } from "convex/server";
 import type { Doc, Id } from "../../_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "../../_generated/server";
-import type { StudentReclassificationStore } from "../../application/accounts/ports";
+import type {
+  AccountReader,
+  AccountStore,
+  StudentReclassificationStore,
+} from "../../application/accounts/ports";
 import type { OwnProfileReader, OwnProfileStore } from "../../application/session/ports";
 import type { AuthenticatedProfile } from "../../domain/identity/roles";
 
@@ -101,7 +105,7 @@ export async function patchRevocation(
 
 /** Página de cuentas de personal para el listado administrativo (TI2-137). */
 export async function paginateStaffAccounts(
-  ctx: QueryCtx,
+  ctx: DbReader,
   role: "professional" | "admin",
   paginationOpts: PaginationOptions,
 ) {
@@ -118,11 +122,38 @@ export async function paginateStaffAccounts(
  * profesional de personal vigente y al administrador vigente. Devuelve las
  * filas tal como las entrega el índice `by_role`, sin filtrar en memoria.
  */
-export async function paginateInternAccounts(ctx: QueryCtx, paginationOpts: PaginationOptions) {
+export async function paginateInternAccounts(ctx: DbReader, paginationOpts: PaginationOptions) {
   return await ctx.db
     .query("users")
     .withIndex("by_role", (q) => q.eq("role", "intern"))
     .paginate(paginationOpts);
+}
+
+/** Adaptador del puerto `AccountReader` para consultas y mutations. */
+export function accountReader(ctx: DbReader): AccountReader {
+  return {
+    findProfileByTokenIdentifier: (tokenIdentifier) =>
+      findProfileByTokenIdentifier(ctx, tokenIdentifier),
+    getUserById: (userId) => getUserById(ctx, userId),
+    findUserByEmail: (email) => findUserByEmail(ctx, email),
+    findExistingAdmin: () => findExistingAdmin(ctx),
+    paginateStaffAccounts: (role, paginationOpts) =>
+      paginateStaffAccounts(ctx, role, paginationOpts),
+    paginateInternAccounts: (paginationOpts) => paginateInternAccounts(ctx, paginationOpts),
+  };
+}
+
+/**
+ * Adaptador del puerto `AccountStore`: las lecturas de `accountReader` y las
+ * escrituras con el mismo `ctx` de la mutation.
+ */
+export function accountStore(ctx: MutationCtx): AccountStore {
+  return {
+    ...accountReader(ctx),
+    patchEnablement: (input) => patchEnablement(ctx, input),
+    patchRevocation: (input) => patchRevocation(ctx, input),
+    insertBootstrapAdmin: (input) => insertBootstrapAdmin(ctx, input),
+  };
 }
 
 /** Perfil propio mínimo que ven la interfaz y los casos de uso de sesión. */

@@ -5,6 +5,7 @@ import {
   revokeAccompaniment,
 } from "../application/accompaniments/commands";
 import { internalMutation } from "../_generated/server";
+import { accompanimentAssignmentStore } from "../infrastructure/accompaniments/repository";
 import { assignmentRoleUnion } from "../infrastructure/validators";
 
 /**
@@ -33,9 +34,15 @@ export const assign = internalMutation({
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    const result = await assignAccompaniment(ctx, identity, args, undefined, {
-      bootstrapStaff: true,
-    });
+    const result = await assignAccompaniment(
+      accompanimentAssignmentStore(ctx),
+      identity,
+      args,
+      undefined,
+      {
+        bootstrapStaff: true,
+      },
+    );
     if (result.status === "error") throw new ConvexError(result.error.message);
     return result.data;
   },
@@ -62,7 +69,9 @@ export const revoke = internalMutation({
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    const result = await revokeAccompaniment(ctx, identity, args, { bootstrapStaff: true });
+    const result = await revokeAccompaniment(accompanimentAssignmentStore(ctx), identity, args, {
+      bootstrapStaff: true,
+    });
     if (result.status === "error") throw new ConvexError(result.error.message);
     return result.data;
   },
@@ -83,7 +92,7 @@ export const expireAssignment = internalMutation({
     validUntil: v.number(),
   },
   handler: async (ctx, args) => {
-    return await expireAssignmentWindow(ctx, {
+    return await expireAssignmentWindow(accompanimentAssignmentStore(ctx), {
       assignmentId: args.assignmentId,
       validUntil: args.validUntil,
     });

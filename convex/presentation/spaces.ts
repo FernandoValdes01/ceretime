@@ -17,7 +17,7 @@ import { availabilityReader } from "../infrastructure/availability/repository";
 import { notificationEventRecorder } from "../infrastructure/notifications/repository";
 import {
   compatibilitySpaceSource,
-  inactiveSpaceReader,
+  spaceCatalogReader,
   spaceReader,
   spaceWriter,
 } from "../infrastructure/spaces/repository";
@@ -80,7 +80,14 @@ export const listSpaces = query({
   returns: spaceCatalogPageValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return await listSpaceCatalogUseCase(ctx, identity, args);
+    return await listSpaceCatalogUseCase(
+      privacyAwareAuthorizationReader(ctx),
+      spaceCatalogReader(ctx),
+      {
+        tokenIdentifier: identity?.tokenIdentifier ?? null,
+        ...args,
+      },
+    );
   },
 });
 
@@ -207,7 +214,7 @@ export const listInactiveSpaces = query({
     return unwrap(
       await listInactiveSpaceCatalogUseCase(
         privacyAwareAuthorizationReader(ctx),
-        inactiveSpaceReader(ctx),
+        spaceCatalogReader(ctx),
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,
           ...args,

@@ -1,7 +1,6 @@
 import type { PaginationOptions, UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
 import type { Doc, Id } from "../../_generated/dataModel";
-import type { MutationCtx, QueryCtx } from "../../_generated/server";
 import {
   checkEnablement,
   checkInternEnablement,
@@ -29,17 +28,7 @@ import {
   type ApiResult,
 } from "../../domain/errors/api_error";
 import { AUTHORIZATION_DENIED_MESSAGE, deniedPublicError } from "../authorization/authorize";
-import {
-  findExistingAdmin,
-  findProfileByTokenIdentifier,
-  findUserByEmail,
-  getUserById,
-  insertBootstrapAdmin,
-  paginateInternAccounts,
-  paginateStaffAccounts,
-  patchEnablement,
-  patchRevocation,
-} from "../../infrastructure/accounts/repository";
+import type { AccountReader, AccountStore } from "./ports";
 
 /**
  * Casos de uso de habilitación institucional y arranque administrativo
@@ -48,7 +37,8 @@ import {
  * Capa de Aplicación: recibe la identidad ya resuelta en el borde con
  * `ctx.auth.getUserIdentity()`, exige un Administrador con cuenta
  * habilitada y vigente (regla única de `canManageAccounts`, sin duplicarla),
- * valida el objetivo en Dominio y persiste con Infraestructura. Devuelve el
+ * valida el objetivo en Dominio y persiste por los puertos `AccountReader` y
+ * `AccountStore`, que el borde crea con su `ctx`. Devuelve el
  * `ApiResult` común de TI2-88 para que Presentación traduzca con
  * `unwrapApiResult`. La habilitación de la cuenta y la asignación de un
  * acompañamiento son decisiones distintas: habilitar solo deja la cuenta en
@@ -79,11 +69,11 @@ type DbProfile = Doc<"users">;
  * matriz, el dominio y el código hablen igual.
  */
 async function findCallerProfile(
-  ctx: QueryCtx | MutationCtx,
+  accounts: AccountReader,
   identity: UserIdentity | null,
 ): Promise<DbProfile | null> {
   if (identity === null) return null;
-  return await findProfileByTokenIdentifier(ctx, identity.tokenIdentifier ?? "");
+  return await accounts.findProfileByTokenIdentifier(identity.tokenIdentifier ?? "");
 }
 
 /** Verdadero cuando la cuenta es de personal: profesional o administrador. */
@@ -130,11 +120,11 @@ function toAccountSummary(profile: DbProfile): AccountSummary {
  * sin `tokenIdentifier`, acompañamientos ni notas.
  */
 export async function listAccountsUseCase(
-  ctx: QueryCtx,
+  accounts: AccountReader,
   identity: UserIdentity | null,
   args: { readonly role: "professional" | "admin"; readonly paginationOpts: PaginationOptions },
 ): Promise<ApiResult<{ page: AccountSummary[]; isDone: boolean; continueCursor: string }>> {
-  const caller = await findCallerProfile(ctx, identity);
+  const caller = await findCallerProfile(accounts, identity);
   if (
     caller === null ||
     !canListAccounts({
@@ -152,7 +142,7 @@ export async function listAccountsUseCase(
   ) {
     throw new Error("El límite del listado debe ser un entero entre 1 y 100.");
   }
-  const result = await paginateStaffAccounts(ctx, args.role, args.paginationOpts);
+  const result = await accounts.paginateStaffAccounts(args.role, args.paginationOpts);
   return okResult({ ...result, page: result.page.map(toAccountSummary) });
 }
 
@@ -167,11 +157,11 @@ export async function listAccountsUseCase(
  * `unauthorized` genérico, sin revelar existencia.
  */
 export async function listInternAccountsUseCase(
-  ctx: QueryCtx,
+  accounts: AccountReader,
   identity: UserIdentity | null,
   args: { readonly paginationOpts: PaginationOptions },
 ): Promise<ApiResult<{ page: AccountSummary[]; isDone: boolean; continueCursor: string }>> {
-  const caller = await findCallerProfile(ctx, identity);
+  const caller = await findCallerProfile(accounts, identity);
   if (caller === null) return unauthorized();
   const isAdminActive =
     caller.role === "admin" &&
@@ -186,7 +176,7 @@ export async function listInternAccountsUseCase(
   ) {
     throw new Error("El límite del listado debe ser un entero entre 1 y 100.");
   }
-  const result = await paginateInternAccounts(ctx, args.paginationOpts);
+  const result = await accounts.paginateInternAccounts(args.paginationOpts);
   return okResult({ ...result, page: result.page.map(toAccountSummary) });
 }
 
@@ -198,11 +188,11 @@ export async function listInternAccountsUseCase(
  * revelar existencia.
  */
 export async function getAccountDetailUseCase(
-  ctx: QueryCtx,
+  accounts: AccountReader,
   identity: UserIdentity | null,
   args: { readonly userId: Id<"users"> },
 ): Promise<ApiResult<AccountSummary>> {
-  const caller = await findCallerProfile(ctx, identity);
+  const caller = await findCallerProfile(accounts, identity);
   if (
     caller === null ||
     !canReadAccount({
@@ -213,7 +203,7 @@ export async function getAccountDetailUseCase(
   ) {
     return unauthorized();
   }
-  const target = await getUserById(ctx, args.userId);
+  const target = await accounts.getUserById(args.userId);
   if (target === null || !isStaffAccount(target)) return unauthorized();
   return okResult(toAccountSummary(target));
 }
@@ -232,11 +222,11 @@ export async function getAccountDetailUseCase(
  * practicante no entra por esta vía (TI2-140).
  */
 export async function enableStaffAccount(
-  ctx: MutationCtx,
+  accounts: AccountStore,
   identity: UserIdentity | null,
   args: { readonly userId: Id<"users"> },
 ): Promise<ApiResult<{ userId: Id<"users"> }>> {
-  const caller = await findCallerProfile(ctx, identity);
+  const caller = await findCallerProfile(accounts, identity);
   if (
     caller === null ||
     !canEnableAccount({
@@ -247,7 +237,7 @@ export async function enableStaffAccount(
   ) {
     return unauthorized();
   }
-  const target = await getUserById(ctx, args.userId);
+  const target = await accounts.getUserById(args.userId);
   if (target === null) return unauthorized();
   const check = validateStaffEnablementTarget({
     role: target.role,
@@ -269,7 +259,7 @@ export async function enableStaffAccount(
         return conflict("La cuenta no admite la habilitación en su estado actual.");
     }
   }
-  await patchEnablement(ctx, {
+  await accounts.patchEnablement({
     userId: target._id,
     enabledBy: caller._id,
     enabledAt: Date.now(),
@@ -291,11 +281,11 @@ export async function enableStaffAccount(
  * ya es un administrador autorizado que puede leer el estado.
  */
 export async function revokeStaffAccount(
-  ctx: MutationCtx,
+  accounts: AccountStore,
   identity: UserIdentity | null,
   args: { readonly userId: Id<"users"> },
 ): Promise<ApiResult<{ userId: Id<"users"> }>> {
-  const caller = await findCallerProfile(ctx, identity);
+  const caller = await findCallerProfile(accounts, identity);
   if (
     caller === null ||
     !canRevokeAccount({
@@ -306,7 +296,7 @@ export async function revokeStaffAccount(
   ) {
     return unauthorized();
   }
-  const target = await getUserById(ctx, args.userId);
+  const target = await accounts.getUserById(args.userId);
   if (target === null) return unauthorized();
   if (target._id === caller._id) return conflict("No puedes revocar tu propia cuenta.");
   const check = validateStaffRevocationTarget({
@@ -327,7 +317,7 @@ export async function revokeStaffAccount(
         return conflict("La cuenta no admite la revocación en su estado actual.");
     }
   }
-  await patchRevocation(ctx, {
+  await accounts.patchRevocation({
     userId: target._id,
     revokedBy: caller._id,
     revokedAt: Date.now(),
@@ -346,14 +336,14 @@ export async function revokeStaffAccount(
  * existencia del recurso.
  */
 export async function enableInternAccount(
-  ctx: MutationCtx,
+  accounts: AccountStore,
   identity: UserIdentity | null,
   args: { readonly userId: Id<"users"> },
 ): Promise<Id<"users">> {
-  const caller = await findCallerProfile(ctx, identity);
+  const caller = await findCallerProfile(accounts, identity);
   if (caller === null) deny();
 
-  const target = await getUserById(ctx, args.userId);
+  const target = await accounts.getUserById(args.userId);
   if (target === null) deny();
 
   const check = checkEnablement({
@@ -371,7 +361,7 @@ export async function enableInternAccount(
   });
   if (!check.ok) deny();
 
-  await patchEnablement(ctx, {
+  await accounts.patchEnablement({
     userId: target._id,
     enabledBy: caller._id,
     enabledAt: Date.now(),
@@ -419,7 +409,7 @@ function enablementRejection<T>(reason: EnablementRejectionReason): ApiResult<T>
  * `enablementRejection`.
  */
 async function enableWithDecision(
-  ctx: MutationCtx,
+  accounts: AccountStore,
   identity: UserIdentity | null,
   args: { readonly userId: Id<"users"> },
   check: (input: {
@@ -427,9 +417,9 @@ async function enableWithDecision(
     readonly target: EnablementTarget;
   }) => EnablementCheck,
 ): Promise<ApiResult<{ userId: Id<"users"> }>> {
-  const caller = await findCallerProfile(ctx, identity);
+  const caller = await findCallerProfile(accounts, identity);
   if (caller === null) return unauthorized();
-  const target = await getUserById(ctx, args.userId);
+  const target = await accounts.getUserById(args.userId);
   if (target === null) return unauthorized();
   const decision = check({
     caller: {
@@ -446,7 +436,7 @@ async function enableWithDecision(
     },
   });
   if (!decision.ok) return enablementRejection(decision.reason);
-  await patchEnablement(ctx, {
+  await accounts.patchEnablement({
     userId: target._id,
     enabledBy: caller._id,
     enabledAt: Date.now(),
@@ -464,11 +454,11 @@ async function enableWithDecision(
  * realiza el profesional autorizado sobre cada acompañamiento.
  */
 export async function enableInternByProfessional(
-  ctx: MutationCtx,
+  accounts: AccountStore,
   identity: UserIdentity | null,
   args: { readonly userId: Id<"users"> },
 ): Promise<ApiResult<{ userId: Id<"users"> }>> {
-  return await enableWithDecision(ctx, identity, args, checkInternEnablement);
+  return await enableWithDecision(accounts, identity, args, checkInternEnablement);
 }
 
 /**
@@ -482,11 +472,11 @@ export async function enableInternByProfessional(
  * (cuenta habilitada y asignación activa).
  */
 export async function enableTestProfessionalAccount(
-  ctx: MutationCtx,
+  accounts: AccountStore,
   identity: UserIdentity | null,
   args: { readonly userId: Id<"users"> },
 ): Promise<ApiResult<{ userId: Id<"users"> }>> {
-  return await enableWithDecision(ctx, identity, args, checkTestProfessionalEnablement);
+  return await enableWithDecision(accounts, identity, args, checkTestProfessionalEnablement);
 }
 
 export type BootstrapAdminInput = {
@@ -506,7 +496,7 @@ export type BootstrapAdminInput = {
  * vigente, con fecha de arranque y sin actor previo.
  */
 export async function ensureBootstrapAdmin(
-  ctx: MutationCtx,
+  accounts: AccountStore,
   input: BootstrapAdminInput,
 ): Promise<Id<"users">> {
   const email = normalizeEmail(input.email);
@@ -521,24 +511,24 @@ export async function ensureBootstrapAdmin(
     throw new Error("El arranque exige un correo institucional de personal");
   }
 
-  const existing = await findExistingAdmin(ctx);
+  const existing = await accounts.findExistingAdmin();
   if (existing !== null) {
     throw new Error("Ya existe una cuenta administrativa");
   }
 
-  const duplicate = await findProfileByTokenIdentifier(ctx, tokenIdentifier);
+  const duplicate = await accounts.findProfileByTokenIdentifier(tokenIdentifier);
   if (duplicate !== null) {
     throw new Error("Ya existe un perfil para esta identidad");
   }
 
   // Unicidad de correo (TI2-17): el arranque tampoco puede duplicar el
   // correo de un perfil existente.
-  const emailTaken = await findUserByEmail(ctx, email);
+  const emailTaken = await accounts.findUserByEmail(email);
   if (emailTaken !== null) {
     throw new Error("Ya existe un perfil con este correo");
   }
 
-  return await insertBootstrapAdmin(ctx, {
+  return await accounts.insertBootstrapAdmin({
     email,
     fullName,
     tokenIdentifier,

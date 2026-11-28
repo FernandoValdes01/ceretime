@@ -1,15 +1,6 @@
 import type { PaginationOptions, UserIdentity } from "convex/server";
 import { ConvexError } from "convex/values";
 import type { Doc, Id } from "../../_generated/dataModel";
-import type { QueryCtx } from "../../_generated/server";
-import {
-  findActiveAssignmentsForUser,
-  findProfileByTokenIdentifier,
-  getAccompanimentById,
-  paginateInternalNotes,
-  paginateOwnedAccompaniments,
-  queryAssignedRowsAfter,
-} from "../../infrastructure/accompaniments/repository";
 import {
   AUTHORIZATION_DENIED_MESSAGE,
   authorizeAccompanimentRead,
@@ -22,13 +13,14 @@ import {
   type AccompanimentProjection,
   type AccompanimentView,
 } from "../../domain/accompaniments/accompaniment";
+import type { AccompanimentReadStore } from "./ports";
 
 /**
  * Casos de uso de lectura de acompañamientos (S2).
  *
  * Capa de Aplicación: recibe la identidad ya resuelta en Presentación con
- * `ctx.auth.getUserIdentity()`, carga el perfil y los datos con
- * Infraestructura, y delega cada decisión en Dominio. Nunca acepta un
+ * `ctx.auth.getUserIdentity()`, carga el perfil y los datos por el puerto
+ * `AccompanimentReadStore`, y delega cada decisión en Dominio. Nunca acepta un
  * `userId` del cliente como prueba: el llamante siempre sale del perfil
  * vinculado al `tokenIdentifier` del servidor.
  *
@@ -85,11 +77,11 @@ function projectView(
  * ningún acompañamiento; solo verifica que la cuenta puede operar.
  */
 async function requireAuthorizedProfile(
-  ctx: QueryCtx,
+  store: AccompanimentReadStore,
   identity: UserIdentity | null,
 ): Promise<Doc<"users">> {
   if (identity === null) deny();
-  const profile = await findProfileByTokenIdentifier(ctx, identity?.tokenIdentifier ?? "");
+  const profile = await store.findProfileByTokenIdentifier(identity?.tokenIdentifier ?? "");
   if (profile === null) deny();
   if (profile.institutionalStatus !== "enabled" || profile.accountStatus !== "active") deny();
   return profile;
@@ -100,17 +92,17 @@ async function requireAuthorizedProfile(
  * El Administrador siempre recibe denegación, sin acceso general.
  */
 export async function getAccompanimentDetail(
-  ctx: QueryCtx,
+  store: AccompanimentReadStore,
   identity: UserIdentity | null,
   args: { readonly accompanimentId: Id<"accompaniments"> },
 ): Promise<AccompanimentViewResult> {
-  const profile = await requireAuthorizedProfile(ctx, identity);
+  const profile = await requireAuthorizedProfile(store, identity);
 
-  const accompaniment = await getAccompanimentById(ctx, args.accompanimentId);
+  const accompaniment = await store.getAccompanimentById(args.accompanimentId);
   if (accompaniment === null) deny();
 
   const assignments = toAuthorizableAssignments(
-    await findActiveAssignmentsForUser(ctx, args.accompanimentId, profile._id),
+    await store.findActiveAssignmentsForUser(args.accompanimentId, profile._id),
   );
   const view = authorizeAccompanimentRead({
     profile: toAuthorizableProfile(profile),
@@ -124,14 +116,14 @@ export async function getAccompanimentDetail(
 
 /** Lista los acompañamientos propios del Estudiante, paginado. */
 export async function listOwnedAccompanimentsUseCase(
-  ctx: QueryCtx,
+  store: AccompanimentReadStore,
   identity: UserIdentity | null,
   args: { readonly paginationOpts: PaginationOptions },
 ) {
-  const profile = await requireAuthorizedProfile(ctx, identity);
+  const profile = await requireAuthorizedProfile(store, identity);
   if (listingScopeForRole(profile.role).kind !== "owned") deny();
 
-  const result = await paginateOwnedAccompaniments(ctx, profile._id, args.paginationOpts);
+  const result = await store.paginateOwnedAccompaniments(profile._id, args.paginationOpts);
   const views: AccompanimentViewResult[] = [];
   for (const accompaniment of result.page) {
     const view = authorizeAccompanimentRead({
@@ -159,11 +151,11 @@ export type AssignedListResult = {
  * Estudiante y Administrador reciben denegación.
  */
 export async function listAssignedAccompanimentsUseCase(
-  ctx: QueryCtx,
+  store: AccompanimentReadStore,
   identity: UserIdentity | null,
   args: { readonly limit: number; readonly after?: Id<"accompaniments"> },
 ): Promise<AssignedListResult> {
-  const profile = await requireAuthorizedProfile(ctx, identity);
+  const profile = await requireAuthorizedProfile(store, identity);
   const scope = listingScopeForRole(profile.role);
   if (scope.kind !== "assigned") deny();
   if (!Number.isFinite(args.limit)) deny();
@@ -174,7 +166,7 @@ export async function listAssignedAccompanimentsUseCase(
   let scanned: Id<"accompaniments"> | undefined = undefined;
   let exhausted = false;
   for (let round = 0; round < 10 && seen.size <= limit; round++) {
-    const rows = await queryAssignedRowsAfter(ctx, {
+    const rows = await store.queryAssignedRowsAfter({
       userId: profile._id,
       assignedRole: scope.assignedRole,
       cursor,
@@ -186,7 +178,7 @@ export async function listAssignedAccompanimentsUseCase(
     }
     for (const row of rows) {
       if (seen.has(row.accompanimentId)) continue;
-      const accompaniment = await getAccompanimentById(ctx, row.accompanimentId);
+      const accompaniment = await store.getAccompanimentById(row.accompanimentId);
       if (accompaniment === null) continue;
       seen.set(row.accompanimentId, accompaniment);
     }
@@ -202,7 +194,7 @@ export async function listAssignedAccompanimentsUseCase(
   const views: AccompanimentViewResult[] = [];
   for (const accompaniment of distinct.slice(0, limit)) {
     const assignments = toAuthorizableAssignments(
-      await findActiveAssignmentsForUser(ctx, accompaniment._id, profile._id),
+      await store.findActiveAssignmentsForUser(accompaniment._id, profile._id),
     );
     const view = authorizeAccompanimentRead({
       profile: toAuthorizableProfile(profile),
@@ -234,20 +226,20 @@ export type InternalNoteResult = {
  * denegación.
  */
 export async function getInternalNotesUseCase(
-  ctx: QueryCtx,
+  store: AccompanimentReadStore,
   identity: UserIdentity | null,
   args: {
     readonly accompanimentId: Id<"accompaniments">;
     readonly paginationOpts: PaginationOptions;
   },
 ) {
-  const profile = await requireAuthorizedProfile(ctx, identity);
+  const profile = await requireAuthorizedProfile(store, identity);
 
-  const accompaniment = await getAccompanimentById(ctx, args.accompanimentId);
+  const accompaniment = await store.getAccompanimentById(args.accompanimentId);
   if (accompaniment === null) deny();
 
   const assignments = toAuthorizableAssignments(
-    await findActiveAssignmentsForUser(ctx, args.accompanimentId, profile._id),
+    await store.findActiveAssignmentsForUser(args.accompanimentId, profile._id),
   );
   const allowed = authorizeInternalNoteRead({
     profile: toAuthorizableProfile(profile),
@@ -256,7 +248,7 @@ export async function getInternalNotesUseCase(
   });
   if (!allowed) deny();
 
-  const result = await paginateInternalNotes(ctx, args.accompanimentId, args.paginationOpts);
+  const result = await store.paginateInternalNotes(args.accompanimentId, args.paginationOpts);
   const page: InternalNoteResult[] = result.page.map((note) => ({
     _id: note._id,
     accompanimentId: note.accompanimentId,

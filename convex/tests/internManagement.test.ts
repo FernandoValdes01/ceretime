@@ -7,6 +7,7 @@ import {
   assignAccompaniment,
   updateAccompanimentAssignment,
 } from "../application/accompaniments/commands";
+import { accompanimentAssignmentStore } from "../infrastructure/accompaniments/repository";
 import type { Id } from "../_generated/dataModel";
 import schema from "../schema";
 
@@ -946,11 +947,17 @@ test("conceder o modificar con vencimiento exige programador", async () => {
   // Sin programador el vencimiento nunca se ejecutaría: falla fuerte en vez
   // de conceder un acceso que no vence en vivo
   await expect(
-    t.run((ctx) => assignAccompaniment(ctx, identity, triple, { validUntil: Date.now() + 1_000 })),
+    t.run((ctx) =>
+      assignAccompaniment(accompanimentAssignmentStore(ctx), identity, triple, {
+        validUntil: Date.now() + 1_000,
+      }),
+    ),
   ).rejects.toThrow("programador");
   await expect(
     t.run((ctx) =>
-      updateAccompanimentAssignment(ctx, identity, triple, { validUntil: Date.now() + 1_000 }),
+      updateAccompanimentAssignment(accompanimentAssignmentStore(ctx), identity, triple, {
+        validUntil: Date.now() + 1_000,
+      }),
     ),
   ).rejects.toThrow("programador");
 });

@@ -825,3 +825,72 @@ export function accompanimentInternsReader(ctx: DbReader) {
     takeInternProfiles: (limit: number) => takeInternProfiles(ctx, limit),
   };
 }
+
+/**
+ * Lecturas de las consultas de acompañamientos. Cumple por forma el puerto
+ * `AccompanimentReadStore` de Aplicación sin importarlo; las consultas lo
+ * crean con su `ctx`.
+ */
+export function accompanimentReadStore(ctx: DbReader) {
+  return {
+    findProfileByTokenIdentifier: (tokenIdentifier: string) =>
+      findProfileByTokenIdentifier(ctx, tokenIdentifier),
+    getAccompanimentById: (accompanimentId: Id<"accompaniments">) =>
+      getAccompanimentById(ctx, accompanimentId),
+    findActiveAssignmentsForUser: (accompanimentId: Id<"accompaniments">, userId: Id<"users">) =>
+      findActiveAssignmentsForUser(ctx, accompanimentId, userId),
+    paginateOwnedAccompaniments: (studentId: Id<"users">, paginationOpts: PaginationOptions) =>
+      paginateOwnedAccompaniments(ctx, studentId, paginationOpts),
+    queryAssignedRowsAfter: (input: {
+      readonly userId: Id<"users">;
+      readonly assignedRole: "professional" | "intern";
+      readonly cursor: Id<"accompaniments"> | undefined;
+      readonly take: number;
+    }) => queryAssignedRowsAfter(ctx, input),
+    paginateInternalNotes: (
+      accompanimentId: Id<"accompaniments">,
+      paginationOpts: PaginationOptions,
+    ) => paginateInternalNotes(ctx, accompanimentId, paginationOpts),
+  };
+}
+
+/**
+ * Lecturas y escrituras de las asignaciones de un acompañamiento. Cumple por
+ * forma el puerto `AccompanimentAssignmentStore` de Aplicación sin
+ * importarlo; las mutations y las vías internas lo crean con su `ctx`, así la
+ * operación sigue en una sola transacción.
+ */
+export function accompanimentAssignmentStore(ctx: MutationCtx) {
+  return {
+    findProfileByTokenIdentifier: (tokenIdentifier: string) =>
+      findProfileByTokenIdentifier(ctx, tokenIdentifier),
+    getAccompanimentById: (accompanimentId: Id<"accompaniments">) =>
+      getAccompanimentById(ctx, accompanimentId),
+    getUserById: (userId: Id<"users">) => getUserById(ctx, userId),
+    getAssignmentById: (assignmentId: Id<"accompanimentAssignments">) =>
+      getAssignmentById(ctx, assignmentId),
+    findExistingActiveAssignment: (triple: AssignmentTriple) =>
+      findExistingActiveAssignment(ctx, triple),
+    hasActiveProfessionalAssignment: (input: {
+      readonly accompanimentId: Id<"accompaniments">;
+      readonly userId: Id<"users">;
+    }) => hasActiveProfessionalAssignment(ctx, input),
+    listProfessionalAssignmentHolders: (accompanimentId: Id<"accompaniments">) =>
+      listProfessionalAssignmentHolders(ctx, accompanimentId),
+    takeActiveTripleRows: (triple: AssignmentTriple, take: number) =>
+      takeActiveTripleRows(ctx, triple, take),
+    insertActiveAssignment: (
+      triple: AssignmentTriple,
+      grantedBy: Id<"users">,
+      validity?: { readonly validFrom?: number; readonly validUntil?: number },
+    ) => insertActiveAssignment(ctx, triple, grantedBy, validity),
+    patchAssignmentValidity: (
+      assignmentId: Id<"accompanimentAssignments">,
+      validity: { readonly validFrom?: number | null; readonly validUntil?: number | null },
+    ) => patchAssignmentValidity(ctx, assignmentId, validity),
+    revokeAssignmentRow: (assignmentId: Id<"accompanimentAssignments">, revokedBy: Id<"users">) =>
+      revokeAssignmentRow(ctx, assignmentId, revokedBy),
+    expireAssignmentRow: (assignmentId: Id<"accompanimentAssignments">) =>
+      expireAssignmentRow(ctx, assignmentId),
+  };
+}
