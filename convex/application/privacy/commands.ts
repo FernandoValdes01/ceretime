@@ -18,6 +18,7 @@ import {
 } from "../../domain/privacy/privacy_controls";
 import {
   PRIVACY_REQUEST_REASON_MAX_LENGTH,
+  SUBMITTABLE_PRIVACY_REQUEST_KINDS,
   type PrivacyRequestKind,
   type PrivacyRequestRejectionCause,
   type PrivacyResponseOutcome,
@@ -56,13 +57,9 @@ import {
  * Opera con datos ficticios.
  */
 
-/** Derechos que esta entrega acepta por la aplicación; bloqueo y oposición son la siguiente tarea. */
-const SUBMITTABLE_KINDS: ReadonlySet<PrivacyRequestKind> = new Set([
-  "access",
-  "rectification",
-  "erasure",
-  "portability",
-]);
+const SUBMITTABLE_KINDS: ReadonlySet<PrivacyRequestKind> = new Set(
+  SUBMITTABLE_PRIVACY_REQUEST_KINDS,
+);
 
 /** Mensaje público cuando el derecho todavía no se presenta desde la aplicación. */
 export const PRIVACY_REQUEST_KIND_UNAVAILABLE_MESSAGE =

@@ -4,15 +4,15 @@ El workflow `Docker Build` publica la Web como imagen en GitHub Container Regist
 
 ## Orden del workflow
 
-1. `Desplegar Convex` instala el workspace y ejecuta `bunx convex deploy` con el secret `CONVEX_DEPLOY_KEY`. La deploy key decide el deployment de destino; con una key de producción, cada push a `main` actualiza las funciones, el schema y los cron jobs de producción, que también usa la Web de Vercel.
+1. `Desplegar Convex` instala el workspace y ejecuta `bunx convex deploy` contra la [instancia propia de Convex en Kubero](convex-kubero.md): la URL sale de la variable `VITE_CONVEX_URL` y la clave del secret `CONVEX_SELF_HOSTED_ADMIN_KEY`. Cada push a `main` actualiza las funciones, el schema y los cron jobs de producción.
 2. `Construir y publicar imagen Web` corre solo si el despliegue de Convex terminó bien, así la imagen nunca llama a funciones que el backend todavía no tiene. Construye `apps/web/Dockerfile` desde la raíz del repositorio y publica la imagen.
 
 El workflow no admite ejecuciones simultáneas: un push nuevo espera a que termine el anterior en lugar de cancelarlo a mitad del despliegue.
 
 ## Configuración del repositorio
 
-- Secret `CONVEX_DEPLOY_KEY`: deploy key del deployment que se publica (dashboard de Convex → Project Settings → Deploy Keys). Sin él, el job de Convex falla antes de desplegar.
-- Variables `VITE_CONVEX_URL` y `VITE_CONVEX_SITE_URL`: URL `.convex.cloud` y `.convex.site` del mismo deployment de la deploy key. Son públicas y Vite las incrusta en el bundle; el build falla si faltan.
+- Secret `CONVEX_SELF_HOSTED_ADMIN_KEY`: clave administrativa de la instancia de Kubero. Sin ella, el job de Convex falla antes de desplegar.
+- Variables `VITE_CONVEX_URL` y `VITE_CONVEX_SITE_URL`: dominios de la API y de las acciones HTTP de esa instancia, sin barra final. `VITE_CONVEX_URL` es también el destino del despliegue de funciones. Son públicas y Vite las incrusta en el bundle; el build falla si faltan.
 - Variable opcional `VITE_SITE_URL`: origen público donde se sirve la imagen. Debe ser `SITE_URL` o figurar en `BETTER_AUTH_TRUSTED_ORIGINS` del deployment para que el inicio de sesión vuelva a la Web.
 
 Cambiar cualquiera de las variables `VITE_*` exige construir otra imagen.

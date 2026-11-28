@@ -179,6 +179,13 @@ export function AuthScreen() {
           </button>
         ))}
       </div>
+      {/* El aviso es público (TI2-171): se lee antes de iniciar sesión. Un
+          enlace simple, porque el acceso también se muestra fuera del router. */}
+      <p>
+        <a className="auth-link" href="/privacidad">
+          Aviso de privacidad
+        </a>
+      </p>
     </section>
   );
 }
