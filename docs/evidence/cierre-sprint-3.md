@@ -27,7 +27,7 @@ Este documento está en curso. Fecha de corte: 27/11/2026.
 | Reintentos y recuperación de avisos y Calendar | TI2-159, TI2-160 y TI2-162 | S4 | `572fa661` | Cumplido en pruebas existentes con dobles. Envío real pendiente |
 | Contratos completos para Web y Mobile | TI2-179 | S4 | `1a96cdff` | Cumplido con un hallazgo abierto |
 | Correo real | TI2-179 sobre TI2-159 | S4 | `572fa661` | Cumplido en el deployment de desarrollo, con un remitente de prueba (ver «Correo real») |
-| Push real | TI2-179 sobre TI2-160 | S4 | `4f7a3e8b` | Envío cumplido en el deployment de desarrollo. Falta la pantalla para activarlo (ver «Push real») |
+| Push real | TI2-179 sobre TI2-160 | S4 | `4f7a3e8b` | Envío cumplido en el deployment de desarrollo. La pantalla para activarlo llegó después con TI2-172 (ver «Push real») |
 | Google Calendar y `.ics` reales | TI2-179 sobre TI2-122, TI2-161 y TI2-162 | S4 | `572fa661` | Cumplido en el recorrido: vínculo, evento creado al reservar y `.ics` descargado |
 | Validación funcional por CERETI | CERETI | — | — | Pendiente. Fecha y responsable sin registrar |
 | Validación del lenguaje por CERETI | CERETI | — | — | Pendiente. Fecha y responsable sin registrar |
@@ -92,9 +92,11 @@ Este documento está en curso. Fecha de corte: 27/11/2026.
 
 **Configuración.** En el deployment de desarrollo se cargaron `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` y `VAPID_SUBJECT` con un par P-256 nuevo, generado como indica `docs/operaciones/notificaciones-push.md`. La clave privada pasó directo a `bunx convex env set` sin mostrarse en la terminal ni guardarse en archivos. Producción no cambia.
 
-**Suscripción.** Ninguna pantalla de la Web activa push, así que el navegador se suscribió desde la consola de Chrome con las mismas funciones que trae la Web: `subscribeBrowserPush` de `apps/web/src/infrastructure/notifications/web-push.ts` y la mutación pública `activatePushSubscription`. El navegador integrado de la herramienta de desarrollo tiene las notificaciones bloqueadas y no sirve para esta prueba.
+**Suscripción.** El 27/11/2026 ninguna pantalla de la Web activaba push, así que el navegador se suscribió desde la consola de Chrome con las mismas funciones que trae la Web: `subscribeBrowserPush` de `apps/web/src/infrastructure/notifications/web-push.ts` y la mutación pública `activatePushSubscription`. El navegador integrado de la herramienta de desarrollo tiene las notificaciones bloqueadas y no sirve para esta prueba.
 
 **Resultado.** Pasos 20 y 21 del recorrido. El aviso salió por push y por correo al primer intento y el Estudiante vio la notificación del sistema. Su texto lo define `toExternalNotification`, el mismo que usa el correo, sin mencionar a CERETI ni el recurso.
+
+**Pantalla.** Después del recorrido, TI2-172 (#214) agregó la activación de push en `/estudiante/avisos` y `/profesional/avisos`, con las mismas funciones. Se prueba en producción cuando la Web de producción se actualice (ver «Partes faltantes»).
 
 ## Cobertura existente por tema
 
@@ -123,7 +125,7 @@ Este documento está en curso. Fecha de corte: 27/11/2026.
 ## Partes faltantes
 
 - **Recorrido en la interfaz con los cuatro roles.** Hay una sola cuenta institucional; el Estudiante recorre la interfaz y los demás roles operan por la API pública con `--identity`. Ver las pantallas del Profesional, el Practicante y el Administrador requiere cuentas que puedan iniciar sesión.
-- **Pantalla para activar push.** La Web tiene el service worker y el adaptador del navegador, pero ninguna pantalla los usa: hoy la suscripción solo se hace desde la consola.
+- **Web de producción sin actualizar.** Desde #213 (TI2-171) falla la construcción de la imagen Web: `privacy-notice.ts` importa `docs/privacidad-aviso.md` y `apps/web/Dockerfile` no copia `docs/`. Por eso «Deploy to Kubero» queda omitido y `ceretime.inf.uct.cl` sirve el build del 27/11/2026 a las 21:48, mientras Convex sí se despliega. La corrección del Dockerfile va en una PR aparte.
 - **Formato de error de acompañamientos.** Las consultas de `presentation/accompaniments` rechazan con el mensaje «No autorizado» sin el objeto `{ code, message }` que solicitudes adoptó en TI2-181. El recorrido lo confirma: al Practicante revocado, `getAccompaniment` responde `No autorizado` y `getFollowUpRecord`, `{"code":"unauthorized","message":"No autorizado"}`. No impide el uso, pero un cliente nuevo debe tratar las dos formas.
 - **Validaciones de CERETI.** Sin fecha ni responsable.
 - **Dependencias.** TI2-178 (WCAG) y TI2-174 (conservación) bloquean esta tarea y no están integradas; «todo funciona junto en la misma versión» se vuelve a comprobar cuando lo estén.
