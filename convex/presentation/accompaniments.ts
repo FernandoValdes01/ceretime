@@ -24,10 +24,12 @@ import {
 import { mutation, query, type MutationCtx } from "../_generated/server";
 import { internal } from "../_generated/api";
 import {
+  accompanimentAssignmentStore,
   accompanimentInternsReader,
   accompanimentNeedsAtDateReader,
   accompanimentNeedsWriter,
   accompanimentProfessionalsReader,
+  accompanimentReadStore,
   accompanimentStatusWriter,
 } from "../infrastructure/accompaniments/repository";
 import {
@@ -131,20 +133,21 @@ export const getAccompaniment = query({
   returns: accompanimentViewValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return await getAccompanimentDetail(ctx, identity, args);
+    return await getAccompanimentDetail(accompanimentReadStore(ctx), identity, args);
   },
 });
 
 /**
- * Lista los acompañamientos propios del Estudiante, paginado.
+ * Lista los acompañamientos propios del Estudiante, paginado. `status`
+ * opcional filtra antes de paginar (TI4-84); sin él no cambia nada.
  * Cualquier otro rol recibe denegación.
  */
 export const listOwnedAccompaniments = query({
-  args: { paginationOpts: paginationOptsValidator },
+  args: { paginationOpts: paginationOptsValidator, status: v.optional(accompanimentStatusUnion) },
   returns: paginationResultValidator(accompanimentViewValidator),
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return await listOwnedAccompanimentsUseCase(ctx, identity, args);
+    return await listOwnedAccompanimentsUseCase(accompanimentReadStore(ctx), identity, args);
   },
 });
 
@@ -161,7 +164,7 @@ export const listAssignedAccompaniments = query({
   returns: assignedListValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return await listAssignedAccompanimentsUseCase(ctx, identity, args);
+    return await listAssignedAccompanimentsUseCase(accompanimentReadStore(ctx), identity, args);
   },
 });
 
@@ -248,7 +251,7 @@ export const getInternalNotes = query({
   returns: paginationResultValidator(internalNoteValidator),
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return await getInternalNotesUseCase(ctx, identity, args);
+    return await getInternalNotesUseCase(accompanimentReadStore(ctx), identity, args);
   },
 });
 
@@ -278,7 +281,7 @@ export const assignAccompanimentAccess = mutation({
     const schedule = schedulingFor(ctx);
     return unwrapApiResult(
       await assignAccompaniment(
-        ctx,
+        accompanimentAssignmentStore(ctx),
         identity,
         { accompanimentId, userId, assignedRole },
         { validFrom, validUntil },
@@ -312,7 +315,7 @@ export const updateAccompanimentAccess = mutation({
     const schedule = schedulingFor(ctx);
     return unwrapApiResult(
       await updateAccompanimentAssignment(
-        ctx,
+        accompanimentAssignmentStore(ctx),
         identity,
         { accompanimentId, userId, assignedRole },
         { validFrom, validUntil },
@@ -339,7 +342,9 @@ export const revokeAccompanimentAccess = mutation({
   returns: v.union(v.number(), v.null()),
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(await revokeAccompaniment(ctx, identity, args));
+    return unwrapApiResult(
+      await revokeAccompaniment(accompanimentAssignmentStore(ctx), identity, args),
+    );
   },
 });
 

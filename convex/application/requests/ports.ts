@@ -79,14 +79,52 @@ export interface RequestTransitionRecorder<RequestId extends string, UserId exte
   }): Promise<void>;
 }
 
-/** Si el Profesional tiene una toma activa de la solicitud. */
+/** Si el Profesional tiene una toma activa de la solicitud: la que deja operarla. */
 export interface RequestTakeReader<RequestId extends string, UserId extends string> {
   hasActiveTake(requestId: RequestId, userId: UserId): Promise<boolean>;
+}
+
+/**
+ * Si el Profesional tiene una toma activa o terminada de la solicitud
+ * (TI4-84): deja leer el detalle a quien la revisa y a quien la revisó hasta
+ * que terminó. Una toma liberada no cuenta. Las operaciones del Profesional
+ * también autorizan con ella: sobre una solicitud terminada la política de
+ * estados responde `conflict`, como cuando la toma seguía activa.
+ */
+export interface ReadableTakeReader<RequestId extends string, UserId extends string> {
+  hasReadableTake(requestId: RequestId, userId: UserId): Promise<boolean>;
 }
 
 /** Crea la toma activa del Profesional y marca la solicitud como tomada por él. */
 export interface RequestTakeRecorder<RequestId extends string, UserId extends string> {
   recordTake(requestId: RequestId, professionalId: UserId): Promise<void>;
+}
+
+/**
+ * Libera la toma activa del Profesional (TI4-84): la cierra como `revoked`
+ * con quién la liberó y cuándo, y deja la solicitud sin `takenBy`, así los
+ * avisos de quien la tome después no le llegan a quien la liberó.
+ */
+export interface RequestTakeReleaser<RequestId extends string, UserId extends string> {
+  releaseTake(input: {
+    readonly requestId: RequestId;
+    readonly holderId: UserId;
+    readonly releasedBy: UserId;
+    readonly releasedAt: number;
+  }): Promise<void>;
+}
+
+/**
+ * Cierra como `finished` las tomas activas de una solicitud que llegó a un
+ * estado terminal (TI4-84). Quien la revisó la sigue leyendo.
+ */
+export interface RequestTakeFinisher<RequestId extends string> {
+  finishTakes(requestId: RequestId, finishedAt: number): Promise<void>;
+}
+
+/** Solicitudes con toma activa del Profesional, para liberarlas al revocar su cuenta. */
+export interface ActiveTakesReader<RequestId extends string, UserId extends string> {
+  listActiveTakeRequestIds(userId: UserId): Promise<readonly RequestId[]>;
 }
 
 /**
@@ -191,8 +229,11 @@ export interface RequestListReader<RequestId extends string, UserId extends stri
   listReceivedRequests(
     options: PaginationOptions,
   ): Promise<PaginationResult<StoredRequestRow<RequestId, UserId>>>;
-  /** Tomas activas del usuario ordenadas por solicitud, así las duplicadas quedan juntas. */
-  listActiveTakes(
+  /**
+   * Tomas activas y terminadas del usuario, sin las liberadas, ordenadas por
+   * solicitud: así las duplicadas quedan juntas.
+   */
+  listReviewTakes(
     userId: UserId,
     options: PaginationOptions,
   ): Promise<PaginationResult<{ readonly requestId: RequestId }>>;

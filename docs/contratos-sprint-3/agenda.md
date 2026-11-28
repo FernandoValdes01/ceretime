@@ -131,6 +131,22 @@ Compatibilidad: el cambio de forma de `searchSlots` rompe a un cliente que leía
 
 Comprobación: `convex/domain/availability/official_channel.test.ts` prueba motivo, código y canales; `convex/application/availability/availability.test.ts` prueba cupo ocupado, sala incompatible (también cuando cubre solo una de dos necesidades), sala retirada (que no se atribuye a las necesidades), que todos los horarios ocupados e incompatibles responden `needs_not_met` y que el único compatible ocupado responde `slots_occupied`, que la página tras el último cupo llega vacía, que el código no lleva datos personales y es estable, y que el cupo presencial trae su sala; `convex/tests/apiBackend.test.ts` recorre la API con datos ficticios, y `calendar_event.test.ts` fija una clave literal para que mover el hash no cambie los eventos ya creados.
 
+## Horarios por acompañamiento (TI4-84)
+
+`presentation/availability.searchAccompanimentSlots({ accompanimentId, from, to, limit, cursor?, version })` reúne en el servidor a los profesionales reservables del acompañamiento, en vez de que el cliente pida todas las páginas de cada uno con `searchSlots`. Tiene la misma autorización que `searchSlots` (TI2-86) y devuelve la misma unión por `status`, con los mismos campos y la sala de cada cupo presencial. La zona horaria la fija el servidor (`AGENDA_TIME_ZONE`).
+
+- Los cupos se ordenan por `startAt`. Los equivalentes de varios profesionales, con la misma hora de inicio y de término, la misma modalidad y la misma sala, se muestran una sola vez, porque el Estudiante reserva una hora y no elige profesional.
+- Entre cupos equivalentes, el servidor elige con una regla fija: el profesional con menos atenciones no canceladas esa semana civil, de lunes a lunes en la zona de la agenda, y si empatan, el de menor identificador. Si ese cupo está ocupado, ofrece el del siguiente profesional. El resultado no depende del orden en que llegan los profesionales, así Web y Mobile ofrecen lo mismo.
+- La compatibilidad con las necesidades vigentes se evalúa en toda la ventana, pero la ocupación se comprueba solo hasta llenar la página y saber si hay más. La página siguiente empieza en el cursor y no vuelve a comprobar la anterior.
+- `nextCursor` codifica la posición del último cupo entregado (su inicio y su clave de equivalencia), no su identificador. Sigue sirviendo aunque ese cupo se ocupe entre consultas. Un cursor que esta consulta no emitió responde `conflict`.
+- Un profesional cuya disponibilidad no se puede leer o expandir se omite y los demás siguen ofreciendo sus cupos. Solo si fallan todos responde `conflict`.
+
+Sin ningún cupo compatible y libre en la primera página responde `no_compatible_slot`. El motivo sale de lo descartado entre todos los profesionales, con la misma prioridad de `decideNoCompatibleSlotReason`: `slots_occupied` si algún cupo compatible estaba ocupado, `needs_not_met` si solo hubo cupos que no cubren las necesidades, y `no_published_slots` si no hay cupos publicados o no hay profesionales reservables. Tras el último cupo, la página siguiente llega vacía.
+
+`searchSlots` sigue publicado hasta que la Web migre; retirarlo es parte de la PR Web o de una posterior. Mobile todavía no consume ninguna de las dos: TI4 construirá Horarios (TI4-81) sobre `searchAccompanimentSlots`.
+
+Comprobación: `convex/application/availability/accompaniment_slots.test.ts` cuenta las comprobaciones de ocupación de dos páginas, compara el resultado con los profesionales en otro orden, ocupa el cupo del cursor entre consultas, hace fallar a un profesional y prueba la autorización; `convex/domain/availability/accompaniment_slots.test.ts` prueba la semana civil, la clave, el cursor y el orden.
+
 ## Pendientes
 
 Siguen en otras issues, que se apoyan en lo que entrega esta:
@@ -141,6 +157,14 @@ Siguen en otras issues, que se apoyan en lo que entrega esta:
 - Sacar de las atenciones futuras a un profesional que se retira del acompañamiento: TI2-152. Hoy solo sale al reagendar la atención.
 - La búsqueda de cupos comunes a varios profesionales (`searchSlots` recibe un solo `professionalId`) queda para la coordinación en Web; la reserva igual revalida la disponibilidad de cada uno.
 - El máximo de profesionales por atención y los topes de apoyos son provisionales.
+
+## TI4-84: motivo de cancelación de CERETI
+
+`cancelAppointment` exige motivo con texto cuando cancela CERETI (`cancelled_by_cereti`) y lo deja opcional para el Estudiante, como dice el MER. Desde TI4-84, el motivo ausente o en blanco de CERETI responde `appointment_fields_invalid` con el mensaje «Se requiere el motivo para cancelar la atención.», para que el cliente lo muestre junto al campo. Antes respondía `conflict`, igual que una atención que no admite cancelarse.
+
+`appointment_fields_invalid` se responde solo cuando la cancelación procedería con un motivo. Una atención en un estado que no admite cancelar, o que ya comenzó, sigue respondiendo `conflict` aunque falte el motivo. Ningún rechazo escribe, audita ni avisa.
+
+Mobile importa `convex/domain/errors/api_error.ts`: el código nuevo se suma a `API_ERROR_CODE_VALUES` y a `API_ERROR_MESSAGES`, así que `toMobileOperationError` ya muestra su mensaje. La Web exige el motivo antes de enviar y muestra el mensaje del error; marcar el campo con el código es parte de la PR Web.
 
 ## TI2-155: explicación del rechazo y cambios desde el inicio
 

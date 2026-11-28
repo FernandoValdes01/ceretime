@@ -136,6 +136,120 @@ export const migrateLegacyAssignments = internalMutation({
 });
 
 /**
+ * Migración de vencimientos (TI4-84): `expired` en vez de `revoked`.
+ *
+ * Hasta TI4-84 el vencimiento programado de una asignación (TI2-140) dejaba
+ * `status: "revoked"` con `revokedAt` y sin `revokedBy`, y solo se distinguía
+ * de una revocación por la falta de actor. Desde TI4-84 deja `expired` con
+ * `expiredAt`, como `ACCESOS_PRACTICANTE.estado = vencido` del MER. Esta
+ * migración pasa a `expired` las filas `revoked` sin `revokedBy`
+ * cuya `validUntil` ya pasó: mueve `revokedAt` a `expiredAt`, o usa
+ * `validUntil` si la fila no trae fecha, sin inventar actor. Una fila
+ * revocada sin actor y sin ventana vencida, como las revocadas a mano antes
+ * de TI2-16, no se toca. Es idempotente: una fila ya `expired` no vuelve a
+ * coincidir.
+ *
+ * Mismo procedimiento que las demás: la ejecuta un Administrador vigente y
+ * el barrido es paginado, repitiendo cada llamada con el `continueCursor`
+ * devuelto hasta que `isDone` sea verdadero. Ninguna autorización cambia,
+ * porque solo `active` da acceso.
+ */
+export const reclassifyExpiredAssignments = internalMutation({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
+    await requireAdminOperator(ctx);
+
+    const result = await ctx.db.query("accompanimentAssignments").paginate(args.paginationOpts);
+    const now = Date.now();
+    let reclassified = 0;
+    const reclassifiedIds = [];
+    for (const row of result.page) {
+      const expiredBySystem =
+        row.status === "revoked" &&
+        row.revokedBy === undefined &&
+        row.validUntil !== undefined &&
+        row.validUntil <= now;
+      if (!expiredBySystem) continue;
+      await ctx.db.patch(row._id, {
+        status: "expired",
+        expiredAt: row.revokedAt ?? row.validUntil,
+        revokedAt: undefined,
+      });
+      reclassified += 1;
+      if (reclassifiedIds.length < MIGRATION_SAMPLE_SIZE) reclassifiedIds.push(row._id);
+    }
+    return {
+      scanned: result.page.length,
+      reclassified,
+      isDone: result.isDone,
+      continueCursor: result.continueCursor,
+      reclassifiedIds,
+    };
+  },
+});
+
+/**
+ * Migración del historial de cuentas (TI4-84): un evento por cuenta.
+ *
+ * Hasta TI4-84 la fila de `users` guardaba solo los últimos `enabledBy`,
+ * `enabledAt`, `revokedBy` y `revokedAt`. Esta migración siembra en
+ * `accountEnablements` un evento por cuenta con esos campos, sin inventar
+ * actor ni fecha: la habilitación con su fecha y su actor, si lo tiene, y la
+ * revocación solo si la cuenta está revocada y su fecha es posterior a la
+ * habilitación. Una cuenta que nunca se habilitó (`enabledAt` ausente) no
+ * recibe evento. Las habilitaciones y revocaciones anteriores a la última ya
+ * no están en ninguna fila y no se pueden recuperar.
+ *
+ * Es idempotente: una cuenta que ya tiene algún evento no se toca. Mismo
+ * procedimiento que las demás: la ejecuta un Administrador vigente, por
+ * páginas, hasta que `isDone` sea verdadero.
+ */
+export const seedAccountEnablements = internalMutation({
+  args: { paginationOpts: paginationOptsValidator },
+  handler: async (ctx, args) => {
+    await requireAdminOperator(ctx);
+
+    const result = await ctx.db.query("users").paginate(args.paginationOpts);
+    let seeded = 0;
+    let neverEnabled = 0;
+    const seededIds = [];
+    for (const user of result.page) {
+      const existing = await ctx.db
+        .query("accountEnablements")
+        .withIndex("by_user_and_enabledAt", (q) => q.eq("userId", user._id))
+        .first();
+      if (existing !== null) continue;
+      if (user.enabledAt === undefined) {
+        neverEnabled += 1;
+        continue;
+      }
+      const revoked =
+        user.institutionalStatus === "disabled" &&
+        user.revokedAt !== undefined &&
+        user.revokedAt >= user.enabledAt;
+      await ctx.db.insert("accountEnablements", {
+        userId: user._id,
+        role: user.role,
+        ...(user.enabledBy === undefined ? {} : { enabledBy: user.enabledBy }),
+        enabledAt: user.enabledAt,
+        ...(revoked && user.revokedBy !== undefined ? { revokedBy: user.revokedBy } : {}),
+        ...(revoked ? { revokedAt: user.revokedAt } : {}),
+      });
+      seeded += 1;
+      if (seededIds.length < MIGRATION_SAMPLE_SIZE) seededIds.push(user._id);
+    }
+    return {
+      scanned: result.page.length,
+      seeded,
+      neverEnabled,
+      isDone: result.isDone,
+      continueCursor: result.continueCursor,
+      seededIds,
+    };
+  },
+});
+
+/**
  * Migración de solicitudes (TI2-135): procedencia de las filas anteriores.
  *
  * Las filas de `requests` anteriores a TI2-135 no tienen `provenance`. Hasta

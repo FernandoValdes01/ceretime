@@ -37,6 +37,7 @@ import {
   privacyRetentionDispositionUnion,
   privacyRetentionExceptionKindUnion,
   requestStatusUnion,
+  requestTakeStatusUnion,
   requestProvenanceValidator,
   roleUnion,
 } from "./infrastructure/validators";
@@ -98,6 +99,8 @@ export default defineSchema({
     closureReason: v.optional(v.string()),
   })
     .index("by_student", ["studentId"])
+    // Filtro de estado del listado propio (TI4-84): filtra antes de paginar.
+    .index("by_student_and_status", ["studentId", "status"])
     .index("by_request", ["requestId"]),
 
   // Tabla 'accompanimentTransitions', retirada (TI2-165): el historial de
@@ -130,12 +133,14 @@ export default defineSchema({
     userId: v.id("users"),
     assignedRole: assignmentRoleUnion,
     status: assignmentStatusUnion,
-    // Trazabilidad de la vigencia: quién concede y cuándo, y quién revoca
-    // y cuándo. Solo persistencia, sin reglas de autorización.
+    // Trazabilidad de la vigencia: quién concede y cuándo, quién revoca y
+    // cuándo, y cuándo venció la ventana acordada (`expired`, TI4-84), que no
+    // tiene actor. Solo persistencia, sin reglas de autorización.
     grantedBy: v.optional(v.id("users")),
     grantedAt: v.optional(v.number()),
     revokedBy: v.optional(v.id("users")),
     revokedAt: v.optional(v.number()),
+    expiredAt: v.optional(v.number()),
     // Vigencia opcional de la asignación (TI2-138): desde y hasta cuándo vale
     // el acceso. Ausentes en las filas anteriores y cuando la asignación no
     // declara límites. La vigencia efectiva la sigue decidiendo `status`; estas
@@ -237,25 +242,46 @@ export default defineSchema({
     occurredAt: v.number(),
   }).index("by_request", ["requestId"]),
 
-  // Tabla 'requestAssignments': tomas de solicitudes por Profesionales.
-  // Relación explícita que autoriza a operar una solicitud: como máximo una
-  // fila activa por solicitud y usuario. Solo el propio Profesional toma
-  // (nadie asigna a otro); queda auditado quién y cuándo.
+  // Tabla 'accountEnablements': historial de habilitaciones y revocaciones
+  // de cuentas (HABILITACIONES_CUENTA del MER, TI4-84). Cada habilitación
+  // agrega una fila y la revocación siguiente la cierra; `users` sigue
+  // guardando solo el último estado. La habilitación automática del
+  // Estudiante y el arranque administrativo no tienen actor: `enabledBy`
+  // queda ausente. Solo se agrega o se cierra, nunca se borra.
+  accountEnablements: defineTable({
+    userId: v.id("users"),
+    role: roleUnion,
+    enabledBy: v.optional(v.id("users")),
+    enabledAt: v.number(),
+    revokedBy: v.optional(v.id("users")),
+    revokedAt: v.optional(v.number()),
+    revocationReason: v.optional(v.string()),
+  }).index("by_user_and_enabledAt", ["userId", "enabledAt"]),
+
+  // Tabla 'requestAssignments': tomas de solicitudes por Profesionales
+  // (TOMAS_SOLICITUD del MER). Relación explícita que autoriza a operar una
+  // solicitud: como máximo una fila activa por solicitud y usuario. Solo el
+  // propio Profesional toma (nadie asigna a otro); queda auditado quién y
+  // cuándo. Desde TI4-84 tiene su propia unión de estados: liberar deja
+  // `revoked` con quién y cuándo (`liberadaEn` del MER) y el fin de la
+  // solicitud deja `finished` con `finishedAt`.
   requestAssignments: defineTable({
     requestId: v.id("requests"),
     userId: v.id("users"),
     grantedBy: v.id("users"),
     grantedAt: v.number(),
-    status: assignmentStatusUnion,
+    status: requestTakeStatusUnion,
     revokedBy: v.optional(v.id("users")),
     revokedAt: v.optional(v.number()),
+    finishedAt: v.optional(v.number()),
   })
     .index("by_request_and_user_and_status", ["requestId", "userId", "status"])
     .index("by_user_and_status", ["userId", "status"])
-    // Barrido autorizado con duplicadas adyacentes: ordena por solicitud
-    // para que las filas de la misma solicitud queden contiguas y el cursor
-    // solo recuerde la última emitida (O(1)), sin historial lineal.
-    .index("by_user_and_status_and_request", ["userId", "status", "requestId"]),
+    // Barrido de «mis tomadas» con duplicadas adyacentes: ordena por
+    // solicitud para que las filas de la misma solicitud queden contiguas y
+    // el cursor solo recuerde la última emitida (O(1)). Sin estado en el
+    // índice, porque el listado trae las activas y las terminadas (TI4-84).
+    .index("by_user_and_request", ["userId", "requestId"]),
 
   // Tabla 'spaces': catálogo de espacios presenciales (TI2-83). Cada fila
   // identifica una sala por campus, edificio, piso y sala, con sus

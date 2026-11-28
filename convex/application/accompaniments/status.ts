@@ -239,13 +239,13 @@ export async function closeAccompaniment(
   if (plan === null || plan.unrecorded > 0) return conflict();
 
   for (const appointment of plan.future) {
-    const cancelled = await cancelAuthorizedAppointment(deps, appointment, {
+    const outcome = await cancelAuthorizedAppointment(deps, appointment, {
       target: "cancelled_by_cereti",
       actorId: decided.data.actorId,
       occurredAt,
       reason: ACCOMPANIMENT_CLOSURE_CANCEL_REASON,
     });
-    if (!cancelled) return conflict();
+    if (outcome !== "cancelled") return conflict();
   }
 
   await deps.accompaniments.persistStatusChange(input.accompanimentId, decided.data.change);

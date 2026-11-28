@@ -203,9 +203,10 @@ function toReceivedContent(submission: RequestSubmission) {
  * Lecturas y escrituras de una solicitud para los puertos de Aplicación
  * (TI2-141, TI2-181, TI2-143). Cumple `RequestReader`, `RequestRegistrar`,
  * `OfficialRequestRegistrar`, `RequestStatusWriter`,
- * `RequestTransitionRecorder`, `RequestReferralWriter`, `RequestTakeReader` y
- * `RequestTakeRecorder` por forma, sin importarlos; Presentación lo crea con
- * el `ctx` de la mutation, así todo queda en la misma transacción.
+ * `RequestTransitionRecorder`, `RequestReferralWriter`, `RequestTakeReader`,
+ * `RequestTakeRecorder`, `RequestTakeReleaser`, `RequestTakeFinisher` y
+ * `ActiveTakesReader` por forma, sin importarlos; Presentación lo crea con el
+ * `ctx` de la mutation, así todo queda en la misma transacción.
  */
 export function requestStore(ctx: MutationCtx) {
   return {
@@ -218,6 +219,10 @@ export function requestStore(ctx: MutationCtx) {
       await insertActiveTake(ctx, { requestId, userId: professionalId, grantedBy: professionalId });
       await markRequestTaken(ctx, requestId, professionalId);
     },
+    releaseTake: (input: Parameters<typeof releaseActiveTakes>[1]) =>
+      releaseActiveTakes(ctx, input),
+    finishTakes: (requestId: Id<"requests">, finishedAt: number) =>
+      finishActiveTakes(ctx, requestId, finishedAt),
     registerComplete: (studentId: Id<"users">, submission: RequestSubmission, receivedAt: number) =>
       insertReceivedRequest(ctx, {
         ...toReceivedContent(submission),
@@ -286,12 +291,15 @@ export function requestReader(ctx: DbReader) {
     getRequest: (requestId: Id<"requests">) => getRequestById(ctx, requestId),
     hasActiveTake: async (requestId: Id<"requests">, userId: Id<"users">) =>
       (await findActiveTake(ctx, requestId, userId)) !== null,
+    hasReadableTake: (requestId: Id<"requests">, userId: Id<"users">) =>
+      hasReadableTake(ctx, requestId, userId),
+    listActiveTakeRequestIds: (userId: Id<"users">) => listActiveTakeRequestIds(ctx, userId),
     listOwnedRequests: (studentId: Id<"users">, options: PaginationOptions) =>
       listOwnedRequests(ctx, studentId, options),
     listReceivedRequests: (options: PaginationOptions) =>
       listRequestsByStatus(ctx, "received", options),
-    listActiveTakes: (userId: Id<"users">, options: PaginationOptions) =>
-      listActiveTakes(ctx, userId, options),
+    listReviewTakes: (userId: Id<"users">, options: PaginationOptions) =>
+      listReviewTakes(ctx, userId, options),
     listRecentTransitions: (requestId: Id<"requests">) =>
       listRecentRequestTransitions(ctx, requestId),
   };
@@ -383,19 +391,98 @@ export async function listRequestsByStatus(
     .paginate(paginationOpts);
 }
 
-/** Tomas activas del usuario, paginadas por solicitud para duplicadas adyacentes. */
-export async function listActiveTakes(
+/**
+ * Tomas activas y terminadas del usuario, paginadas por solicitud para
+ * duplicadas adyacentes (TI4-84). Un solo índice no puede pedir dos estados,
+ * así que las liberadas se descartan con `filter` después del índice, que ya
+ * acota el barrido al usuario: una página puede traer menos filas que
+ * `numItems` y el cursor sigue avanzando igual.
+ */
+export async function listReviewTakes(
   ctx: DbReader,
   userId: Id<"users">,
   paginationOpts: PaginationOptions,
 ) {
   return await ctx.db
     .query("requestAssignments")
-    .withIndex("by_user_and_status_and_request", (q) =>
-      q.eq("userId", userId).eq("status", "active"),
-    )
+    .withIndex("by_user_and_request", (q) => q.eq("userId", userId))
+    .filter((q) => q.neq(q.field("status"), "revoked"))
     .order("asc")
     .paginate(paginationOpts);
+}
+
+/** Si el usuario tiene una toma activa o terminada de la solicitud (TI4-84). */
+async function hasReadableTake(
+  ctx: DbReader,
+  requestId: Id<"requests">,
+  userId: Id<"users">,
+): Promise<boolean> {
+  if ((await findActiveTake(ctx, requestId, userId)) !== null) return true;
+  const finished = await ctx.db
+    .query("requestAssignments")
+    .withIndex("by_request_and_user_and_status", (q) =>
+      q.eq("requestId", requestId).eq("userId", userId).eq("status", "finished"),
+    )
+    .take(1);
+  return finished.length > 0;
+}
+
+/**
+ * Cierra como liberadas las tomas activas del usuario sobre la solicitud y
+ * deja la solicitud sin `takenBy` (TI4-84).
+ */
+async function releaseActiveTakes(
+  ctx: MutationCtx,
+  input: {
+    readonly requestId: Id<"requests">;
+    readonly holderId: Id<"users">;
+    readonly releasedBy: Id<"users">;
+    readonly releasedAt: number;
+  },
+): Promise<void> {
+  // Como máximo una activa por solicitud y usuario; se recorren todas por si
+  // una fila escrita a mano duplicó la toma.
+  const rows = await ctx.db
+    .query("requestAssignments")
+    .withIndex("by_request_and_user_and_status", (q) =>
+      q.eq("requestId", input.requestId).eq("userId", input.holderId).eq("status", "active"),
+    )
+    .collect();
+  for (const row of rows) {
+    await ctx.db.patch(row._id, {
+      status: "revoked",
+      revokedBy: input.releasedBy,
+      revokedAt: input.releasedAt,
+    });
+  }
+  await ctx.db.patch(input.requestId, { takenBy: undefined });
+}
+
+/** Cierra como terminadas las tomas activas de la solicitud (TI4-84). */
+async function finishActiveTakes(
+  ctx: MutationCtx,
+  requestId: Id<"requests">,
+  finishedAt: number,
+): Promise<void> {
+  // El índice empieza por la solicitud: lee solo sus tomas, que son pocas.
+  for await (const row of ctx.db
+    .query("requestAssignments")
+    .withIndex("by_request_and_user_and_status", (q) => q.eq("requestId", requestId))) {
+    if (row.status === "active") await ctx.db.patch(row._id, { status: "finished", finishedAt });
+  }
+}
+
+/** Solicitudes con toma activa del usuario (TI4-84). */
+async function listActiveTakeRequestIds(
+  ctx: DbReader,
+  userId: Id<"users">,
+): Promise<Id<"requests">[]> {
+  // Solo las abiertas siguen activas: las terminadas pasan a `finished`.
+  const rows = await ctx.db
+    .query("requestAssignments")
+    .withIndex("by_user_and_status", (q) => q.eq("userId", userId).eq("status", "active"))
+    .collect();
+  return [...new Set(rows.map((row) => row.requestId))];
 }
 
 /** Toma activa exacta de la solicitud por el usuario, si existe. */

@@ -120,12 +120,23 @@ export async function findActiveAssignmentsForUser(
   return [...professional, ...intern].filter((row) => isAssignmentWithinValidity(row, now));
 }
 
-/** Página de acompañamientos propios del estudiante. */
+/**
+ * Página de acompañamientos propios del estudiante. Con `status`, el índice
+ * filtra antes de paginar (TI4-84), así un acompañamiento activo no queda
+ * detrás de muchos cerrados.
+ */
 export async function paginateOwnedAccompaniments(
   ctx: DbReader,
   studentId: Id<"users">,
   paginationOpts: PaginationOptions,
+  status?: Doc<"accompaniments">["status"],
 ) {
+  if (status !== undefined) {
+    return await ctx.db
+      .query("accompaniments")
+      .withIndex("by_student_and_status", (q) => q.eq("studentId", studentId).eq("status", status))
+      .paginate(paginationOpts);
+  }
   return await ctx.db
     .query("accompaniments")
     .withIndex("by_student", (q) => q.eq("studentId", studentId))
@@ -305,10 +316,10 @@ export async function revokeAssignmentRow(
 }
 
 /**
- * Revoca la fila por vencimiento de la ventana acordada (TI2-140).
+ * Cierra la fila por vencimiento de la ventana acordada (TI2-140).
  *
- * Solo persistencia: fija `status` en `revoked` con fecha, sin `revokedBy`
- * porque el actor es el sistema, no una persona. La lectura ya excluía la
+ * Solo persistencia: fija `status` en `expired` con `expiredAt`, sin actor
+ * porque lo cierra el sistema y no una persona (TI4-84). La lectura ya excluía la
  * fila vencida; esto cambia el dato para que las consultas suscritas vuelvan
  * a ejecutarse al vencer, ya que el paso del tiempo por sí solo no invalida
  * la caché de Convex.
@@ -318,8 +329,8 @@ export async function expireAssignmentRow(
   assignmentId: Id<"accompanimentAssignments">,
 ) {
   await ctx.db.patch(assignmentId, {
-    status: "revoked",
-    revokedAt: Date.now(),
+    status: "expired",
+    expiredAt: Date.now(),
   });
 }
 
@@ -823,5 +834,77 @@ export function accompanimentInternsReader(ctx: DbReader) {
       }));
     },
     takeInternProfiles: (limit: number) => takeInternProfiles(ctx, limit),
+  };
+}
+
+/**
+ * Lecturas de las consultas de acompañamientos. Cumple por forma el puerto
+ * `AccompanimentReadStore` de Aplicación sin importarlo; las consultas lo
+ * crean con su `ctx`.
+ */
+export function accompanimentReadStore(ctx: DbReader) {
+  return {
+    findProfileByTokenIdentifier: (tokenIdentifier: string) =>
+      findProfileByTokenIdentifier(ctx, tokenIdentifier),
+    getAccompanimentById: (accompanimentId: Id<"accompaniments">) =>
+      getAccompanimentById(ctx, accompanimentId),
+    findActiveAssignmentsForUser: (accompanimentId: Id<"accompaniments">, userId: Id<"users">) =>
+      findActiveAssignmentsForUser(ctx, accompanimentId, userId),
+    paginateOwnedAccompaniments: (
+      studentId: Id<"users">,
+      paginationOpts: PaginationOptions,
+      status?: Doc<"accompaniments">["status"],
+    ) => paginateOwnedAccompaniments(ctx, studentId, paginationOpts, status),
+    queryAssignedRowsAfter: (input: {
+      readonly userId: Id<"users">;
+      readonly assignedRole: "professional" | "intern";
+      readonly cursor: Id<"accompaniments"> | undefined;
+      readonly take: number;
+    }) => queryAssignedRowsAfter(ctx, input),
+    paginateInternalNotes: (
+      accompanimentId: Id<"accompaniments">,
+      paginationOpts: PaginationOptions,
+    ) => paginateInternalNotes(ctx, accompanimentId, paginationOpts),
+  };
+}
+
+/**
+ * Lecturas y escrituras de las asignaciones de un acompañamiento. Cumple por
+ * forma el puerto `AccompanimentAssignmentStore` de Aplicación sin
+ * importarlo; las mutations y las vías internas lo crean con su `ctx`, así la
+ * operación sigue en una sola transacción.
+ */
+export function accompanimentAssignmentStore(ctx: MutationCtx) {
+  return {
+    findProfileByTokenIdentifier: (tokenIdentifier: string) =>
+      findProfileByTokenIdentifier(ctx, tokenIdentifier),
+    getAccompanimentById: (accompanimentId: Id<"accompaniments">) =>
+      getAccompanimentById(ctx, accompanimentId),
+    getUserById: (userId: Id<"users">) => getUserById(ctx, userId),
+    getAssignmentById: (assignmentId: Id<"accompanimentAssignments">) =>
+      getAssignmentById(ctx, assignmentId),
+    findExistingActiveAssignment: (triple: AssignmentTriple) =>
+      findExistingActiveAssignment(ctx, triple),
+    hasActiveProfessionalAssignment: (input: {
+      readonly accompanimentId: Id<"accompaniments">;
+      readonly userId: Id<"users">;
+    }) => hasActiveProfessionalAssignment(ctx, input),
+    listProfessionalAssignmentHolders: (accompanimentId: Id<"accompaniments">) =>
+      listProfessionalAssignmentHolders(ctx, accompanimentId),
+    takeActiveTripleRows: (triple: AssignmentTriple, take: number) =>
+      takeActiveTripleRows(ctx, triple, take),
+    insertActiveAssignment: (
+      triple: AssignmentTriple,
+      grantedBy: Id<"users">,
+      validity?: { readonly validFrom?: number; readonly validUntil?: number },
+    ) => insertActiveAssignment(ctx, triple, grantedBy, validity),
+    patchAssignmentValidity: (
+      assignmentId: Id<"accompanimentAssignments">,
+      validity: { readonly validFrom?: number | null; readonly validUntil?: number | null },
+    ) => patchAssignmentValidity(ctx, assignmentId, validity),
+    revokeAssignmentRow: (assignmentId: Id<"accompanimentAssignments">, revokedBy: Id<"users">) =>
+      revokeAssignmentRow(ctx, assignmentId, revokedBy),
+    expireAssignmentRow: (assignmentId: Id<"accompanimentAssignments">) =>
+      expireAssignmentRow(ctx, assignmentId),
   };
 }

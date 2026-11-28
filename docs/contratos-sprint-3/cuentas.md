@@ -8,13 +8,14 @@ Fuente: `CONTEXT.md` (Administrador sin acceso irrestricto, Practicante con asig
 | --- | --- | --- | --- | --- |
 | `presentation/accounts.listAccounts` | `role` (`professional` o `admin`), `paginationOpts` (`numItems` entero entre 1 y 100) | Página de cuentas del `role` pedido con detalle mínimo | Administrador vigente | `unauthorized`, sin revelar existencia; `numItems` fuera de rango falla con error de regla |
 | `presentation/accounts.getAccount` | `userId` | Detalle mínimo de la cuenta | Administrador vigente, solo personal | `unauthorized`; el `_id` de estudiante o practicante se deniega igual que uno inexistente |
+| `presentation/accounts.listAccountEnablements` | `userId`, `paginationOpts` (`numItems` entero entre 1 y 100) | Página del historial de habilitaciones y revocaciones (TI4-84) | Administrador vigente, solo personal | `unauthorized`, igual que `getAccount` |
 
 ## Mutations públicas
 
 | Operación | Argumentos | Devuelve | Quién | Denegación |
 | --- | --- | --- | --- | --- |
 | `presentation/accounts.enableAccount` | `userId` | `{ userId }` habilitado | Administrador vigente, objetivo profesional o administrador de personal, pendiente o revocado | `unauthorized` sin permiso o con objetivo inexistente o fuera de esta vía; `conflict` con tránsito inválido |
-| `presentation/accounts.revokeAccount` | `userId` | `{ userId }` revocado | Administrador vigente, objetivo profesional o administrador habilitado | `unauthorized` sin permiso o con objetivo inexistente o fuera de esta vía; `conflict` con tránsito inválido o auto-revocación |
+| `presentation/accounts.revokeAccount` | `userId`, `reason?` (hasta 500 caracteres) | `{ userId }` revocado | Administrador vigente, objetivo profesional o administrador habilitado | `unauthorized` sin permiso o con objetivo inexistente o fuera de esta vía; `account_fields_invalid` con un motivo de más de 500 caracteres; `conflict` con tránsito inválido o auto-revocación |
 
 ## Detalle mínimo y resultados
 
@@ -34,6 +35,32 @@ El listado y el detalle entregan `_id`, `email`, `fullName`, `role`, `institutio
 ```
 
 Una cuenta pendiente aún no trae auditoría; una revocada conserva la habilitación y suma la revocación (`revokedBy`, `revokedAt`); una rehabilitada vuelve a `enabled` y conserva ambas auditorías. El estado vigente lo decide `institutionalStatus`, nunca la comparación de fechas.
+
+## Historial de habilitaciones (TI4-84)
+
+Hasta TI4-84 la fila de `users` guardaba solo los últimos `enabledBy`, `enabledAt`, `revokedBy` y `revokedAt`, y las acciones de un Administrador anterior dejaban de ser consultables. Desde TI4-84 la tabla `accountEnablements` (`HABILITACIONES_CUENTA` del MER) guarda un evento por habilitación: cada habilitación agrega uno con el rol, el actor y la fecha, y la revocación siguiente lo cierra con su actor, su fecha y el motivo, si lo hay. `users` sigue guardando el último estado, así que `getAccount` y `listAccounts` no cambian.
+
+Todas las vías de escritura dejan su evento: `enableAccount`, `revokeAccount`, `enableIntern`, `enableTestProfessional`, la habilitación automática del Estudiante en su primer ingreso y el arranque administrativo. Las dos últimas no tienen actor, así que su evento no trae `enabledBy`. La corrección del Estudiante creado en el primer ingreso (TI2-182) cierra su evento sin actor y con el motivo «Corrección del rol creado en el primer ingreso.».
+
+`listAccountEnablements` entrega los eventos del más reciente al más antiguo, con `_id`, `role`, `enabledAt`, y si los hay `enabledBy`, `enabledByName`, `revokedAt`, `revokedBy`, `revokedByName` y `revocationReason`. Los nombres se entregan para que la Web no tenga que buscarlos. La página conserva la forma de `paginate`.
+
+```json
+{
+  "_id": "k57abc...",
+  "role": "professional",
+  "enabledAt": 1762700000000,
+  "enabledBy": "j97def...",
+  "enabledByName": "Administradora Ficticia",
+  "revokedAt": 1762900000000,
+  "revokedBy": "j97def...",
+  "revokedByName": "Administradora Ficticia",
+  "revocationReason": "Término del convenio ficticio"
+}
+```
+
+`revokeAccount` acepta `reason?`. Se recorta y uno vacío no cuenta como motivo; uno de más de 500 caracteres responde `account_fields_invalid` sin escribir, con el mensaje en español.
+
+Las cuentas anteriores a TI4-84 no tienen eventos hasta que se ejecuta la migración interna `internal.operations.migrations.seedAccountEnablements`, que siembra uno por cuenta a partir de los campos de `users` sin inventar actor ni fecha. Las habilitaciones y revocaciones anteriores a la última ya no están guardadas en ninguna fila y no se recuperan.
 
 ## Permisos y datos por rol
 
@@ -120,7 +147,9 @@ La lectura exige cuenta habilitada (`institutionalStatus === "enabled"`) y vigen
 
 Solo el profesional de personal con cuenta habilitada y vigente habilita, concede, modifica o retira: la cuenta de prueba jamás habilita ni concede, aunque tenga asignación vigente, y tampoco opera solicitudes (toma, aceptación, respuesta o cierre). La concesión a practicante exige llamante autorizado sobre el mismo acompañamiento y objetivo practicante habilitado y vigente; la concesión a cuenta de prueba (`professional` con correo `@alu.uct.cl`) exige lo mismo y queda limitada a esos acompañamientos explícitos y auditados (`grantedBy`, `grantedAt`, `revokedBy`, `revokedAt`). La vía interna entre profesionales de personal sigue en arranque; la vía pública exige alcance en todos los casos.
 
-La vigencia acordada (`validFrom`/`validUntil`) es opcional, solo para Practicantes y cuentas de prueba (TI2-165), y se aplica en la lectura junto a `status`: al conceder y modificar se comprueba su coherencia (`validFrom` no posterior a `validUntil` y con instantes finitos y no negativos) y la modificación no cambia `status` ni el historial de concesión; el retiro cierra todas las filas activas de la combinación para no dejar acceso tras informar éxito. Como el paso del tiempo no invalida la caché de consultas suscritas, la vía pública programa la revocación al vencer a través del puerto `AssignmentScheduler` del caso de uso (`ctx.scheduler.runAt` con actor sistema: `revokedAt` sin `revokedBy`); el comienzo no se programa y la ventana acordada se conserva intacta en la fila para lecturas nuevas. El filtro de lectura queda como defensa y la guarda idempotente ignora programaciones obsoletas (ventana cambiada, quitada o fila ya revocada). Conceder o modificar con vencimiento sin programador es un error interno, nunca un rechazo al cliente.
+La vigencia acordada (`validFrom`/`validUntil`) es opcional, solo para Practicantes y cuentas de prueba (TI2-165), y se aplica en la lectura junto a `status`: al conceder y modificar se comprueba su coherencia (`validFrom` no posterior a `validUntil` y con instantes finitos y no negativos) y la modificación no cambia `status` ni el historial de concesión; el retiro cierra todas las filas activas de la combinación para no dejar acceso tras informar éxito. Como el paso del tiempo no invalida la caché de consultas suscritas, la vía pública programa el vencimiento a través del puerto `AssignmentScheduler` del caso de uso (`ctx.scheduler.runAt`); desde TI4-84 deja la fila `expired` con `expiredAt` y sin actor, distinta de una revocación, que queda `revoked` con `revokedBy` y `revokedAt`. El comienzo no se programa y la ventana acordada se conserva intacta en la fila para lecturas nuevas. El filtro de lectura queda como defensa y la guarda idempotente ignora programaciones obsoletas (ventana cambiada, quitada o fila ya revocada o vencida). Solo `active` autoriza: una asignación `expired` no da acceso al detalle ni al listado.
+
+Hasta TI4-84 el vencimiento quedaba como `revoked` sin `revokedBy`. La migración interna `internal.operations.migrations.reclassifyExpiredAssignments`, que ejecuta un Administrador vigente por páginas, pasa a `expired` las filas `revoked` sin `revokedBy` cuya `validUntil` ya pasó, y mueve `revokedAt` a `expiredAt` sin inventar actor. Una fila revocada sin actor y sin ventana vencida no se toca. Conceder o modificar con vencimiento sin programador es un error interno, nunca un rechazo al cliente.
 
 El practicante asignado lee la vista minimizada (`_id`, `status`, `objective`, `view`) y no escribe ni ve notas internas: asignar, modificar o revocar por su parte responde `unauthorized` y `getInternalNotes` también. La cuenta de prueba lee vista completa solo en lo asignado y vigente, sin acceso general por dominio institucional.
 

@@ -1,12 +1,8 @@
 import { useEffect, useRef } from "react";
 import { Link } from "@tanstack/react-router";
-import { ConvexError } from "convex/values";
-// Fuente canónica del contrato de errores (TI2-23, TI2-88): el Backend
-// responde toda denegación con este mensaje genérico, sin motivo ni
-// existencia del recurso. Se importa del barrel, no se duplica el literal.
-import { UNAUTHORIZED_ERROR_MESSAGE } from "../../../../../convex/domain/index.ts";
 import { toCalendarCallbackStatus } from "../../application/calendar/calendar-link.ts";
 import { accompanimentStatusLabel } from "../routes/student-panel-labels.ts";
+import { isAuthorizationDenial } from "../shared/authorization-denial.ts";
 import { StudentPanelErrorBoundary } from "../routes/student-portal.tsx";
 import { AccessNeedsEditor } from "./access-needs-editor.tsx";
 import { StudentAppointmentsSection } from "./student-appointments.tsx";
@@ -69,19 +65,6 @@ export function StudentAccompanimentDetailPage({
       </StudentPanelErrorBoundary>
     </section>
   );
-}
-
-/**
- * La denegación del Backend es el mensaje genérico documentado: no revela
- * si el acompañamiento existe ni de quién es. También cubre la sesión
- * expirada, que se recupera desde el acceso (el layout enlaza la sesión).
- *
- * El valor canónico viaja en `error.data`: el SDK del cliente decora
- * `error.message` con su contexto (query y request ID), así que comparar el
- * mensaje falla contra el Backend real.
- */
-function isAuthorizationDenial(error: unknown): boolean {
-  return error instanceof ConvexError && error.data === UNAUTHORIZED_ERROR_MESSAGE;
 }
 
 function OwnAccompanimentDetailBody({

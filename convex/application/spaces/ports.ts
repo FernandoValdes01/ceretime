@@ -49,3 +49,27 @@ export interface SpaceWriter {
   /** Retira o reactiva una sala sin borrarla ni su historial. */
   setSpaceActive(spaceId: string, isActive: boolean): Promise<ApiResult<null>>;
 }
+
+/** Página del catálogo con el contrato `Space` y cursor de continuación. */
+export interface SpaceCatalogPage<SpaceId extends string = string> {
+  readonly items: (Space & { readonly id: SpaceId })[];
+  readonly hasMore: boolean;
+  readonly nextCursor: string | null;
+}
+
+/**
+ * Lecturas paginadas del catálogo (TI2-99, TI2-156): las salas vigentes o las
+ * retiradas, cada una por su índice y sin filtrar en memoria. Infraestructura
+ * lo cumple con `spaceCatalogReader(ctx)`. Nunca trunca en silencio: si hay
+ * más filas, `hasMore` lo dice y `nextCursor` las alcanza.
+ */
+export interface SpaceCatalogReader<SpaceId extends string = string> {
+  listActiveSpaces(input: {
+    readonly limit: number;
+    readonly cursor: string | null;
+  }): Promise<SpaceCatalogPage<SpaceId>>;
+  listInactiveSpaces(input: {
+    readonly limit: number;
+    readonly cursor: string | null;
+  }): Promise<SpaceCatalogPage<SpaceId>>;
+}

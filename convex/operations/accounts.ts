@@ -5,7 +5,7 @@ import {
 } from "../application/accounts/enablement";
 import { reclassifyStudentUseCase } from "../application/accounts/reclassify_student";
 import { internalMutation } from "../_generated/server";
-import { studentReclassificationStore } from "../infrastructure/accounts/repository";
+import { accountStore, studentReclassificationStore } from "../infrastructure/accounts/repository";
 
 /**
  * Escritura guardada de cuentas (TI2-11).
@@ -29,7 +29,7 @@ export const enableIntern = internalMutation({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return await enableInternAccount(ctx, identity, args);
+    return await enableInternAccount(accountStore(ctx), identity, args);
   },
 });
 
@@ -48,7 +48,7 @@ export const ensureBootstrapAdmin = internalMutation({
     tokenIdentifier: v.string(),
   },
   handler: async (ctx, args) => {
-    return await ensureBootstrapAdminUseCase(ctx, args);
+    return await ensureBootstrapAdminUseCase(accountStore(ctx), args);
   },
 });
 

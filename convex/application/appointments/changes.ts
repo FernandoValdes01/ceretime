@@ -8,6 +8,8 @@ import {
   type JustificationReview,
 } from "../../domain/appointments/appointment";
 import {
+  APPOINTMENT_FIELDS_INVALID_ERROR_CODE,
+  APPOINTMENT_FIELDS_INVALID_ERROR_MESSAGE,
   conflictError,
   errResult,
   okResult,
@@ -257,12 +259,19 @@ export type CancellableAppointment = NotifiableAppointment &
   Pick<StoredAppointmentForChange, "status" | "startAt" | "originalStartAt">;
 
 /**
+ * Desenlace de una cancelación ya autorizada. `reason_required` es el motivo
+ * ausente o en blanco de CERETI (TI4-84); `rejected`, cualquier otro rechazo
+ * de la política, como una atención que ya no admite cancelarse.
+ */
+export type AuthorizedCancellationOutcome = "cancelled" | "reason_required" | "rejected";
+
+/**
  * Cancelación ya autorizada: transición, guardado, auditoría y avisos.
  *
  * Único camino por el que una atención pasa a cancelada. Lo usan la
  * cancelación individual y el cierre del acompañamiento (TI2-152), que
- * autoriza una vez sobre el acompañamiento y no sobre cada atención. `false`
- * cuando la política rechaza el cambio, y entonces no escribe nada.
+ * autoriza una vez sobre el acompañamiento y no sobre cada atención. Cuando
+ * la política rechaza el cambio no escribe nada.
  */
 export async function cancelAuthorizedAppointment(
   deps: Pick<CancelAppointmentDeps, "persister" | "audit" | "notifications" | "calendarSync">,
@@ -273,19 +282,27 @@ export async function cancelAuthorizedAppointment(
     readonly occurredAt: number;
     readonly reason?: string;
   },
-): Promise<boolean> {
-  const outcome = transitionAppointment({
-    from: stored.status,
-    to: cancellation.target,
-    actorId: cancellation.actorId,
-    occurredAt: cancellation.occurredAt,
-    ...(cancellation.reason === undefined ? {} : { reason: cancellation.reason }),
-    currentStartAt: stored.startAt,
-    ...(stored.originalStartAt === undefined
-      ? {}
-      : { currentOriginalStartAt: stored.originalStartAt }),
-  });
-  if (outcome.status === "rejected") return false;
+): Promise<AuthorizedCancellationOutcome> {
+  const attempt = (reason: string | undefined) =>
+    transitionAppointment({
+      from: stored.status,
+      to: cancellation.target,
+      actorId: cancellation.actorId,
+      occurredAt: cancellation.occurredAt,
+      ...(reason === undefined ? {} : { reason }),
+      currentStartAt: stored.startAt,
+      ...(stored.originalStartAt === undefined
+        ? {}
+        : { currentOriginalStartAt: stored.originalStartAt }),
+    });
+  const outcome = attempt(cancellation.reason);
+  if (outcome.status === "rejected") {
+    // La política revisa el motivo antes que el inicio de la atención: solo
+    // es «falta el motivo» si con un motivo la cancelación procedería.
+    const onlyReasonMissing =
+      outcome.cause === "reason_required" && attempt("motivo").status === "applied";
+    return onlyReasonMissing ? "reason_required" : "rejected";
+  }
 
   await deps.persister.persistAppointmentTransition(stored.id, {
     status: outcome.change.to,
@@ -303,7 +320,7 @@ export async function cancelAuthorizedAppointment(
     notificationEventsForTransition(toNotificationSubject(stored), outcome.change),
   );
   await deps.calendarSync.scheduleSync(stored.id);
-  return true;
+  return "cancelled";
 }
 
 /**
@@ -311,9 +328,10 @@ export async function cancelAuthorizedAppointment(
  *
  * La identidad del actor sale de la sesión; el destino
  * (`cancelled_by_student` o `cancelled_by_cereti`) lo decide el rol. Un
- * motivo en blanco no cuenta como motivo, así la cancelación de CERETI sin
- * texto se rechaza antes de escribir. Cualquier rechazo de la política
- * responde el código estable `conflict` y no llama al persister.
+ * motivo en blanco no cuenta como motivo: la cancelación de CERETI sin texto
+ * responde `appointment_fields_invalid` (TI4-84), para que el cliente marque
+ * el campo. Una atención que no admite cancelarse responde `conflict`, que la
+ * política evalúa antes que el motivo. Ningún rechazo llama al persister.
  */
 export async function cancelAppointment(
   deps: CancelAppointmentDeps,
@@ -332,13 +350,19 @@ export async function cancelAppointment(
   });
   if (grant.status === "error") return denied();
 
-  const cancelled = await cancelAuthorizedAppointment(deps, stored, {
+  const outcome = await cancelAuthorizedAppointment(deps, stored, {
     target: grant.data.target,
     actorId: grant.data.callerId,
     occurredAt: occurredNow(deps),
     ...(input.reason === undefined ? {} : { reason: input.reason }),
   });
-  return cancelled ? okResult({ appointmentId: stored.id }) : conflict();
+  if (outcome === "reason_required") {
+    return errResult({
+      code: APPOINTMENT_FIELDS_INVALID_ERROR_CODE,
+      message: APPOINTMENT_FIELDS_INVALID_ERROR_MESSAGE,
+    });
+  }
+  return outcome === "cancelled" ? okResult({ appointmentId: stored.id }) : conflict();
 }
 
 /**

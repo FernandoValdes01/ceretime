@@ -10,7 +10,7 @@ import {
   AVAILABILITY_CONTRACT_VERSION,
   expandAvailabilitySlots,
 } from "../domain/availability/availability";
-import { conflictError, noAvailabilityError } from "../domain/errors/api_error";
+import { API_ERROR_MESSAGES, conflictError } from "../domain/errors/api_error";
 import { cancelAppointment as cancelAppointmentUseCase } from "../application/appointments/changes";
 import {
   accompanimentNeedsReader,
@@ -400,15 +400,9 @@ async function publicErrorData(promise: Promise<unknown>): Promise<unknown> {
 
 async function expectPublicError(
   promise: Promise<unknown>,
-  code: "unauthorized" | "conflict" | "no_availability",
+  code: "unauthorized" | "conflict" | "no_availability" | "appointment_fields_invalid",
 ) {
-  const message =
-    code === "unauthorized"
-      ? "No autorizado"
-      : code === "conflict"
-        ? conflictError().message
-        : noAvailabilityError().message;
-  expect(await publicErrorData(promise)).toEqual({ code, message });
+  expect(await publicErrorData(promise)).toEqual({ code, message: API_ERROR_MESSAGES[code] });
 }
 
 function expectOnlyAppointmentId(result: unknown, appointmentId: string) {
@@ -595,7 +589,7 @@ test("TI2-121 API: CERETI exige motivo con texto y conserva la fecha original", 
       reason: "   ",
       version: APPOINTMENT_CONTRACT_VERSION,
     }),
-    "conflict",
+    "appointment_fields_invalid",
   );
   expect(await getAppointment(t, appointmentId)).toEqual(before);
 
@@ -613,6 +607,57 @@ test("TI2-121 API: CERETI exige motivo con texto y conserva la fecha original", 
     startsAt,
     originalStartsAt,
   });
+});
+
+test("TI4-84 API: el motivo que falta y el estado que no admite cancelar responden códigos distintos", async () => {
+  const t = convexTest(schema, modules);
+  const agenda = await seedAgenda(t, "cancel-codes");
+  const startsAt = Date.now() + DAY;
+  const completedId = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt,
+    endsAt: startsAt + HOUR,
+    status: "completed",
+  });
+  const scheduledId = await seedAppointment(t, {
+    accompanimentId: agenda.accompanimentId,
+    studentId: agenda.student,
+    professionalId: agenda.pro,
+    startsAt: startsAt + DAY,
+    endsAt: startsAt + DAY + HOUR,
+    status: "scheduled",
+  });
+  const asPro = t.withIdentity(agenda.proIdentity);
+
+  await expectPublicError(
+    asPro.mutation(api.presentation.appointments.cancelAppointment, {
+      appointmentId: scheduledId,
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+    "appointment_fields_invalid",
+  );
+  await expectPublicError(
+    asPro.mutation(api.presentation.appointments.cancelAppointment, {
+      appointmentId: completedId,
+      version: APPOINTMENT_CONTRACT_VERSION,
+    }),
+    "conflict",
+  );
+  expect((await getAppointment(t, scheduledId))?.status).toBe("scheduled");
+
+  // El Estudiante sigue cancelando sin motivo.
+  expectOnlyAppointmentId(
+    await t
+      .withIdentity(agenda.studentIdentity)
+      .mutation(api.presentation.appointments.cancelAppointment, {
+        appointmentId: scheduledId,
+        version: APPOINTMENT_CONTRACT_VERSION,
+      }),
+    scheduledId,
+  );
+  expect((await getAppointment(t, scheduledId))?.status).toBe("cancelled_by_student");
 });
 
 test("TI2-121 API: cancelar con identificadores ajenos, de otra tabla o vacíos no escribe", async () => {
@@ -2914,7 +2959,7 @@ test("TI2-128 API: denegaciones y conflictos abortan sin evento ni cambio", asyn
       reason: "   ",
       version: APPOINTMENT_CONTRACT_VERSION,
     }),
-    "conflict",
+    "appointment_fields_invalid",
   );
   await expectPublicError(
     t

@@ -1,4 +1,5 @@
 import type { AccompanimentStatus } from "../../domain/accompaniments/accompaniment";
+import type { AssignmentStatus } from "../../domain/accompaniments/practitioner_assignment";
 import type { AppointmentView } from "../../domain/appointments/appointment";
 import { isAppointmentProfessional } from "../../domain/appointments/participants";
 import type { FollowUpView } from "../../domain/follow_up/follow_up";
@@ -96,7 +97,7 @@ export type AuthorizableAssignment = {
   readonly accompanimentId: string;
   readonly userId: string;
   readonly assignedRole: "professional" | "intern";
-  readonly status: "active" | "revoked";
+  readonly status: AssignmentStatus;
 };
 
 /**

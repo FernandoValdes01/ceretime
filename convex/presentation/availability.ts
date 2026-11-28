@@ -9,6 +9,7 @@ import {
   setAvailabilityBlockActive,
   updateAvailabilityBlock,
 } from "../application/availability/availability";
+import { searchAccompanimentSlots as searchAccompanimentSlotsUseCase } from "../application/availability/accompaniment_slots";
 import { mutation, query } from "../_generated/server";
 import {
   AGENDA_TIME_ZONE,
@@ -21,6 +22,7 @@ import {
 } from "../infrastructure/accompaniments/repository";
 import {
   futureAppointmentsReader,
+  professionalLoadReader,
   slotOccupancyReader,
 } from "../infrastructure/appointments/repository";
 import { availabilityReader, availabilityWriter } from "../infrastructure/availability/repository";
@@ -249,6 +251,52 @@ export const searchSlots = query({
           needs: accompanimentNeedsReader(ctx),
           compatibility: compatibilitySpaceSource(ctx),
           occupancy: slotOccupancyReader(ctx),
+        },
+        { ...args, timeZone: AGENDA_TIME_ZONE, tokenIdentifier: identity?.tokenIdentifier ?? null },
+      ),
+    );
+    // Las listas del dominio son de solo lectura; el validador espera arreglos.
+    if (result.status === "available") return { ...result, items: [...result.items] };
+    const { coordination } = result;
+    return {
+      ...result,
+      coordination: { ...coordination, channels: [...coordination.channels] },
+    };
+  },
+});
+
+/**
+ * Cupos compatibles y libres de todos los profesionales reservables de un
+ * acompañamiento activo, agrupados y paginados (TI4-84). Misma autorización y
+ * misma forma de respuesta que `searchSlots`, sin `professionalId`: el
+ * servidor reúne a los profesionales, muestra una vez los cupos equivalentes
+ * (misma hora, modalidad y sala) y elige al de menos atenciones esa semana y,
+ * si empatan, al de menor identificador. El cursor codifica la posición del
+ * último cupo entregado y sigue sirviendo aunque ese cupo se ocupe. Reemplaza
+ * a `searchSlots` cuando la Web migre.
+ */
+export const searchAccompanimentSlots = query({
+  args: {
+    accompanimentId: v.string(),
+    from: v.string(),
+    to: v.string(),
+    limit: v.number(),
+    cursor: v.optional(v.string()),
+    version,
+  },
+  returns: searchResultValidator,
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    const result = unwrap(
+      await searchAccompanimentSlotsUseCase(
+        {
+          auth: privacyAwareAuthorizationReader(ctx),
+          professionals: bookableProfessionalSource(ctx),
+          availability: availabilityReader(ctx),
+          needs: accompanimentNeedsReader(ctx),
+          compatibility: compatibilitySpaceSource(ctx),
+          occupancy: slotOccupancyReader(ctx),
+          load: professionalLoadReader(ctx),
         },
         { ...args, timeZone: AGENDA_TIME_ZONE, tokenIdentifier: identity?.tokenIdentifier ?? null },
       ),

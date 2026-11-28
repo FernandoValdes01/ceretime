@@ -647,8 +647,10 @@ export function notificationEventsForRequestReceived(
  *
  * Solo acepta pares declarados en `REQUEST_TRANSITIONS`. Quien hizo el
  * cambio no se avisa a sí mismo, y una cancelación de una solicitud que nadie
- * tomó no tiene a quién avisar. El evento lleva la solicitud y el
- * destinatario, nunca el motivo, la respuesta ni las necesidades.
+ * tomó no tiene a quién avisar. La liberación de la toma, que devuelve la
+ * solicitud a `received`, no avisa (TI4-84): es interna de CERETI y el
+ * Estudiante ya recibió el aviso de recepción. El evento lleva la solicitud y
+ * el destinatario, nunca el motivo, la respuesta ni las necesidades.
  */
 export function notificationEventsForRequestTransition(
   subject: RequestNotificationSubject,
@@ -657,6 +659,7 @@ export function notificationEventsForRequestTransition(
   if (findRequestTransition(change.from, change.to) === undefined) {
     throw new Error("La transición de la solicitud no está declarada y no puede notificarse.");
   }
+  if (change.to === "received") return [];
   return requestEventsFor(subject, requestPolicyFor(change), change.occurredAt, change.actorId);
 }
 

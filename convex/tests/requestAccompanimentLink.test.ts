@@ -45,8 +45,8 @@ async function seedUser(t: TestConvex, subject: string, role: Role) {
   });
 }
 
-/** Denegación exacta del contrato común de solicitudes (TI2-181). */
-function isExactRequestDenial(error: unknown): boolean {
+/** Denegación exacta del contrato común (TI2-181; acompañamientos desde TI4-84). */
+function isExactDenial(error: unknown): boolean {
   if (!(error instanceof ConvexError)) return false;
   const data: unknown = error.data;
   return (
@@ -154,17 +154,16 @@ test("TI2-183: una cuenta ajena sigue sin acceso a la solicitud ni al acompañam
         () => null,
         (error: unknown) => error,
       );
-    expect(isExactRequestDenial(requestError)).toBe(true);
+    expect(isExactDenial(requestError)).toBe(true);
 
-    // `getAccompaniment` conserva el error genérico de Sprint 1: el dato es el mensaje.
+    // Desde TI4-84 `getAccompaniment` responde la misma denegación exacta.
     const accompanimentError = await caller
       .query(api.presentation.accompaniments.getAccompaniment, { accompanimentId: opened._id })
       .then(
         () => null,
         (error: unknown) => error,
       );
-    expect(accompanimentError).toBeInstanceOf(ConvexError);
-    expect((accompanimentError as ConvexError<string>).data).toBe("No autorizado");
+    expect(isExactDenial(accompanimentError)).toBe(true);
   }
 });
 

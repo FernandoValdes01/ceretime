@@ -17,13 +17,16 @@ import type {
   AccompanimentOpener,
   ActiveProfessionalReader,
   ActiveStudentReader,
+  ReadableTakeReader,
   RequestReader,
   RequestRegistrar,
   RequestStatusWriter,
+  RequestTakeFinisher,
   RequestTakeReader,
   RequestTakeRecorder,
   RequestTransitionRecorder,
 } from "./ports";
+import { finishTakesIfTerminal } from "./takes";
 import type { NotificationEventRecorder } from "../notifications/ports";
 import { notifyRequestChange, notifyRequestReceived } from "./notifications";
 import { denied, stateConflict, toEntity, type RequestEntity } from "./results";
@@ -129,7 +132,7 @@ async function readRegistered<RequestId extends string, UserId extends string>(
 export interface RequestAdditionalInformationDeps<RequestId extends string, UserId extends string> {
   readonly professionals: ActiveProfessionalReader<UserId>;
   readonly requests: RequestReader<RequestId, UserId> &
-    RequestTakeReader<RequestId, UserId> &
+    ReadableTakeReader<RequestId, UserId> &
     RequestStatusWriter<RequestId, UserId> &
     RequestTransitionRecorder<RequestId, UserId>;
   readonly notifications: NotificationEventRecorder;
@@ -159,7 +162,7 @@ export async function requestAdditionalInformation<RequestId extends string, Use
   if (professional === null) return denied();
   const row = await deps.requests.getRequest(input.requestId);
   if (row === null) return denied();
-  if (!(await deps.requests.hasActiveTake(row._id, professional._id))) return denied();
+  if (!(await deps.requests.hasReadableTake(row._id, professional._id))) return denied();
   const result = transitionRequest({
     from: row.status,
     to: "awaiting_information_or_acceptance",
@@ -257,7 +260,8 @@ export interface AcceptRequestDeps<
 > {
   readonly professionals: ActiveProfessionalReader<UserId>;
   readonly requests: RequestReader<RequestId, UserId> &
-    RequestTakeReader<RequestId, UserId> &
+    ReadableTakeReader<RequestId, UserId> &
+    RequestTakeFinisher<RequestId> &
     RequestStatusWriter<RequestId, UserId> &
     RequestTransitionRecorder<RequestId, UserId>;
   readonly accompaniments: AccompanimentOpener<RequestId, UserId, AccompanimentId>;
@@ -303,7 +307,7 @@ export async function acceptRequest<
   if (professional === null) return denied();
   const row = await deps.requests.getRequest(input.requestId);
   if (row === null) return denied();
-  if (!(await deps.requests.hasActiveTake(row._id, professional._id))) return denied();
+  if (!(await deps.requests.hasReadableTake(row._id, professional._id))) return denied();
   if (await deps.accompaniments.hasAccompanimentForRequest(row._id)) {
     return stateConflict("La solicitud ya fue aceptada");
   }
@@ -334,6 +338,7 @@ export async function acceptRequest<
     actorId: professional._id,
     occurredAt: result.change.occurredAt,
   });
+  await finishTakesIfTerminal(deps.requests, row._id, result.change);
   await notifyRequestChange(deps.notifications, row, result.change);
   const opened = await deps.accompaniments.openAccompaniment({
     requestId: row._id,
@@ -350,6 +355,7 @@ export async function acceptRequest<
 export interface CancelRequestDeps<RequestId extends string, UserId extends string> {
   readonly students: ActiveStudentReader<UserId>;
   readonly requests: RequestReader<RequestId, UserId> &
+    RequestTakeFinisher<RequestId> &
     RequestStatusWriter<RequestId, UserId> &
     RequestTransitionRecorder<RequestId, UserId>;
   readonly notifications: NotificationEventRecorder;
@@ -400,6 +406,7 @@ export async function cancelRequest<RequestId extends string, UserId extends str
     ...(result.change.reason === undefined ? {} : { reason: result.change.reason }),
     occurredAt: result.change.occurredAt,
   });
+  await finishTakesIfTerminal(deps.requests, row._id, result.change);
   await notifyRequestChange(deps.notifications, row, result.change);
   return okResult(toEntity(row, result.change.to));
 }
@@ -408,7 +415,8 @@ export async function cancelRequest<RequestId extends string, UserId extends str
 export interface CloseRequestDeps<RequestId extends string, UserId extends string> {
   readonly professionals: ActiveProfessionalReader<UserId>;
   readonly requests: RequestReader<RequestId, UserId> &
-    RequestTakeReader<RequestId, UserId> &
+    ReadableTakeReader<RequestId, UserId> &
+    RequestTakeFinisher<RequestId> &
     RequestStatusWriter<RequestId, UserId> &
     RequestTransitionRecorder<RequestId, UserId>;
   readonly notifications: NotificationEventRecorder;
@@ -425,8 +433,8 @@ export interface CloseRequestDeps<RequestId extends string, UserId extends strin
  * que pide la especificación y es obligatorio. Si el estado no admite el
  * paso, incluida una solicitud aceptada o ya cerrada, se rechaza sin
  * modificar nada. Persiste el estado y el registro del cambio, que guarda la
- * razón, en la misma transacción; la toma queda tal cual, como rastro de
- * quién revisó.
+ * razón, en la misma transacción; la toma pasa a `finished` (TI4-84), así
+ * quien la revisó la sigue leyendo sin poder operarla.
  */
 export async function closeRequestWithoutAccompaniment<
   RequestId extends string,
@@ -443,7 +451,7 @@ export async function closeRequestWithoutAccompaniment<
   if (professional === null) return denied();
   const row = await deps.requests.getRequest(input.requestId);
   if (row === null) return denied();
-  if (!(await deps.requests.hasActiveTake(row._id, professional._id))) return denied();
+  if (!(await deps.requests.hasReadableTake(row._id, professional._id))) return denied();
   const result = transitionRequest({
     from: row.status,
     to: "closed_without_accompaniment",
@@ -465,6 +473,7 @@ export async function closeRequestWithoutAccompaniment<
     ...(result.change.reason === undefined ? {} : { reason: result.change.reason }),
     occurredAt: result.change.occurredAt,
   });
+  await finishTakesIfTerminal(deps.requests, row._id, result.change);
   await notifyRequestChange(deps.notifications, row, result.change);
   return okResult(toEntity(row, result.change.to));
 }

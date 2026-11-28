@@ -10,9 +10,9 @@ import type {
   ActiveProfessionalReader,
   ActiveRequestViewerReader,
   ActiveStudentReader,
+  ReadableTakeReader,
   RequestListReader,
   RequestReader,
-  RequestTakeReader,
   ResultingAccompanimentReader,
   StoredRequestRow,
 } from "./ports";
@@ -88,8 +88,9 @@ export interface ListAuthorizedRequestsDeps<RequestId extends string, UserId ext
 
 /**
  * Lista las solicitudes tomadas por el Profesional, paginado. Definición de
- * alcance (TI2-9): el Profesional solo ve las solicitudes con toma activa a
- * su nombre, vengan de la vía guardada o de filas legacy escritas a mano.
+ * alcance (TI2-9): el Profesional solo ve las solicitudes con toma activa o
+ * terminada a su nombre, vengan de la vía guardada o de filas legacy escritas
+ * a mano.
  * Un único `.paginate()` por llamada (límite de Convex) sobre las tomas
  * ordenadas por solicitud: las filas duplicadas quedan adyacentes y el
  * cursor solo guarda la posición y la última solicitud emitida u omitida (O(1)), sin
@@ -97,8 +98,8 @@ export interface ListAuthorizedRequestsDeps<RequestId extends string, UserId ext
  * página no finito es un argumento inválido y recibe `request_fields_invalid`
  * (TI2-181).
  *
- * Cerrar o cancelar no revoca la toma, así que una solicitud cancelada o
- * cerrada sin acompañamiento sigue en el listado con su estado (TI2-141).
+ * Al terminar la solicitud la toma pasa a `finished` y sigue en el listado
+ * con su estado (TI2-141, TI4-84); una toma liberada ya no aparece.
  */
 export async function listAuthorizedRequestsUseCase<
   RequestId extends string,
@@ -114,7 +115,7 @@ export async function listAuthorizedRequestsUseCase<
   }
   const limit = Math.min(Math.max(Math.floor(input.paginationOpts.numItems), 1), 100);
   const cursor = decodeTakesCursor(input.paginationOpts.cursor);
-  const page = await deps.requests.listActiveTakes(professional._id, {
+  const page = await deps.requests.listReviewTakes(professional._id, {
     numItems: limit,
     cursor: cursor.pos,
   });
@@ -184,7 +185,7 @@ export interface GetRequestDetailDeps<
 > {
   readonly viewers: ActiveRequestViewerReader<UserId>;
   readonly requests: RequestReader<RequestId, UserId> &
-    RequestTakeReader<RequestId, UserId> &
+    ReadableTakeReader<RequestId, UserId> &
     RequestListReader<RequestId, UserId>;
   readonly accompaniments: ResultingAccompanimentReader<RequestId, AccompanimentId>;
 }
@@ -275,7 +276,9 @@ async function toRequestDetail<
  * Detalle de una solicitud con autorización estricta (TI2-10).
  *
  * El Estudiante solo lee sus solicitudes propias y el Profesional solo las
- * que tomó con una toma activa a su nombre; en ambos casos se devuelve la
+ * que tomó, con la toma activa o terminada a su nombre (TI4-84); quien liberó
+ * la toma deja de leerla y otro Profesional no la lee antes de tomarla. En
+ * ambos casos se devuelve la
  * entidad completa. Cualquier otra persona (sin identidad, sin perfil, cuenta
  * inhabilitada, Practicante, Administrador, solicitud inexistente o ajena,
  * o Profesional sin toma) recibe la misma `unauthorized`, sin revelar
@@ -298,7 +301,7 @@ export async function getRequestDetailUseCase<
 /** Capacidades de la regla de lectura del detalle. */
 export interface RequestReadDeps<RequestId extends string, UserId extends string> {
   readonly viewers: ActiveRequestViewerReader<UserId>;
-  readonly requests: RequestReader<RequestId, UserId> & RequestTakeReader<RequestId, UserId>;
+  readonly requests: RequestReader<RequestId, UserId> & ReadableTakeReader<RequestId, UserId>;
 }
 
 /**
@@ -317,6 +320,6 @@ export async function findReadableRequest<RequestId extends string, UserId exten
   const allowed =
     viewer.role === "student"
       ? request.studentId === viewer._id
-      : await deps.requests.hasActiveTake(request._id, viewer._id);
+      : await deps.requests.hasReadableTake(request._id, viewer._id);
   return allowed ? request : null;
 }

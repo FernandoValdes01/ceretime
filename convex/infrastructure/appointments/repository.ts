@@ -654,6 +654,38 @@ export function appointmentTransitionRepository(ctx: MutationCtx) {
   };
 }
 
+/**
+ * Atenciones no canceladas del profesional como responsable con inicio en el
+ * intervalo (TI4-84). Cumple por forma `ProfessionalLoadReader`. El índice
+ * acota el barrido a ese profesional y esa semana, que son pocas filas.
+ */
+export function professionalLoadReader(ctx: DbReader) {
+  return {
+    countProfessionalAppointments: async (input: {
+      readonly professionalId: string;
+      readonly startAt: number;
+      readonly endAt: number;
+    }) => {
+      const professionalId = ctx.db.normalizeId("users", input.professionalId);
+      if (professionalId === null) return 0;
+      let count = 0;
+      for await (const row of ctx.db
+        .query("appointments")
+        .withIndex("by_professionalId_and_startsAt", (q) =>
+          q
+            .eq("professionalId", professionalId)
+            .gte("startsAt", input.startAt)
+            .lt("startsAt", input.endAt),
+        )) {
+        if (row.status !== "cancelled_by_student" && row.status !== "cancelled_by_cereti") {
+          count += 1;
+        }
+      }
+      return count;
+    },
+  };
+}
+
 // ── TI2-111: adaptadores de los puertos de búsqueda y reserva ───────────────
 //
 // Cumplen por forma `SlotOccupancyReader` (TI2-97) y `AppointmentOccupier`

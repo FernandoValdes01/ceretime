@@ -6,7 +6,7 @@ Superficie pública versionada para que administración cree, consulte, edite y 
 
 | Operación | Argumentos | Devuelve | Quién | Denegación |
 | --- | --- | --- | --- | --- |
-| `presentation.spaces.listSpaces` | `limit`, `cursor?`, `version: "v1"` | `{items: Space[], hasMore, nextCursor, version}` | Cualquier rol con cuenta vigente | `ConvexError("No autorizado")` sin motivo ni existencia |
+| `presentation.spaces.listSpaces` | `limit`, `cursor?`, `version: "v1"` | `{items: Space[], hasMore, nextCursor, version}` | Cualquier rol con cuenta vigente | `{code: "unauthorized", message: "No autorizado"}` sin motivo ni existencia; hasta TI4-84 era `ConvexError("No autorizado")` |
 | `presentation.spaces.getSpace` | `spaceId`, `version: "v1"` | `{space: Space, label, isActive}` | Solo administración vigente | `{code: "unauthorized", message: "No autorizado"}`; inexistente o de otra tabla igual |
 | `presentation.spaces.createSpace` | `campus, building, floor, room, accessConditions, arrivalInstructions`, `version: "v1"` | `{space: Space, label, isActive}` | Solo administración vigente | `unauthorized` genérico (se autoriza antes de validar); duplicado `conflict`; campos vacíos `space_fields_invalid` |
 | `presentation.spaces.updateSpace` | `spaceId` más los campos de creación | `{space: Space, label, isActive}` | Solo administración vigente | `unauthorized` genérico; ubicación de otra sala `conflict`; campos vacíos `space_fields_invalid`; lectura truncada de futuras `conflict` sin escribir ni avisar a medias (TI2-156) |
