@@ -143,6 +143,8 @@ export const NOTIFICATION_EVENT_KIND_LABELS: Record<NotificationEventKind, strin
   request_referred: "Se derivó una solicitud",
   request_closed: "Se cerró una solicitud",
   request_cancelled: "Se canceló una solicitud",
+  privacy_request_granted: "Tu solicitud de privacidad fue concedida",
+  privacy_request_denied: "Tu solicitud de privacidad fue denegada",
 };
 
 /**
