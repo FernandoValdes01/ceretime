@@ -1,6 +1,6 @@
 # Contrato Sprint 3 — Bandeja de avisos (TI2-154)
 
-Superficie pública para que cada persona consulte sus avisos, distinga leídos de pendientes, los marque como leídos y llegue al recurso de un aviso solo si todavía tiene permiso. Los avisos nacen de los cambios de solicitudes, agenda y justificaciones (TI2-150, ver «Avisos» en `solicitudes.md` y «Avisos de la agenda» en `agenda.md`) y se guardan en `notificationEvents` (TI2-145). No hay correo, push ni pantallas: son TI2-159, TI2-160 y TI2-172.
+Superficie pública para que cada persona consulte sus avisos, distinga leídos de pendientes, los marque como leídos y llegue al recurso de un aviso solo si todavía tiene permiso. Los avisos nacen de los cambios de solicitudes, agenda y justificaciones (TI2-150, ver «Avisos» en `solicitudes.md` y «Avisos de la agenda» en `agenda.md`) y se guardan en `notificationEvents` (TI2-145). TI2-154 no agrega correo, push ni pantallas: son TI2-159, TI2-160 y TI2-172. La suscripción push propia, que sí es pública, se describe en «Notificaciones push (TI2-160)».
 
 ## Operaciones públicas
 
@@ -66,8 +66,30 @@ await markRead({ notificationId: notice.id });
 
 `convex/tests/notificationInboxApi.test.ts` recorre la API con datos ficticios y el reloj fijo: cada persona lista solo sus avisos, el aviso de otra persona no se abre ni se marca, la bandeja exige sesión y cuenta vigente, la marca es idempotente, el filtro separa leídos de pendientes, y abrir un aviso de atención o de solicitud se deniega al revocar la asignación o retirar la toma, igual que el detalle del recurso.
 
+## Notificaciones push (TI2-160)
+
+Canal opcional fuera de sesión. Cada persona activa o retira la suscripción del navegador que usa; el envío, el cifrado y los reintentos corren en el servidor. La configuración de claves VAPID por deployment está en `docs/operaciones/notificaciones-push.md`.
+
+| Operación | Argumentos | Devuelve |
+| --- | --- | --- |
+| `presentation.notifications.getOwnPushStatus` (query) | — | `{enabled, subscriptionCount, vapidPublicKey}`; `vapidPublicKey` es `null` si el deployment no tiene `VAPID_PUBLIC_KEY` |
+| `presentation.notifications.activatePushSubscription` (mutation) | `endpoint`, `p256dh`, `auth`, `expirationTime?` (los valores de `PushSubscription.toJSON()`) | `{created}`: `true` si la suscripción es nueva, `false` si actualizó una propia |
+| `presentation.notifications.deactivatePushSubscription` (mutation) | `endpoint` | `{deleted}`: `false` si el endpoint no era una suscripción propia |
+
+- **Solo las propias.** La persona sale de la sesión, nunca de un argumento. Sin sesión o con una cuenta que no está vigente, las tres responden `unauthorized`. Retirar un endpoint ajeno o inexistente responde `{deleted: false}` sin tocar nada.
+- **Proveedores admitidos.** El endpoint debe ser `https`, sin credenciales ni puerto, y de un servicio push conocido (Google, Mozilla, Apple o Microsoft); otro origen responde `conflict` sin guardar. Así el servidor nunca firma con VAPID una solicitud hacia un destino arbitrario.
+- **Tope.** Cada persona tiene a lo sumo `MAX_PUSH_SUBSCRIPTIONS_PER_USER` (20) suscripciones activas. Actualizar una propia siempre se permite; agregar la número 21 responde `conflict`.
+- **Texto genérico.** La notificación usa solo el texto de `toExternalNotification`: no menciona a CERETI, la atención ni la solicitud.
+
+| Código | Cuándo |
+| --- | --- |
+| `unauthorized` | Sin sesión o con cuenta no vigente |
+| `conflict` | Endpoint de un proveedor no admitido, suscripción inválida o tope alcanzado al activar |
+
+`convex/tests/pushNotificationDelivery.test.ts` cubre que sin suscripción no se envía nada, el envío cifrado y su reintento sin duplicar, el retiro automático ante `410`, la desactivación solo de lo propio, el resultado incierto y el rechazo de un origen ajeno y de la suscripción número 21.
+
 ## Impacto en los clientes
 
-Es un módulo nuevo (`api.presentation.notifications`). No cambia ninguna operación existente. Mobile no lo consume todavía.
+Es un módulo nuevo (`api.presentation.notifications`). No cambia ninguna operación existente. Mobile no consume ni la bandeja ni la suscripción push, y una notificación nativa de Mobile no usaría Web Push.
 
 Web lo consume desde TI2-172 en `/estudiante/avisos` y `/profesional/avisos`, los dos roles que reciben avisos. La bandeja filtra por `readStatus`; al abrir un aviso llama a `openNotification`, lo marca con `markNotificationRead` si estaba pendiente y navega al detalle de la atención o de la solicitud en el área de quien lo recibió; si marcarlo falla, navega igual y el aviso queda pendiente. Si el permiso ya no está vigente, muestra un aviso genérico, no navega y deja el aviso en la bandeja. La misma pantalla ofrece activar push en el navegador (`getOwnPushStatus`, `activatePushSubscription` y `deactivatePushSubscription`), que se dan por activos solo si el navegador está suscrito y `getOwnPushStatus` responde `enabled`, y vincular o desconectar Google Calendar (ver `calendar.md`).

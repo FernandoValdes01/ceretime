@@ -26,6 +26,7 @@ import {
   AVAILABILITY_CONTRACT_VERSION,
   expandAvailabilitySlots,
 } from "../domain/availability/availability";
+import { FOLLOW_UP_CONTRACT_VERSION } from "../domain/follow_up/follow_up";
 import {
   appointmentOccupier,
   MAX_APPOINTMENT_MS,
@@ -3705,4 +3706,291 @@ test("TI2-120 API: revocar la asignación quita el permiso desde la llamada sigu
       result: "cancelled_by_cereti",
     },
   ]);
+});
+
+/**
+ * Proceso completo de TI2-179: de la solicitud al cierre y la consulta del
+ * historial, con los cuatro roles y solo por la API pública.
+ *
+ * Las cuentas salen por las mismas vías que el deployment de demostración:
+ * el Administrador por `ensureBootstrapAdmin`, el Estudiante por su primer
+ * ingreso y el Profesional y el Practicante por `createTestUser`, pendientes
+ * hasta que alguien con permiso los habilita. La agenda es el lunes
+ * 2027-01-04 en `America/Santiago` (UTC−3), con el reloj fijado antes de la
+ * reserva y movido después de la atención para registrarla.
+ */
+const TI179 = {
+  admin: { subject: "ti179-adm", email: "ti179-adm@uct.cl" },
+  student: { subject: "ti179-est", email: "ti179-est@alu.uct.cl" },
+  professional: { subject: "ti179-pro", email: "ti179-pro@uct.cl" },
+  intern: { subject: "ti179-pra", email: "ti179-pra@alu.uct.cl" },
+} as const;
+
+const ti179At = (hour: number) => Date.UTC(2027, 0, 4, hour + 3);
+const TI179_INTERNAL_NOTE = "Nota interna ficticia del proceso completo";
+const TI179_NEED = "Sala con acceso sin escaleras.";
+
+/**
+ * Código del rechazo público. Las consultas de acompañamientos todavía niegan
+ * con el mensaje genérico de Sprint 1 en vez del contrato `{ code, message }`,
+ * así que ese mensaje cuenta como `unauthorized`.
+ */
+async function ti179ErrorCode(promise: Promise<unknown>): Promise<unknown> {
+  return await promise.then(
+    () => {
+      throw new Error("Se esperaba un error público");
+    },
+    (error: unknown) => {
+      if (error instanceof ConvexError && typeof error.data === "object") return error.data.code;
+      if (error instanceof Error && /No autorizado/.test(error.message)) return "unauthorized";
+      return error;
+    },
+  );
+}
+
+test("TI2-179: el proceso completo funciona junto con los cuatro roles", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  try {
+    vi.setSystemTime(Date.UTC(2027, 0, 1, 12));
+    const t = convexTest(schema, modules);
+    const as = (who: keyof typeof TI179) =>
+      t.withIdentity(identityFor(TI179[who].subject, TI179[who].email));
+
+    // Cuentas: el Administrador inicial habilita al Profesional, y el
+    // Profesional, al Practicante. Ninguna cuenta pendiente opera antes.
+    const adminId = await t.mutation(internal.operations.accounts.ensureBootstrapAdmin, {
+      email: TI179.admin.email,
+      fullName: "Administrador Ficticio",
+      tokenIdentifier: `${ISSUER}|${TI179.admin.subject}`,
+    });
+    const pending = async (who: "professional" | "intern", fullName: string) =>
+      await t.mutation(internal.operations.users.createTestUser, {
+        email: TI179[who].email,
+        fullName,
+        role: who,
+        institutionalStatus: "pending",
+        accountStatus: "active",
+        tokenIdentifier: `${ISSUER}|${TI179[who].subject}`,
+      });
+    const professionalId = await pending("professional", "Profesional Ficticio");
+    const internId = await pending("intern", "Practicante Ficticio");
+    expect(
+      await ti179ErrorCode(
+        as("professional").mutation(api.presentation.accounts.enableIntern, { userId: internId }),
+      ),
+    ).toBe("unauthorized");
+    await as("admin").mutation(api.presentation.accounts.enableAccount, {
+      userId: professionalId,
+    });
+    await as("professional").mutation(api.presentation.accounts.enableIntern, {
+      userId: internId,
+    });
+    const stored = await t.run(async (ctx) => ({
+      professional: await ctx.db.get(professionalId),
+      intern: await ctx.db.get(internId),
+    }));
+    expect(stored.professional).toMatchObject({
+      institutionalStatus: "enabled",
+      enabledBy: adminId,
+    });
+    expect(stored.intern).toMatchObject({
+      institutionalStatus: "enabled",
+      enabledBy: professionalId,
+    });
+
+    // Solicitud → revisión → acompañamiento. El Practicante no revisa.
+    const profile = await as("student").mutation(api.presentation.session.ensureMyProfile, {});
+    expect(profile.role).toBe("student");
+    const request = await as("student").mutation(api.presentation.requests.createRequest, {
+      accessNeeds: TI179_NEED,
+    });
+    const requestId = request._id as Id<"requests">;
+    expect(
+      await ti179ErrorCode(
+        as("intern").mutation(api.presentation.requests.takeRequest, { requestId }),
+      ),
+    ).toBe("unauthorized");
+    await as("professional").mutation(api.presentation.requests.takeRequest, { requestId });
+    const opened = await as("professional").mutation(api.presentation.requests.acceptRequest, {
+      requestId,
+      objective: "Objetivo ficticio del proceso completo",
+    });
+    const accompanimentId = opened._id;
+
+    // El Practicante solo ve el acompañamiento que se le asigna, minimizado.
+    expect(
+      await ti179ErrorCode(
+        as("intern").query(api.presentation.accompaniments.getAccompaniment, { accompanimentId }),
+      ),
+    ).toBe("unauthorized");
+    await as("professional").mutation(api.presentation.accompaniments.assignAccompanimentAccess, {
+      accompanimentId,
+      userId: internId,
+      assignedRole: "intern",
+    });
+    const internView = await as("intern").query(api.presentation.accompaniments.getAccompaniment, {
+      accompanimentId,
+    });
+    expect(internView.view).toBe("minimized");
+
+    // Agenda: el Administrador registra una sala que cubre la necesidad, el
+    // Profesional publica su bloque en ella y dos reservas simultáneas del
+    // Estudiante por el mismo cupo dejan una sola atención.
+    const { space } = await as("admin").mutation(api.presentation.spaces.createSpace, {
+      campus: "Campus Ficticio",
+      building: "Edificio Ficticio",
+      floor: "Piso 1",
+      room: "Sala Ficticia TI2-179",
+      accessConditions: TI179_NEED,
+      arrivalInstructions: "Instrucción ficticia de llegada.",
+      version: "v1",
+    });
+    const spaceId = space.id;
+    await as("professional").mutation(api.presentation.availability.publishBlock, {
+      weekday: 1,
+      startMinute: 600,
+      endMinute: 660,
+      slotMinutes: 60,
+      modality: "inPerson",
+      spaceId,
+      version: AVAILABILITY_CONTRACT_VERSION,
+    });
+    const search = await as("student").query(api.presentation.availability.searchSlots, {
+      accompanimentId,
+      professionalId,
+      from: "2027-01-04",
+      to: "2027-01-04",
+      limit: 10,
+      version: AVAILABILITY_CONTRACT_VERSION,
+    });
+    if (search.status !== "available") {
+      throw new Error(`Se esperaba un cupo disponible: ${search.coordination.reason}`);
+    }
+    expect(search.items.map((slot) => [slot.startAt, slot.endAt])).toEqual([
+      [ti179At(10), ti179At(11)],
+    ]);
+    const book = () =>
+      as("student").mutation(api.presentation.appointments.bookAppointment, {
+        accompanimentId,
+        professionalId,
+        modality: "inPerson",
+        spaceId,
+        startAt: ti179At(10),
+        endAt: ti179At(11),
+        version: APPOINTMENT_CONTRACT_VERSION,
+      });
+    // convex-test ejecuta las mutations en serie: esto prueba que la segunda
+    // reserva del mismo cupo se rechaza por conflicto, no la concurrencia real
+    // de un deployment.
+    const race = await Promise.allSettled([book(), book()]);
+    const won = race.filter((outcome) => outcome.status === "fulfilled");
+    expect(won).toHaveLength(1);
+    const lost = race.filter((outcome) => outcome.status === "rejected");
+    expect(lost).toHaveLength(1);
+    expect(await ti179ErrorCode(Promise.reject((lost[0] as PromiseRejectedResult).reason))).toBe(
+      "conflict",
+    );
+    const appointmentId = (won[0] as PromiseFulfilledResult<{ appointmentId: string }>).value
+      .appointmentId;
+    expect(await t.run(async (ctx) => (await ctx.db.query("appointments").take(5)).length)).toBe(1);
+
+    // Atención → seguimiento. Cada rol lee su vista y solo el Profesional
+    // recibe la nota interna.
+    vi.setSystemTime(ti179At(12));
+    expect(
+      await ti179ErrorCode(
+        as("intern").mutation(api.presentation.appointments.recordAppointmentAttendance, {
+          appointmentId,
+          outcome: "completed",
+          version: APPOINTMENT_CONTRACT_VERSION,
+        }),
+      ),
+    ).toBe("unauthorized");
+    await as("professional").mutation(api.presentation.appointments.recordAppointmentAttendance, {
+      appointmentId,
+      outcome: "completed",
+      version: APPOINTMENT_CONTRACT_VERSION,
+    });
+    await as("professional").mutation(api.presentation.follow_up.saveFollowUpRecord, {
+      appointmentId,
+      agreements: [{ description: "Acuerdo ficticio" }],
+      tasks: [{ description: "Tarea ficticia", responsible: "student", status: "pending" }],
+      nextSteps: "Próximos pasos ficticios",
+      internalNote: TI179_INTERNAL_NOTE,
+      version: FOLLOW_UP_CONTRACT_VERSION,
+    });
+    const readFollowUp = (who: "student" | "professional" | "intern") =>
+      as(who).query(api.presentation.follow_up.getFollowUpRecord, {
+        appointmentId,
+        version: FOLLOW_UP_CONTRACT_VERSION,
+      });
+    expect(await readFollowUp("professional")).toMatchObject({
+      view: "professional",
+      internalNote: TI179_INTERNAL_NOTE,
+    });
+    const studentFollowUp = await readFollowUp("student");
+    expect(studentFollowUp).toMatchObject({ view: "shared" });
+    expect(JSON.stringify(studentFollowUp)).not.toContain(TI179_INTERNAL_NOTE);
+    const internFollowUp = await readFollowUp("intern");
+    expect(internFollowUp).toMatchObject({ view: "minimized" });
+    expect(JSON.stringify(internFollowUp)).not.toContain(TI179_INTERNAL_NOTE);
+    expect(
+      await ti179ErrorCode(
+        as("admin").query(api.presentation.accompaniments.getAccompaniment, { accompanimentId }),
+      ),
+    ).toBe("unauthorized");
+
+    // La revocación corta el acceso del Practicante desde la llamada siguiente.
+    await as("professional").mutation(api.presentation.accompaniments.revokeAccompanimentAccess, {
+      accompanimentId,
+      userId: internId,
+      assignedRole: "intern",
+    });
+    expect(await ti179ErrorCode(readFollowUp("intern"))).toBe("unauthorized");
+    expect(
+      await ti179ErrorCode(
+        as("intern").query(api.presentation.accompaniments.getAccompaniment, { accompanimentId }),
+      ),
+    ).toBe("unauthorized");
+
+    // Cierre: no se reabre ni admite reservas, y el Estudiante conserva su historial.
+    expect(
+      await as("professional").mutation(api.presentation.accompaniments.closeAccompaniment, {
+        accompanimentId,
+        reason: "Motivo ficticio del cierre",
+      }),
+    ).toMatchObject({ accompanimentId, status: "closed" });
+    expect(
+      await ti179ErrorCode(
+        as("professional").mutation(api.presentation.accompaniments.reactivateAccompaniment, {
+          accompanimentId,
+        }),
+      ),
+    ).toBe("conflict");
+    expect(
+      await ti179ErrorCode(
+        as("student").mutation(api.presentation.appointments.bookAppointment, {
+          accompanimentId,
+          professionalId,
+          modality: "inPerson",
+          spaceId,
+          startAt: Date.UTC(2027, 0, 11, 13),
+          endAt: Date.UTC(2027, 0, 11, 14),
+          version: APPOINTMENT_CONTRACT_VERSION,
+        }),
+      ),
+    ).toBe("unauthorized");
+    const closed = await as("student").query(api.presentation.accompaniments.getAccompaniment, {
+      accompanimentId,
+    });
+    expect(closed.status).toBe("closed");
+    const history = await as("student").query(
+      api.presentation.follow_up.listAccompanimentFollowUpRecords,
+      { accompanimentId, limit: 20, version: FOLLOW_UP_CONTRACT_VERSION },
+    );
+    expect(history.items.map((item) => item.appointmentId)).toEqual([appointmentId]);
+    expect(JSON.stringify(history)).not.toContain(TI179_INTERNAL_NOTE);
+  } finally {
+    vi.useRealTimers();
+  }
 });
