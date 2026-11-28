@@ -1245,12 +1245,12 @@ test("TI2-85: el Profesional con toma cierra sin acompañamiento desde revisión
     reason: "La necesidad corresponde a otra unidad de la universidad",
   });
 
-  // La toma queda activa como rastro de quién revisó
+  // La toma pasa a terminada (TI4-84): rastro de quién revisó, sin operarla
   const take = await t.run(async (ctx) => {
     return await ctx.db
       .query("requestAssignments")
       .withIndex("by_request_and_user_and_status", (q) =>
-        q.eq("requestId", reviewed._id).eq("userId", proId).eq("status", "active"),
+        q.eq("requestId", reviewed._id).eq("userId", proId).eq("status", "finished"),
       )
       .take(2);
   });
@@ -1429,16 +1429,16 @@ test("TI2-141: tras cancelar, el listado del Estudiante y el del Profesional con
     .query(api.presentation.requests.getRequest, { requestId: cancelledId });
   expect(ownDetail).toMatchObject({ _id: cancelledId, status: "cancelled" });
 
-  // Cancelar no revoca la toma, así que el Profesional la sigue viendo
-  const activeTakes = await t.run((ctx) =>
+  // Cancelar termina la toma (TI4-84) y el Profesional la sigue viendo
+  const finishedTakes = await t.run((ctx) =>
     ctx.db
       .query("requestAssignments")
       .withIndex("by_request_and_user_and_status", (q) =>
-        q.eq("requestId", cancelledId).eq("userId", proId).eq("status", "active"),
+        q.eq("requestId", cancelledId).eq("userId", proId).eq("status", "finished"),
       )
       .collect(),
   );
-  expect(activeTakes).toHaveLength(1);
+  expect(finishedTakes).toHaveLength(1);
   const authorized = await t
     .withIdentity(identityOf("ti85-pro-9"))
     .query(api.presentation.requests.listAuthorizedRequests, {

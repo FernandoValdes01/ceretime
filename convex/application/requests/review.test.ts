@@ -34,13 +34,16 @@ function memoryDeps(
     },
     requests: {
       getRequest: async (requestId) => (requestId === row._id ? row : null),
-      hasActiveTake: async (requestId, userId) =>
+      hasReadableTake: async (requestId, userId) =>
         (options.taken ?? true) && requestId === row._id && userId === PROFESSIONAL,
       setRequestStatus: async (requestId, change) => {
         writes.push(`status ${requestId} ${change.status}`);
       },
       logRequestTransition: async (entry) => {
         writes.push(`log ${entry.from}->${entry.to} ${entry.reason ?? "-"} ${entry.occurredAt}`);
+      },
+      finishTakes: async (requestId, finishedAt) => {
+        writes.push(`finish ${requestId} ${finishedAt}`);
       },
     },
     accompaniments: {
@@ -154,6 +157,7 @@ describe("acceptRequest con puertos (TI2-181)", () => {
     expect(writes).toEqual([
       "status sol-1 accepted",
       `log under_review->accepted - ${NOW}`,
+      `finish sol-1 ${NOW}`,
       "notice request_accepted est-1",
       `open sol-1 Objetivo ficticio ${PROFESSIONAL}`,
     ]);

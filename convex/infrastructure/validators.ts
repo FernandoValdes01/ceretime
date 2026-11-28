@@ -38,6 +38,7 @@ import {
   ASSIGNMENT_ROLE_VALUES,
   ASSIGNMENT_STATUS_VALUES,
 } from "../domain/accompaniments/practitioner_assignment";
+import { REQUEST_TAKE_STATUS_VALUES } from "../domain/requests/take";
 import {
   PRIVACY_BLOCK_SCOPE_VALUES,
   PRIVACY_DATA_CATEGORY_VALUES,
@@ -91,6 +92,11 @@ export const assignmentRoleUnion = v.union(
 
 export const assignmentStatusUnion = v.union(
   ...ASSIGNMENT_STATUS_VALUES.map((value) => v.literal(value)),
+);
+
+/** Estado de la toma de una solicitud (TI4-84), propio y no el de las asignaciones. */
+export const requestTakeStatusUnion = v.union(
+  ...REQUEST_TAKE_STATUS_VALUES.map((value) => v.literal(value)),
 );
 
 /**

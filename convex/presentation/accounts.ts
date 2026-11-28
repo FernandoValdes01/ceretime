@@ -11,6 +11,7 @@ import {
 } from "../application/accounts/enablement";
 import { mutation, query } from "../_generated/server";
 import { accountReader, accountStore } from "../infrastructure/accounts/repository";
+import { requestStore } from "../infrastructure/requests/repository";
 import {
   accountStatusUnion,
   institutionalStatusUnion,
@@ -104,7 +105,9 @@ export const revokeAccount = mutation({
   returns: accountIdValidator,
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
-    return unwrapApiResult(await revokeStaffAccount(accountStore(ctx), identity, args));
+    return unwrapApiResult(
+      await revokeStaffAccount(accountStore(ctx), identity, args, { requests: requestStore(ctx) }),
+    );
   },
 });
 

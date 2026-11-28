@@ -15,6 +15,7 @@ import {
   registerOfficialRequest as registerOfficialRequestUseCase,
 } from "../application/requests/referrals";
 import { respondToInformationRequest as respondToInformationRequestUseCase } from "../application/requests/respond";
+import { releaseRequest as releaseRequestUseCase } from "../application/requests/takes";
 import {
   listAuthorizedRequestsUseCase,
   listOpenRequestsUseCase,
@@ -271,6 +272,30 @@ export const takeRequest = mutation({
           professionals: activeProfessionalReader(ctx),
           requests: requestStore(ctx),
           notifications: notificationEventRecorder(ctx),
+          now: Date.now,
+        },
+        { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },
+      ),
+    );
+  },
+});
+
+/**
+ * Libera la solicitud tomada (TI4-84): vuelve a `received` y reaparece en la
+ * bandeja. Solo el Profesional con la toma activa; responde como
+ * `takeRequest`. Sin toma, o con una ya liberada, `unauthorized`; desde un
+ * estado que no admite liberarse, `conflict`.
+ */
+export const releaseRequest = mutation({
+  args: { requestId: v.id("requests") },
+  returns: requestValidator,
+  handler: async (ctx, args): Promise<PublicRequest> => {
+    const identity = await ctx.auth.getUserIdentity();
+    return unwrapApiResult(
+      await releaseRequestUseCase(
+        {
+          professionals: activeProfessionalReader(ctx),
+          requests: requestStore(ctx),
           now: Date.now,
         },
         { tokenIdentifier: identity?.tokenIdentifier ?? null, ...args },

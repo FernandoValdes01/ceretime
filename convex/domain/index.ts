@@ -53,6 +53,9 @@ export {
 } from "./requests/state";
 export type { ReferralRequestState, RequestState, Sprint1RequestState } from "./requests/state";
 export { isOpenRequestState } from "./requests/transitions";
+// Estados de la toma de una solicitud (TI4-84).
+export { REQUEST_TAKE_STATUS_VALUES } from "./requests/take";
+export type { RequestTakeStatus } from "./requests/take";
 export { findRequestTransition } from "./requests/transition_policy";
 // Derivaciones de entrada y de salida (TI2-143): límites y condición de apertura.
 export {

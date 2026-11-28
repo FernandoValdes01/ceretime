@@ -26,6 +26,7 @@ Fuente: `CONTEXT.md` (solicitud de acompañamiento y sus estados), sección «So
 | `presentation/requests.respondToInformationRequest` | `requestId`, `response` | Solicitud en `under_review` | Estudiante vigente, dueño de la solicitud | `unauthorized`; ajena o inexistente responde igual |
 | `presentation/requests.cancelRequest` | `requestId`, `reason` | Solicitud en `cancelled` | Estudiante vigente, dueño de la solicitud | `unauthorized`; ajena o inexistente responde igual |
 | `presentation/requests.closeRequestWithoutAccompaniment` | `requestId`, `reason` | Solicitud en `closed_without_accompaniment` | Profesional vigente con toma activa | `unauthorized`; sin toma o inexistente responde igual |
+| `presentation/requests.releaseRequest` | `requestId` | Solicitud en `received` | Profesional vigente con toma activa | `unauthorized`; toma ajena, liberada o inexistente responde igual |
 
 | `presentation/requests.registerOfficialRequest` | Forma completa, `studentEmail`, `receivedAt` y `originUnit` opcionales | Solicitud en `received` | Profesional vigente | `unauthorized` sin motivo |
 | `presentation/requests.recordReferralContact` | `requestId` | Solicitud sin cambio de estado | Profesional vigente con toma activa | `unauthorized`; sin toma o inexistente responde igual |
@@ -39,8 +40,8 @@ Todas devuelven la entidad de siempre: `_id`, `studentId`, `status`, `accessNeed
 | Operación | Argumentos | Devuelve | Quién |
 | --- | --- | --- | --- |
 | `presentation/requests.listOwnRequests` | `paginationOpts` | Página de solicitudes propias, en cualquier estado | Estudiante vigente |
-| `presentation/requests.listAuthorizedRequests` | `paginationOpts` | Página de solicitudes con toma activa, en cualquier estado | Profesional vigente |
-| `presentation/requests.getRequest` | `requestId` | Detalle (ver abajo) | Estudiante dueño o Profesional con toma activa |
+| `presentation/requests.listAuthorizedRequests` | `paginationOpts` | Página de solicitudes con toma activa o terminada, en cualquier estado | Profesional vigente |
+| `presentation/requests.getRequest` | `requestId` | Detalle (ver abajo) | Estudiante dueño o Profesional con toma activa o terminada |
 
 Los listados conservan los cinco campos de la entidad y ya no omiten las solicitudes canceladas ni las cerradas. La página conserva la forma de `paginate`: `{ page, isDone, continueCursor }`.
 
@@ -100,6 +101,23 @@ Debe haber al menos una necesidad seleccionada o un `otherAccessNeed` con texto.
 - **Cerrar sin acompañamiento** es posible desde `under_review` o `awaiting_information_or_acceptance`. La razón es obligatoria, queda en el registro del cambio y el detalle la entrega como `closureReason`.
 - Cancelar o cerrar nunca abre un acompañamiento. Una solicitud cancelada, cerrada o aceptada no admite ningún paso más. Una necesidad posterior empieza con una solicitud nueva.
 - Cada cambio queda en el historial de la solicitud con actor y fecha. Los motivos y respuestas son texto libre: no deben incluir diagnósticos ni etiquetas clínicas, y no se copian a la bitácora de auditoría.
+
+## Liberación de la toma (TI4-84)
+
+`releaseRequest({ requestId })` responde como `takeRequest`: la solicitud pública, ahora en `received`, con los mismos cinco campos. Solo libera el Profesional vigente con la toma activa, desde `under_review` o `awaiting_information_or_acceptance`. La solicitud vuelve a la bandeja (`listOpenRequests`) y otro Profesional puede tomarla. La toma queda `revoked` con `revokedBy` y `revokedAt`, que corresponden a `liberadaEn` del MER, y el cambio queda en `requestTransitions` sin motivo. Liberar no avisa al Estudiante.
+
+| Caso | Respuesta |
+| --- | --- |
+| Toma ajena o ya liberada, sin identidad, otro rol o solicitud inexistente | `unauthorized` |
+| Quien la tomó, con la solicitud aceptada, cerrada, derivada o cancelada | `conflict` |
+
+Revocar la cuenta de un Profesional (`revokeAccount`) libera en la misma transacción sus tomas abiertas, con el Administrador como actor del cambio. Nadie reasigna una toma: administrar cuentas no da acceso a las solicitudes.
+
+Si la solicitud esperaba información del Estudiante, lo pedido queda en el historial pero deja de esperarse: la solicitud recibida no admite `respondToInformationRequest` (`conflict`), el detalle deja de traer `informationRequest`, y quien la tome después decide si vuelve a pedirlo.
+
+Al aceptar, cerrar, derivar o cancelar, las tomas activas pasan a `finished` con `finishedAt`. Quien la revisó la sigue leyendo con `getRequest` y viéndola en `listAuthorizedRequests`; repetir una operación sobre ella responde `conflict`, como antes. `requestAssignments` usa desde TI4-84 su propia unión `active | revoked | finished`, y las filas existentes siguen siendo válidas. Las tomas activas de solicitudes que terminaron antes de TI4-84 no se migran: siguen dando lectura y la política rechaza cualquier paso.
+
+Un cursor de `listAuthorizedRequests` emitido antes de TI4-84 corresponde a otro índice y deja de servir después del despliegue: el cliente vuelve a pedir la primera página.
 
 ## Canal oficial y derivaciones
 

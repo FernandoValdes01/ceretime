@@ -699,8 +699,11 @@ describe("Avisos de la solicitud (TI2-150)", () => {
     };
   }
 
-  const EXPECTED_REQUEST_TRANSITIONS: Record<string, readonly [string, string]> = {
+  /** `null`: la transición no avisa, como la liberación de la toma (TI4-84). */
+  const EXPECTED_REQUEST_TRANSITIONS: Record<string, readonly [string, string] | null> = {
     "received->under_review": ["request_under_review", STUDENT],
+    "under_review->received": null,
+    "awaiting_information_or_acceptance->received": null,
     "under_review->awaiting_information_or_acceptance": ["request_information_requested", STUDENT],
     "under_review->accepted": ["request_accepted", STUDENT],
     "awaiting_information_or_acceptance->accepted": ["request_accepted", STUDENT],
@@ -723,7 +726,9 @@ describe("Avisos de la solicitud (TI2-150)", () => {
         requestSubject,
         requestChange(transition.from, transition.to),
       );
-      expect(emitted.map((item) => [item.kind, item.recipientId])).toEqual([expected]);
+      expect(emitted.map((item) => [item.kind, item.recipientId])).toEqual(
+        expected === null ? [] : [expected],
+      );
     }
     expect(Object.keys(EXPECTED_REQUEST_TRANSITIONS)).toHaveLength(REQUEST_TRANSITIONS.length);
   });

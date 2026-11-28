@@ -28,6 +28,7 @@ import {
   type ApiResult,
 } from "../../domain/errors/api_error";
 import { AUTHORIZATION_DENIED_MESSAGE, deniedPublicError } from "../authorization/authorize";
+import { releaseOpenTakesOf, type ReleaseOpenTakesDeps } from "../requests/takes";
 import type { AccountReader, AccountStore } from "./ports";
 
 /**
@@ -279,11 +280,17 @@ export async function enableStaffAccount(
  * habilitada, cuenta no vigente o auto-revocación) responde `conflict` sin
  * escribir. La auto-revocación se deniega como conflicto porque quien llama
  * ya es un administrador autorizado que puede leer el estado.
+ *
+ * Revocar a un Profesional libera en la misma transacción sus tomas abiertas,
+ * con el Administrador como actor (TI4-84): las solicitudes vuelven a
+ * `received` y a la bandeja en vez de quedar bloqueadas. El Administrador no
+ * las reasigna ni las lee: administrar cuentas no da acceso a solicitudes.
  */
 export async function revokeStaffAccount(
   accounts: AccountStore,
   identity: UserIdentity | null,
   args: { readonly userId: Id<"users"> },
+  takes: ReleaseOpenTakesDeps<Id<"requests">, Id<"users">>,
 ): Promise<ApiResult<{ userId: Id<"users"> }>> {
   const caller = await findCallerProfile(accounts, identity);
   if (
@@ -317,11 +324,19 @@ export async function revokeStaffAccount(
         return conflict("La cuenta no admite la revocación en su estado actual.");
     }
   }
+  const revokedAt = Date.now();
   await accounts.patchRevocation({
     userId: target._id,
     revokedBy: caller._id,
-    revokedAt: Date.now(),
+    revokedAt,
   });
+  if (target.role === "professional") {
+    await releaseOpenTakesOf(takes, {
+      professionalId: target._id,
+      actorId: caller._id,
+      occurredAt: revokedAt,
+    });
+  }
   return okResult({ userId: target._id });
 }
 

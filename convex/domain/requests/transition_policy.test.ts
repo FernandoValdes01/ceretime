@@ -135,9 +135,9 @@ describe("transitionRequest", () => {
     const pairs = [
       ["received", "accepted"],
       ["received", "awaiting_information_or_acceptance"],
-      ["under_review", "received"],
       ["accepted", "under_review"],
-      ["awaiting_information_or_acceptance", "received"],
+      ["accepted", "received"],
+      ["cancelled", "received"],
       ["received", "received"],
       ["accepted", "accepted"],
     ] as const;

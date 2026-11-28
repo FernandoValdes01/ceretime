@@ -1,6 +1,6 @@
 # Modelo de estados — Solicitud de acompañamiento
 
-Fuente: TI2-7, TI2-21 y TI2-22 (Sprint 1), TI2-85 (Sprint 2), TI2-141 y TI2-143 (Sprint 3) y el documento de requerimientos, sección "Estados y ciclos de vida". Este archivo es la evidencia de cierre de esos issues; el modelo ejecutable vive en [`state.ts`](./state.ts), [`transitions.ts`](./transitions.ts) y [`transition_policy.ts`](./transition_policy.ts).
+Fuente: TI2-7, TI2-21 y TI2-22 (Sprint 1), TI2-85 (Sprint 2), TI2-141, TI2-143 y la revisión TI4-84 (Sprint 3) y el documento de requerimientos, sección "Estados y ciclos de vida". Este archivo es la evidencia de cierre de esos issues; el modelo ejecutable vive en [`state.ts`](./state.ts), [`transitions.ts`](./transitions.ts) y [`transition_policy.ts`](./transition_policy.ts).
 
 ## Diagrama
 
@@ -15,6 +15,9 @@ stateDiagram-v2
     under_review --> accepted
     awaiting_information_or_acceptance --> accepted
     awaiting_information_or_acceptance --> under_review : exige motivo
+
+    under_review --> received
+    awaiting_information_or_acceptance --> received
 
     received --> cancelled : exige motivo
     under_review --> cancelled : exige motivo
@@ -38,7 +41,7 @@ stateDiagram-v2
     class referred referral
 ```
 
-Las transiciones del diagrama son exactamente las de `SPRINT_1_REQUEST_TRANSITIONS`, `RESPONSE_REQUEST_TRANSITIONS`, `REFERRAL_REQUEST_TRANSITIONS` y `CLOSURE_REQUEST_TRANSITIONS`. Cualquier otro par origen-destino es inválido, incluidos los saltos hacia adelante, los demás retrocesos y cualquier salida de un estado terminal.
+Las transiciones del diagrama son exactamente las de `SPRINT_1_REQUEST_TRANSITIONS`, `RESPONSE_REQUEST_TRANSITIONS`, `RELEASE_REQUEST_TRANSITIONS`, `REFERRAL_REQUEST_TRANSITIONS` y `CLOSURE_REQUEST_TRANSITIONS`. Cualquier otro par origen-destino es inválido, incluidos los saltos hacia adelante, los demás retrocesos y cualquier salida de un estado terminal.
 
 [`state_model.test.ts`](./state_model.test.ts) lee este archivo y falla si el diagrama o las tablas dejan de coincidir con `state.ts` y `transitions.ts`; si editas cualquiera de ellos, corre `bunx vitest run convex/domain/requests`.
 
@@ -94,11 +97,24 @@ La columna "Quién lo intenta" la exige la capa de aplicación (`cancelRequest` 
 | ------------------------------------ | -------------- | -------------------------------- | ------------ |
 | `awaiting_information_or_acceptance` | `under_review` | Estudiante dueño, cuenta vigente | Sí           |
 
-Cuando el Profesional pide información, la solicitud queda en espera. El Estudiante responde y la solicitud vuelve a revisión, para que quien la tomó la retome: aceptarla, pedir más información o cerrarla. Es el único retroceso del modelo. El motivo es la respuesta misma, por eso es obligatorio; queda en el historial de cambios con el Estudiante como actor, sin un campo nuevo en la solicitud. La respuesta tiene un tope de `REQUEST_RESPONSE_MAX_LENGTH` caracteres, que aplica la capa de aplicación.
+Cuando el Profesional pide información, la solicitud queda en espera. El Estudiante responde y la solicitud vuelve a revisión, para que quien la tomó la retome: aceptarla, pedir más información o cerrarla. Es un retroceso, como la liberación de la toma. El motivo es la respuesta misma, por eso es obligatorio; queda en el historial de cambios con el Estudiante como actor, sin un campo nuevo en la solicitud. La respuesta tiene un tope de `REQUEST_RESPONSE_MAX_LENGTH` caracteres, que aplica la capa de aplicación.
 
 El par `received -> under_review` también existe en las tablas, pero es la toma del Profesional. Que el Estudiante solo pueda responder desde la espera lo exige `respondToInformationRequest` en [`respond.ts`](../../application/requests/respond.ts), igual que la columna "Quién lo intenta".
 
 El detalle de la solicitud (`getRequest`) entrega al Estudiante dueño y al Profesional con toma lo pedido mientras la solicitud espera respuesta (`informationRequest`), la respuesta al último pedido (`informationResponse`) y la razón de cierre (`closureReason`). Son textos libres: no viajan en los listados ni en la bandeja.
+
+## Liberación de la toma (TI4-84)
+
+| Origen                               | Destino    | Quién lo intenta                                                        | Exige motivo |
+| ------------------------------------ | ---------- | ----------------------------------------------------------------------- | ------------ |
+| `under_review`                       | `received` | Profesional con la toma activa, o el Administrador al revocar su cuenta | No           |
+| `awaiting_information_or_acceptance` | `received` | Profesional con la toma activa, o el Administrador al revocar su cuenta | No           |
+
+Liberar devuelve la solicitud a `received` y la deja otra vez en la bandeja, para que otro Profesional la tome. La toma (`requestAssignments`, `TOMAS_SOLICITUD` del MER) tiene su propia unión de estados en [`take.ts`](./take.ts): `active`, `revoked` y `finished`. Liberar deja la toma `revoked` con quién la liberó y cuándo, que es `liberadaEn` del MER, y quien la liberó deja de leer la solicitud. Nadie reasigna una toma a otro Profesional: administrar cuentas no da acceso a las solicitudes.
+
+Si la solicitud esperaba información del Estudiante, lo pedido queda en el historial pero deja de esperarse: una solicitud recibida no admite respuesta, y quien la tome después decide si vuelve a pedirlo. La liberación no avisa al Estudiante, porque es interna de CERETI.
+
+Cuando la solicitud llega a un estado terminal (aceptada, cerrada, derivada o cancelada), sus tomas activas pasan a `finished` con `finishedAt`. Quien la revisó la sigue leyendo y la sigue viendo en sus tomadas, pero ya no la opera.
 
 ## Derivación de salida (TI2-143)
 

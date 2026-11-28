@@ -29,8 +29,8 @@ export type RequestStateTransition = {
 
 /**
  * Cualquier par que no esté en esta tabla, en la de respuesta, en la de
- * derivación ni en la de cierres es inválido, incluidos los saltos y los
- * demás retrocesos.
+ * liberación, en la de derivación ni en la de cierres es inválido, incluidos
+ * los saltos y los demás retrocesos.
  *
  * Las filas se tipan como `Sprint1RequestState`: agregar acá una transición
  * hacia un cierre o hacia la derivación no compila.
@@ -83,8 +83,8 @@ export const CLOSURE_REQUEST_TRANSITIONS = [
 /**
  * Respuesta del Estudiante a la información pedida (TI2-141): la solicitud
  * vuelve a revisión para que el Profesional la retome. Exige motivo porque el
- * motivo es la respuesta misma. Es el único retroceso del modelo; quién lo
- * intenta (el Estudiante dueño) lo exige Aplicación.
+ * motivo es la respuesta misma. Es un retroceso, como la liberación de la toma
+ * (TI4-84); quién lo intenta (el Estudiante dueño) lo exige Aplicación.
  */
 export const RESPONSE_REQUEST_TRANSITIONS = [
   { from: "awaiting_information_or_acceptance", to: "under_review", requiresReason: true },
@@ -113,10 +113,31 @@ export const REFERRAL_REQUEST_TRANSITIONS = [
   readonly to: ReferralRequestState;
 })[];
 
+/**
+ * Liberación de la toma (TI4-84): la solicitud vuelve a `received` y
+ * reaparece en la bandeja para que otro Profesional la tome. Sale solo de los
+ * estados que tienen toma activa y es, con la respuesta del Estudiante, el
+ * único otro retroceso del modelo. No exige motivo. Quién la intenta (el
+ * Profesional con la toma activa, o el Administrador al revocar su cuenta) lo
+ * exige Aplicación.
+ *
+ * Si la solicitud esperaba información del Estudiante, lo pedido queda en el
+ * historial pero deja de esperarse: la solicitud recibida no admite respuesta
+ * y quien la tome después decide si vuelve a pedirlo.
+ */
+export const RELEASE_REQUEST_TRANSITIONS = [
+  { from: "under_review", to: "received", requiresReason: false },
+  { from: "awaiting_information_or_acceptance", to: "received", requiresReason: false },
+] as const satisfies readonly (RequestStateTransition & {
+  readonly from: Sprint1RequestState;
+  readonly to: Sprint1RequestState;
+})[];
+
 /** Toda transición válida de la solicitud; la política busca solo acá. */
 export const REQUEST_TRANSITIONS = [
   ...SPRINT_1_REQUEST_TRANSITIONS,
   ...RESPONSE_REQUEST_TRANSITIONS,
+  ...RELEASE_REQUEST_TRANSITIONS,
   ...REFERRAL_REQUEST_TRANSITIONS,
   ...CLOSURE_REQUEST_TRANSITIONS,
 ] as const;

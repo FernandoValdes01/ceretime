@@ -28,12 +28,14 @@ import type {
   ActiveProfessionalReader,
   ActiveStudentByEmailReader,
   OfficialRequestRegistrar,
+  ReadableTakeReader,
   RequestReader,
   RequestReferralWriter,
   RequestStatusWriter,
-  RequestTakeReader,
+  RequestTakeFinisher,
   RequestTransitionRecorder,
 } from "./ports";
+import { finishTakesIfTerminal } from "./takes";
 import type { NotificationEventRecorder } from "../notifications/ports";
 import { notifyRequestChange, notifyRequestReceived } from "./notifications";
 import { toStatusChange } from "./status_change";
@@ -120,7 +122,7 @@ export async function registerOfficialRequest<RequestId extends string, UserId e
 export interface ReferralStepDeps<RequestId extends string, UserId extends string> {
   readonly professionals: ActiveProfessionalReader<UserId>;
   readonly requests: RequestReader<RequestId, UserId> &
-    RequestTakeReader<RequestId, UserId> &
+    ReadableTakeReader<RequestId, UserId> &
     RequestReferralWriter<RequestId, UserId>;
   /** Reloj del servidor para la fecha del paso; las pruebas lo fijan. */
   readonly now: () => number;
@@ -152,7 +154,7 @@ async function applyReferralStep<RequestId extends string, UserId extends string
   if (professional === null) return denied();
   const row = await deps.requests.getRequest(input.requestId);
   if (row === null) return denied();
-  if (!(await deps.requests.hasActiveTake(row._id, professional._id))) return denied();
+  if (!(await deps.requests.hasReadableTake(row._id, professional._id))) return denied();
   if (findRequestTransition(row.status, ACCEPTANCE_STATE) === undefined) {
     return stateConflict("La solicitud ya no admite este registro en su estado actual.");
   }
@@ -192,7 +194,8 @@ export async function recordReferralAcceptance<RequestId extends string, UserId 
 export interface ReferRequestDeps<RequestId extends string, UserId extends string> {
   readonly professionals: ActiveProfessionalReader<UserId>;
   readonly requests: RequestReader<RequestId, UserId> &
-    RequestTakeReader<RequestId, UserId> &
+    ReadableTakeReader<RequestId, UserId> &
+    RequestTakeFinisher<RequestId> &
     RequestStatusWriter<RequestId, UserId> &
     RequestTransitionRecorder<RequestId, UserId>;
   readonly notifications: NotificationEventRecorder;
@@ -225,7 +228,7 @@ export async function referRequest<RequestId extends string, UserId extends stri
   if (professional === null) return denied();
   const row = await deps.requests.getRequest(input.requestId);
   if (row === null) return denied();
-  if (!(await deps.requests.hasActiveTake(row._id, professional._id))) return denied();
+  if (!(await deps.requests.hasReadableTake(row._id, professional._id))) return denied();
   const result = transitionRequest({
     from: row.status,
     to: "referred",
@@ -261,6 +264,7 @@ export async function referRequest<RequestId extends string, UserId extends stri
     reason: reason.data,
     occurredAt: result.change.occurredAt,
   });
+  await finishTakesIfTerminal(deps.requests, row._id, result.change);
   await notifyRequestChange(deps.notifications, row, result.change);
   return okResult(toEntity(row, result.change.to));
 }

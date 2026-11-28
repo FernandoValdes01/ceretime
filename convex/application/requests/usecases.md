@@ -11,6 +11,7 @@ Evidencia de cierre de TI2-9: endpoints públicos de solicitudes para Estudiante
 | `presentation/requests.listAuthorizedRequests`       | Profesional vigente | Lista solicitudes tomadas por él, paginado                                                                                |
 | `presentation/requests.listOpenRequests`             | Profesional vigente | Bandeja de triage: solo `received`, minimizada (sin `accessNeeds`), paginado                                              |
 | `presentation/requests.takeRequest`                  | Profesional vigente | Toma una `received` para sí e inicia su revisión; fuera de recibida o con toma activa se rechaza                          |
+| `presentation/requests.releaseRequest`               | Profesional vigente | Libera su toma activa (TI4-84): la solicitud vuelve de revisión o espera a `received` y a la bandeja                      |
 | `presentation/requests.requestAdditionalInformation` | Profesional vigente | Mueve `under_review` a `awaiting_information_or_acceptance` con motivo obligatorio, aplicando la política de TI2-21       |
 | `presentation/requests.acceptRequest`                | Profesional vigente | Acepta (`under_review` o espera hacia `accepted`) y abre exactamente un acompañamiento con su asignación inicial (TI2-24) |
 
@@ -67,6 +68,7 @@ Ningún caso de uso de `convex/application/requests/` importa el contexto de Con
 ## Alcance explícito
 
 - El Profesional solo opera solicitudes con toma activa a su nombre; la toma es manual y queda auditada (quién y cuándo). Sin toma no hay acceso.
+- Desde TI4-84 la toma tiene su propia unión de estados (`active`, `revoked`, `finished`, en `convex/domain/requests/take.ts`). `releaseRequest`, en `takes.ts`, la cierra como `revoked` con quién la liberó y cuándo, y devuelve la solicitud a `received` sin avisar al Estudiante. `revokeStaffAccount` libera en la misma transacción las tomas abiertas del Profesional, con el Administrador como actor. Aceptar, cerrar, derivar o cancelar dejan la toma `finished`: quien la revisó la sigue leyendo y la ve en `listAuthorizedRequests`, y repetir una operación responde `conflict`, como antes. Se prueba por la API pública en `convex/tests/requestRelease.test.ts`.
 - Persiste el estado resultante y el registro del cambio (motivo, actor y fecha) en la misma transacción, en la bitácora `requestTransitions`.
 - Se guarda el texto de necesidades de acceso; convertir el contenido estructurado a la forma persistida es alcance de TI2-23.
 
