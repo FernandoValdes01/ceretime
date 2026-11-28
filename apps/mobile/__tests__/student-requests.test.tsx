@@ -205,6 +205,43 @@ describe("Solicitudes del estudiante", () => {
     expect(navigation.getPathname()).toBe("/estudiante/solicitudes/SOL-DEMO-001");
   });
 
+  test("al volver a una pantalla muestra lo que cambió el profesional sin reiniciar la app", async () => {
+    const base = await createDemoStudentAreaReader().readStudentArea();
+    const received = { ...base.requests[0]!, status: "received" as const };
+    const withRequest = (request: StudentAreaSnapshot["requests"][number]) => ({
+      ...base,
+      requests: [request],
+      accompaniments: [],
+    });
+    let current: StudentAreaSnapshot = withRequest(received);
+    const read = jest
+      .spyOn(mobileDependencies.studentAreaReader, "readStudentArea")
+      .mockImplementation(async () => current);
+
+    renderRouter(appDirectory);
+    fireEvent.press(await screen.findByRole("button", { name: "Entrar como Estudiante" }));
+    fireEvent.press(await screen.findByRole("button", { name: "Mis solicitudes" }));
+    const card = await screen.findByRole("button", { name: /Estado: Recibida/ });
+    // El primer foco coincide con la carga inicial y no la repite.
+    expect(read).toHaveBeenCalledTimes(1);
+
+    // El profesional pide información mientras la lista ya está cargada: abrir el detalle la trae.
+    current = withRequest({
+      ...received,
+      status: "awaitingInformationOrAcceptance",
+      informationRequest: "¿Qué horario te acomoda?",
+    });
+    fireEvent.press(card);
+    expect(await screen.findByText("¿Qué horario te acomoda?")).toBeOnTheScreen();
+
+    // Vuelve a cambiar mientras está en otra pestaña: al regresar se ve el estado vigente.
+    fireEvent.press(screen.getByLabelText("Inicio, pestaña, 1 de 3"));
+    await screen.findByRole("button", { name: "Mis solicitudes" });
+    current = withRequest({ ...received, status: "underReview" });
+    fireEvent.press(screen.getByLabelText("Solicitudes, pestaña, 2 de 3"));
+    expect(await screen.findByLabelText("Estado de la solicitud: En revisión")).toBeOnTheScreen();
+  });
+
   test("incluye en listado y detalle una solicitud enviada durante la sesión", async () => {
     const announce = jest.spyOn(AccessibilityInfo, "announceForAccessibility");
     const navigation = renderRouter(appDirectory);
@@ -257,6 +294,8 @@ describe("Solicitudes del estudiante", () => {
     ).not.toBeOnTheScreen();
     fireEvent.press(screen.getByRole("button", { name: "Volver a mis solicitudes" }));
     expect(navigation.getPathname()).toBe("/estudiante/solicitudes");
+    // La lista recupera el foco y vuelve a leer: la prueba espera a que termine.
+    await act(async () => undefined);
   });
 
   test("abre el acompañamiento de una solicitud aceptada y vuelve al detalle", async () => {

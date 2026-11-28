@@ -8,7 +8,10 @@ import {
 } from "../../../../src/composition/mobile-dependencies";
 import { createConvexStudentAreaReader } from "../../../../src/infrastructure/convex-student-area-reader";
 import { createConvexStudentRequestSubmitter } from "../../../../src/infrastructure/convex-student-request-submitter";
-import { StudentAreaProvider } from "../../../../src/presentation/estudiante/student-area-provider";
+import {
+  StudentAreaProvider,
+  useStudentAreaContext,
+} from "../../../../src/presentation/estudiante/student-area-provider";
 import { RoleGuard } from "../../../../src/presentation/navigation/role-guard";
 import { useOptionalNavigationSession } from "../../../../src/presentation/navigation/session";
 
@@ -36,17 +39,25 @@ function useStudentAreaAdapters() {
   }, [userId, displayName, email]);
 }
 
+// El profesional cambia las solicitudes fuera de la app: cada pantalla que recupera el foco vuelve a leer.
+function StudentRequestsStack() {
+  const { refresh } = useStudentAreaContext();
+  return (
+    <Stack screenOptions={{ headerShown: false }} screenListeners={{ focus: refresh }}>
+      <Stack.Screen name="index" options={{ headerShown: false }} />
+      <Stack.Screen name="[requestId]" options={{ headerShown: false }} />
+      <Stack.Screen name="[requestId]/acompanamiento" options={{ headerShown: false }} />
+    </Stack>
+  );
+}
+
 export default function StudentRequestsLayout() {
   const { reader, actions } = useStudentAreaAdapters();
 
   return (
     <RoleGuard requiredRole="estudiante">
       <StudentAreaProvider reader={reader} actions={actions}>
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="index" options={{ headerShown: false }} />
-          <Stack.Screen name="[requestId]" options={{ headerShown: false }} />
-          <Stack.Screen name="[requestId]/acompanamiento" options={{ headerShown: false }} />
-        </Stack>
+        <StudentRequestsStack />
       </StudentAreaProvider>
     </RoleGuard>
   );
