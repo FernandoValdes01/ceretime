@@ -6,6 +6,7 @@ import type { StudentRequest } from "@/domain/student-area-models";
 import type { StudentAreaCollectionStatus } from "@/presentation/hooks/use-student-area";
 import { OperationAnnouncement } from "../accessibility/operation-announcement";
 import { StudentAction, StudentScreen } from "./student-screen";
+import { StudentRefreshNotice } from "./student-refresh-notice";
 import { StudentText } from "./student-text";
 import { useStudentAreaContext } from "./student-area-provider";
 import { formatRequestDate } from "./student-request-formatters";
@@ -102,7 +103,7 @@ export default function StudentRequestsScreen() {
   const { requests } = useStudentAreaContext();
 
   return (
-    <StudentScreen showIntroduction={false}>
+    <StudentScreen showIntroduction={false} notice={<StudentRefreshNotice />}>
       <OperationAnnouncement message={listAnnouncement(requests.status)} />
       {requests.status === "loading" ? <StateMessage title="Cargando solicitudes…" /> : null}
 

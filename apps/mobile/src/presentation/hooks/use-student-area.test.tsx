@@ -1,10 +1,12 @@
 import { StrictMode } from "react";
+import { AppState, type AppStateStatus } from "react-native";
 import { act, renderHook } from "@testing-library/react-native";
 
 import type { StudentAreaSnapshot, StudentRequest } from "../../domain/student-area-models";
 import type { Accompaniment } from "../../domain/request-models";
 import type { StudentAreaReader } from "../../application/student-area-port";
 import { createDemoStudentAreaReader } from "../../infrastructure/demo-student-area-reader";
+import { StudentOperationError } from "../../application/student-area-port";
 import { useStudentArea } from "./use-student-area";
 
 interface Deferred<T> {
@@ -171,6 +173,130 @@ test("reports rejected reads, then reloads successfully", async () => {
   });
   expect(mounted.getState().status).toBe("success");
   act(() => mounted.unmount());
+});
+
+// Cada lectura queda pendiente hasta que la prueba la resuelve.
+function manualReader() {
+  const reads: Deferred<StudentAreaSnapshot>[] = [];
+  const reader: StudentAreaReader = {
+    readStudentArea: () => {
+      const read = deferred<StudentAreaSnapshot>();
+      reads.push(read);
+      return read.promise;
+    },
+  };
+  return { reader, reads };
+}
+
+async function resolveRead(read: Deferred<StudentAreaSnapshot>, value: StudentAreaSnapshot) {
+  await act(async () => {
+    read.resolve(value);
+    await read.promise;
+  });
+}
+
+async function rejectRead(read: Deferred<StudentAreaSnapshot>, reason: unknown) {
+  await act(async () => {
+    read.reject(reason);
+    await read.promise.catch(() => undefined);
+  });
+}
+
+test("refresh keeps the loaded data visible and replaces it when the new read arrives", async () => {
+  const { reader, reads } = manualReader();
+  const mounted = mount(reader);
+  await resolveRead(reads[0]!, await snapshot({ requests: [request("anterior")] }));
+
+  act(() => mounted.getState().refresh());
+
+  expect(reads).toHaveLength(2);
+  expect(mounted.getState().status).toBe("success");
+  expect(mounted.getState().requests.data.map(({ id }) => id)).toEqual(["anterior"]);
+
+  await resolveRead(reads[1]!, await snapshot({ requests: [request("posterior")] }));
+  expect(mounted.getState().requests.data.map(({ id }) => id)).toEqual(["posterior"]);
+  act(() => mounted.unmount());
+});
+
+test("refresh does not start a second read while one is in flight", async () => {
+  const { reader, reads } = manualReader();
+  const mounted = mount(reader);
+
+  act(() => mounted.getState().refresh());
+  expect(reads).toHaveLength(1);
+
+  await resolveRead(reads[0]!, await snapshot());
+  act(() => mounted.getState().refresh());
+  act(() => mounted.getState().refresh());
+  expect(reads).toHaveLength(2);
+  act(() => mounted.unmount());
+});
+
+test("a refresh that fails keeps the loaded data, but losing access removes it", async () => {
+  const { reader, reads } = manualReader();
+  const mounted = mount(reader);
+  await resolveRead(reads[0]!, await snapshot({ requests: [request("propia")] }));
+
+  act(() => mounted.getState().refresh());
+  await rejectRead(reads[1]!, new Error("sin red"));
+  expect(mounted.getState().status).toBe("success");
+  expect(mounted.getState().requests.data.map(({ id }) => id)).toEqual(["propia"]);
+
+  act(() => mounted.getState().refresh());
+  await rejectRead(
+    reads[2]!,
+    new StudentOperationError("listOwnRequests", "unauthorized", "No autorizado"),
+  );
+  expect(mounted.getState().status).toBe("access-denied");
+  expect(mounted.getState().requests.data).toEqual([]);
+  act(() => mounted.unmount());
+});
+
+test("a failed refresh is reported until a later one succeeds", async () => {
+  const { reader, reads } = manualReader();
+  const mounted = mount(reader);
+  await resolveRead(reads[0]!, await snapshot({ requests: [request("propia")] }));
+  expect(mounted.getState().refreshError).toBeNull();
+
+  act(() => mounted.getState().refresh());
+  await rejectRead(reads[1]!, new Error("sin red"));
+  expect(mounted.getState().refreshError).not.toBeNull();
+  expect(mounted.getState().retryingRefresh).toBe(false);
+
+  // Mientras reintenta, el aviso sigue: los datos todavía no están confirmados.
+  act(() => mounted.getState().refresh());
+  expect(mounted.getState().refreshError).not.toBeNull();
+  expect(mounted.getState().retryingRefresh).toBe(true);
+
+  await resolveRead(reads[2]!, await snapshot({ requests: [request("propia")] }));
+  expect(mounted.getState().refreshError).toBeNull();
+  expect(mounted.getState().retryingRefresh).toBe(false);
+  act(() => mounted.unmount());
+});
+
+test("returning to the foreground refreshes, and unmounting stops listening", async () => {
+  const listeners: ((state: AppStateStatus) => void)[] = [];
+  const remove = jest.fn();
+  // El preset ya trae un doble: se cambia solo su implementación y se devuelve al terminar, porque
+  // `mockRestore` lo dejaría sin ninguna.
+  const subscribe = jest.spyOn(AppState, "addEventListener");
+  const presetImplementation = subscribe.getMockImplementation();
+  subscribe.mockImplementation((_type, listener) => {
+    listeners.push(listener as (state: AppStateStatus) => void);
+    return { remove } as never;
+  });
+  const { reader, reads } = manualReader();
+  const mounted = mount(reader);
+  await resolveRead(reads[0]!, await snapshot());
+
+  act(() => listeners.at(-1)!("background"));
+  expect(reads).toHaveLength(1);
+  act(() => listeners.at(-1)!("active"));
+  expect(reads).toHaveLength(2);
+
+  act(() => mounted.unmount());
+  expect(remove).toHaveBeenCalled();
+  subscribe.mockImplementation(presetImplementation!);
 });
 
 test("catches a synchronous reader throw", () => {

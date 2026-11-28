@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AppState } from "react-native";
 
 import type {
   StudentAreaSnapshot,
@@ -39,6 +40,11 @@ export interface StudentAreaState {
   readonly snapshot: StudentAreaSnapshot | null;
   readonly error: unknown | null;
   readonly reload: () => void;
+  /** Vuelve a leer sin vaciar la pantalla, para traer cambios hechos fuera de la app. */
+  readonly refresh: () => void;
+  /** Fallo de la última relectura: lo que se muestra sigue siendo lo leído antes. */
+  readonly refreshError: unknown | null;
+  readonly retryingRefresh: boolean;
   // La identidad siempre viene en el snapshot, por eso no tiene estado `empty`.
   readonly identity: StudentIdentityState;
   readonly requests: StudentRequestsState;
@@ -50,10 +56,14 @@ interface StudentAreaLoad {
   readonly status: StudentAreaLoadStatus;
   readonly snapshot: StudentAreaSnapshot | null;
   readonly error: unknown | null;
+  readonly refreshError: unknown | null;
+  readonly retryingRefresh: boolean;
 }
 
+const settledRefresh = { refreshError: null, retryingRefresh: false } as const;
+
 function loadingLoad(reader: StudentAreaReader): StudentAreaLoad {
-  return { reader, status: "loading", snapshot: null, error: null };
+  return { reader, status: "loading", snapshot: null, error: null, ...settledRefresh };
 }
 
 function errorLoad(reader: StudentAreaReader, error: unknown): StudentAreaLoad {
@@ -62,11 +72,28 @@ function errorLoad(reader: StudentAreaReader, error: unknown): StudentAreaLoad {
     status: isMobileAccessDenied(error) ? "access-denied" : "error",
     snapshot: null,
     error: toMobileOperationError(error, "No pudimos cargar tus solicitudes. Intenta nuevamente."),
+    ...settledRefresh,
   };
 }
 
+// Un refresco que falla conserva lo ya leído y lo declara; perder el acceso sí lo retira.
+function failedLoad(
+  previous: StudentAreaLoad,
+  reader: StudentAreaReader,
+  error: unknown,
+): StudentAreaLoad {
+  const failed = errorLoad(reader, error);
+  const keepsPrevious =
+    failed.status !== "access-denied" &&
+    previous.reader === reader &&
+    previous.status === "success";
+  return keepsPrevious
+    ? { ...previous, refreshError: failed.error, retryingRefresh: false }
+    : failed;
+}
+
 function successLoad(reader: StudentAreaReader, snapshot: StudentAreaSnapshot): StudentAreaLoad {
-  return { reader, status: "success", snapshot, error: null };
+  return { reader, status: "success", snapshot, error: null, ...settledRefresh };
 }
 
 /**
@@ -80,19 +107,37 @@ export function useStudentArea(reader: StudentAreaReader): StudentAreaState {
   const [load, setLoad] = useState<StudentAreaLoad>(() => loadingLoad(reader));
   const [reloadVersion, setReloadVersion] = useState(0);
   const requestId = useRef(0);
+  // Empieza en `true` porque el montaje siempre lee, incluso antes de que corra su efecto.
+  const reading = useRef(true);
 
   const reload = useCallback(() => {
     // Invalidate the previous Promise before React runs the next effect.
     requestId.current += 1;
+    reading.current = true;
     setLoad(loadingLoad(reader));
     setReloadVersion((version) => version + 1);
   }, [reader]);
+
+  const refresh = useCallback(() => {
+    if (reading.current) return;
+    reading.current = true;
+    setLoad((previous) =>
+      previous.refreshError === null ? previous : { ...previous, retryingRefresh: true },
+    );
+    setReloadVersion((version) => version + 1);
+  }, []);
 
   useEffect(() => {
     let disposed = false;
     const currentRequestId = ++requestId.current;
 
     const isCurrent = () => !disposed && requestId.current === currentRequestId;
+    reading.current = true;
+    const fail = (error: unknown) => {
+      if (!isCurrent()) return;
+      reading.current = false;
+      setLoad((previous) => failedLoad(previous, reader, error));
+    };
     let pending: Promise<StudentAreaSnapshot>;
 
     try {
@@ -100,26 +145,18 @@ export function useStudentArea(reader: StudentAreaReader): StudentAreaState {
       // an adapter can fail synchronously before returning its Promise.
       pending = reader.readStudentArea();
     } catch (error) {
-      if (isCurrent()) {
-        setLoad(errorLoad(reader, error));
-      }
+      fail(error);
       return () => {
         disposed = true;
       };
     }
 
-    Promise.resolve(pending).then(
-      (snapshot) => {
-        if (isCurrent()) {
-          setLoad(successLoad(reader, snapshot));
-        }
-      },
-      (error: unknown) => {
-        if (isCurrent()) {
-          setLoad(errorLoad(reader, error));
-        }
-      },
-    );
+    Promise.resolve(pending).then((snapshot) => {
+      if (isCurrent()) {
+        reading.current = false;
+        setLoad(successLoad(reader, snapshot));
+      }
+    }, fail);
 
     return () => {
       disposed = true;
@@ -127,6 +164,13 @@ export function useStudentArea(reader: StudentAreaReader): StudentAreaState {
   }, [reader, reloadVersion]);
 
   useEffect(() => reader.subscribe?.(reload), [reader, reload]);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") refresh();
+    });
+    return () => subscription.remove();
+  }, [refresh]);
 
   // During the render in which a new reader is supplied, effects have not run
   // yet. Deriving visibility from the reader prevents one frame of stale data.
@@ -169,6 +213,9 @@ export function useStudentArea(reader: StudentAreaReader): StudentAreaState {
     snapshot,
     error,
     reload,
+    refresh,
+    refreshError: visibleLoad.refreshError,
+    retryingRefresh: visibleLoad.retryingRefresh,
     identity,
     requests,
     accompaniments,

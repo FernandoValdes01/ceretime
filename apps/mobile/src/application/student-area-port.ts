@@ -54,7 +54,7 @@ export class StudentOperationError extends UserFacingError {
   }
 }
 
-/** Acciones de solicitud; su integración real corresponde a TI4-80. */
+/** Acciones de solicitud del Estudiante. */
 export type StudentRequestActionCommand =
   | {
       readonly kind: "cancelRequest";
@@ -67,15 +67,15 @@ export type StudentRequestActionCommand =
       readonly response: string;
     };
 
-export const PROVISIONAL_STUDENT_REQUEST_OPERATIONS = {
+/** Operaciones de escritura publicadas por TI2-141 que usa el adaptador de Convex. */
+export const STUDENT_REQUEST_ACTION_OPERATIONS = {
   cancelRequest: {
-    status: "provisional",
+    status: "published",
     reference: "convex/application/requests/commands.ts#cancelRequest",
     publicationIssue: "TI2-141",
   },
   respondToInformationRequest: {
-    status: "provisional",
-    // Referencia conservada de S1; la integración real de Mobile sigue pendiente de TI4-80.
+    status: "published",
     reference: "TI2-141: respuesta del estudiante a la información solicitada",
     publicationIssue: "TI2-141",
   },
@@ -89,6 +89,8 @@ export interface StudentAreaReader {
 
 /** Envío de contenido completo. La composición actual selecciona un simulador local. */
 export interface StudentRequestSubmitter {
+  /** Verdadero solo si el envío llega al servidor; sin indicarlo, la interfaz avisa que es una simulación. */
+  readonly persistsToServer?: boolean;
   readonly requestActions?: StudentRequestActions;
   submitStudentRequest(
     command: SubmitStudentRequestCommand,
@@ -97,6 +99,8 @@ export interface StudentRequestSubmitter {
 
 /** Acciones inyectadas; una respuesta confirma solamente la escritura del adaptador elegido. */
 export interface StudentRequestActions {
+  /** Verdadero solo si las acciones llegan al servidor; sin indicarlo, la interfaz avisa que son de prueba. */
+  readonly persistsToServer?: boolean;
   execute(command: StudentRequestActionCommand): Promise<StudentRequest>;
 }
 

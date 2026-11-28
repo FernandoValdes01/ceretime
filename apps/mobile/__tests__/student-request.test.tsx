@@ -286,6 +286,20 @@ describe("Formulario de solicitud del estudiante", () => {
     });
   });
 
+  test("con envío real, la revisión no anuncia un ingreso que todavía no existe", () => {
+    const submitter: StudentRequestSubmitter = {
+      persistsToServer: true,
+      submitStudentRequest: async () => testReceipt,
+    };
+    render(<RequestForm submitter={submitter} onRevealGroup={() => undefined} />);
+    fillRequiredStudentRequestFields();
+
+    expect(
+      screen.getByText("El nombre y correo se obtienen de tu cuenta institucional."),
+    ).toBeOnTheScreen();
+    expect(screen.queryByText(/cuando esté disponible el inicio/)).not.toBeOnTheScreen();
+  });
+
   test("resume lo que se envía, respeta el orden elegido y conserva la nota de la cuenta", async () => {
     const commands: SubmitStudentRequestCommand[] = [];
     const submitter: StudentRequestSubmitter = {

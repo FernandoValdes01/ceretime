@@ -1,20 +1,38 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Keyboard, KeyboardAvoidingView, Platform, ScrollView } from "react-native";
 import { useHeaderHeight } from "expo-router/react-navigation";
 import { router, usePathname } from "expo-router";
 import type { StudentRequestSubmitter } from "@/application/student-area-port";
-import { mobileDependencies } from "@/composition/mobile-dependencies";
+import {
+  authMode,
+  getMobileConvexClient,
+  mobileDependencies,
+} from "@/composition/mobile-dependencies";
+import { createConvexStudentRequestSubmitter } from "@/infrastructure/convex-student-request-submitter";
 import { StudentScreen } from "./student-screen";
 import { RequestForm } from "./request-form";
 import { RoleGuard } from "../navigation/role-guard";
+import { useOptionalNavigationSession } from "../navigation/session";
 
 export interface NewRequestScreenProps {
   readonly submitter?: StudentRequestSubmitter;
 }
 
-export default function NewRequestScreen({
-  submitter = mobileDependencies.studentRequestSubmitter,
-}: NewRequestScreenProps = {}) {
+// El envío real se crea una vez por cuenta: el cliente se reutiliza mientras no cambie la sesión.
+function useDefaultSubmitter(): StudentRequestSubmitter {
+  const userId = useOptionalNavigationSession()?.session?.user.id;
+  return useMemo(
+    () =>
+      authMode === "institutional" && userId !== undefined
+        ? createConvexStudentRequestSubmitter({ client: getMobileConvexClient() })
+        : mobileDependencies.studentRequestSubmitter,
+    [userId],
+  );
+}
+
+export default function NewRequestScreen({ submitter }: NewRequestScreenProps = {}) {
+  const defaultSubmitter = useDefaultSubmitter();
+  const activeSubmitter = submitter ?? defaultSubmitter;
   const headerHeight = useHeaderHeight();
   const pathname = usePathname();
   const [formSession, setFormSession] = useState(0);
@@ -72,7 +90,7 @@ export default function NewRequestScreen({
           <RequestForm
             key={formSession}
             onSubmitted={markCompleted}
-            submitter={submitter}
+            submitter={activeSubmitter}
             onRevealGroup={(y) => scrollRef.current?.scrollTo({ y, animated: false })}
             onFieldFocus={(inputHandle) => {
               focusedInputHandleRef.current = inputHandle;

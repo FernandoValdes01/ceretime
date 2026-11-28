@@ -19,7 +19,7 @@ export interface StudentIdentity {
 export interface StudentRequest {
   // createRequest, listOwnRequests y getRequest: _id -> id, createdAt -> ISO.
   readonly id: string;
-  // Estados canónicos; la conexión de Mobile con el backend corresponde a TI4-80.
+  // Estados canónicos del contrato público de solicitudes.
   readonly status: RequestStatus;
   // Detalles opcionales del intercambio; el listado público puede omitirlos.
   readonly closureReason?: string;

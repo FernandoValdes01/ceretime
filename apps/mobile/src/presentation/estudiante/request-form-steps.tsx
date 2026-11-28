@@ -403,7 +403,13 @@ function SummaryItem({ label, value }: { readonly label: string; readonly value:
 }
 
 // Paso 5: resumen de lo ingresado antes de enviar.
-export function ReviewStep({ values }: { readonly values: RequestFormValues }) {
+export function ReviewStep({
+  values,
+  simulated,
+}: {
+  readonly values: RequestFormValues;
+  readonly simulated: boolean;
+}) {
   const preferredWeekdays = values.preferredWeekdays
     .flatMap((day) => {
       const label = weekdayLabelByValue.get(day);
@@ -440,8 +446,9 @@ export function ReviewStep({ values }: { readonly values: RequestFormValues }) {
         />
       </View>
       <Text className="text-student-secondary text-base leading-[26px]">
-        El nombre y correo se obtendrán de la cuenta institucional cuando esté disponible el inicio
-        de sesión.
+        {simulated
+          ? "El nombre y correo se obtendrán de la cuenta institucional cuando esté disponible el inicio de sesión."
+          : "El nombre y correo se obtienen de tu cuenta institucional."}
       </Text>
     </>
   );

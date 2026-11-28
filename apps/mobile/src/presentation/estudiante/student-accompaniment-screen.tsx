@@ -2,6 +2,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { View } from "react-native";
 
 import { StudentAction, StudentScreen } from "./student-screen";
+import { StudentRefreshNotice } from "./student-refresh-notice";
 import { StudentText } from "./student-text";
 import { formatRequestDate } from "./student-request-formatters";
 import { useStudentAreaContext } from "./student-area-provider";
@@ -35,7 +36,7 @@ export default function StudentAccompanimentScreen() {
       : undefined;
 
   return (
-    <StudentScreen onBack={router.back} showIntroduction={false}>
+    <StudentScreen onBack={router.back} showIntroduction={false} notice={<StudentRefreshNotice />}>
       {accompaniments.status === "loading" ? (
         <StudentText
           weight="semibold"

@@ -242,3 +242,17 @@ test("permite operar con el nuevo adaptador sin que el anterior libere su bloque
   await act(async () => resolveB({ ...request, status: "underReview" }));
   expect(screen.getByText(/Respuesta enviada en la demostración/)).toBeOnTheScreen();
 });
+
+test("con acciones reales no se presentan como prueba ni como demostración", async () => {
+  const execute = jest.fn(async (): Promise<StudentRequest> => ({
+    ...request,
+    status: "cancelled",
+  }));
+  open({ execute, persistsToServer: true });
+  expect(screen.queryByText(/Acciones de prueba/)).toBeNull();
+  fireEvent.press(screen.getByRole("button", { name: "Cancelar solicitud" }));
+  fireEvent.changeText(screen.getByLabelText(/^Motivo de cancelación/), "Ya no necesito el apoyo.");
+  fireEvent.press(screen.getByRole("button", { name: "Confirmar cancelación" }));
+  expect(await screen.findByText("Solicitud cancelada.")).toBeOnTheScreen();
+  expect(screen.queryByText(/demostración/)).toBeNull();
+});
