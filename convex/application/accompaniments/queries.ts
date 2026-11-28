@@ -116,16 +116,26 @@ export async function getAccompanimentDetail(
   return projectView(accompaniment, view);
 }
 
-/** Lista los acompañamientos propios del Estudiante, paginado. */
+/**
+ * Lista los acompañamientos propios del Estudiante, paginado. Con `status`
+ * solo trae los de ese estado (TI4-84); sin él, todos, como antes.
+ */
 export async function listOwnedAccompanimentsUseCase(
   store: AccompanimentReadStore,
   identity: UserIdentity | null,
-  args: { readonly paginationOpts: PaginationOptions },
+  args: {
+    readonly paginationOpts: PaginationOptions;
+    readonly status?: Doc<"accompaniments">["status"];
+  },
 ) {
   const profile = await requireAuthorizedProfile(store, identity);
   if (listingScopeForRole(profile.role).kind !== "owned") deny();
 
-  const result = await store.paginateOwnedAccompaniments(profile._id, args.paginationOpts);
+  const result = await store.paginateOwnedAccompaniments(
+    profile._id,
+    args.paginationOpts,
+    args.status,
+  );
   const views: AccompanimentViewResult[] = [];
   for (const accompaniment of result.page) {
     const view = authorizeAccompanimentRead({

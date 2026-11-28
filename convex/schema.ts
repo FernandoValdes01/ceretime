@@ -99,6 +99,8 @@ export default defineSchema({
     closureReason: v.optional(v.string()),
   })
     .index("by_student", ["studentId"])
+    // Filtro de estado del listado propio (TI4-84): filtra antes de paginar.
+    .index("by_student_and_status", ["studentId", "status"])
     .index("by_request", ["requestId"]),
 
   // Tabla 'accompanimentTransitions', retirada (TI2-165): el historial de

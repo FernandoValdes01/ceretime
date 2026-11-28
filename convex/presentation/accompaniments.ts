@@ -138,11 +138,12 @@ export const getAccompaniment = query({
 });
 
 /**
- * Lista los acompañamientos propios del Estudiante, paginado.
+ * Lista los acompañamientos propios del Estudiante, paginado. `status`
+ * opcional filtra antes de paginar (TI4-84); sin él no cambia nada.
  * Cualquier otro rol recibe denegación.
  */
 export const listOwnedAccompaniments = query({
-  args: { paginationOpts: paginationOptsValidator },
+  args: { paginationOpts: paginationOptsValidator, status: v.optional(accompanimentStatusUnion) },
   returns: paginationResultValidator(accompanimentViewValidator),
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();

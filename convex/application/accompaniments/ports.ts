@@ -36,9 +36,11 @@ export interface AccompanimentReadStore extends AccompanimentProfileReader {
     accompanimentId: Id<"accompaniments">,
     userId: Id<"users">,
   ): Promise<Doc<"accompanimentAssignments">[]>;
+  /** Acompañamientos propios; con `status`, solo los de ese estado, filtrados antes de paginar. */
   paginateOwnedAccompaniments(
     studentId: Id<"users">,
     paginationOpts: PaginationOptions,
+    status?: Doc<"accompaniments">["status"],
   ): Promise<PaginationResult<Doc<"accompaniments">>>;
   /**
    * Filas activas y vigentes del usuario con ese rol, ordenadas por

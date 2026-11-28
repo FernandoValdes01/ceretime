@@ -120,12 +120,23 @@ export async function findActiveAssignmentsForUser(
   return [...professional, ...intern].filter((row) => isAssignmentWithinValidity(row, now));
 }
 
-/** Página de acompañamientos propios del estudiante. */
+/**
+ * Página de acompañamientos propios del estudiante. Con `status`, el índice
+ * filtra antes de paginar (TI4-84), así un acompañamiento activo no queda
+ * detrás de muchos cerrados.
+ */
 export async function paginateOwnedAccompaniments(
   ctx: DbReader,
   studentId: Id<"users">,
   paginationOpts: PaginationOptions,
+  status?: Doc<"accompaniments">["status"],
 ) {
+  if (status !== undefined) {
+    return await ctx.db
+      .query("accompaniments")
+      .withIndex("by_student_and_status", (q) => q.eq("studentId", studentId).eq("status", status))
+      .paginate(paginationOpts);
+  }
   return await ctx.db
     .query("accompaniments")
     .withIndex("by_student", (q) => q.eq("studentId", studentId))
@@ -839,8 +850,11 @@ export function accompanimentReadStore(ctx: DbReader) {
       getAccompanimentById(ctx, accompanimentId),
     findActiveAssignmentsForUser: (accompanimentId: Id<"accompaniments">, userId: Id<"users">) =>
       findActiveAssignmentsForUser(ctx, accompanimentId, userId),
-    paginateOwnedAccompaniments: (studentId: Id<"users">, paginationOpts: PaginationOptions) =>
-      paginateOwnedAccompaniments(ctx, studentId, paginationOpts),
+    paginateOwnedAccompaniments: (
+      studentId: Id<"users">,
+      paginationOpts: PaginationOptions,
+      status?: Doc<"accompaniments">["status"],
+    ) => paginateOwnedAccompaniments(ctx, studentId, paginationOpts, status),
     queryAssignedRowsAfter: (input: {
       readonly userId: Id<"users">;
       readonly assignedRole: "professional" | "intern";
