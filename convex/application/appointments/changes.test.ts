@@ -379,6 +379,13 @@ const CONFLICT = {
   status: "error",
   error: { code: "conflict", message: "La solicitud entra en conflicto con el estado actual." },
 };
+const REASON_REQUIRED = {
+  status: "error",
+  error: {
+    code: "appointment_fields_invalid",
+    message: "Se requiere el motivo para cancelar la atención.",
+  },
+};
 const NO_AVAILABILITY = {
   status: "error",
   error: {
@@ -468,9 +475,28 @@ describe("cancelación de una atención (TI2-109)", () => {
         appointmentId: "appointment-1",
         ...(reason === undefined ? {} : { reason }),
       });
-      expect(rejected).toEqual(CONFLICT);
+      expect(rejected).toEqual(REASON_REQUIRED);
       expect(world.transitions).toHaveLength(0);
       expect(world.row.status).toBe("scheduled");
+    }
+  });
+
+  test("CERETI sin motivo sobre una atención que no admite cancelarse responde conflict (TI4-84)", async () => {
+    // El campo solo se marca cuando cancelar procedería con un motivo: ni en otro
+    // estado ni con la atención ya iniciada.
+    const started = { startAt: Date.UTC(2020, 0, 1, 9), endAt: Date.UTC(2020, 0, 1, 10) };
+    for (const overrides of [
+      { status: "completed" },
+      { status: "cancelled_by_student" },
+      started,
+    ] as const) {
+      const world = changeWorld(overrides);
+      const rejected = await cancelAppointment(cancelDeps(authorizedAuth(), world), {
+        tokenIdentifier: "token-pro",
+        appointmentId: "appointment-1",
+      });
+      expect(rejected).toEqual(CONFLICT);
+      expect(world.transitions).toHaveLength(0);
     }
   });
 
@@ -1502,7 +1528,7 @@ describe("auditoría de cambios de agenda (TI2-128)", () => {
         tokenIdentifier: "token-pro",
         appointmentId: "appointment-1",
       }),
-    ).toEqual(CONFLICT);
+    ).toEqual(REASON_REQUIRED);
     expect(withoutReason.audits).toHaveLength(0);
 
     const occupied = changeWorld();

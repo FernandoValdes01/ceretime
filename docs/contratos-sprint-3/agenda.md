@@ -142,6 +142,14 @@ Siguen en otras issues, que se apoyan en lo que entrega esta:
 - La búsqueda de cupos comunes a varios profesionales (`searchSlots` recibe un solo `professionalId`) queda para la coordinación en Web; la reserva igual revalida la disponibilidad de cada uno.
 - El máximo de profesionales por atención y los topes de apoyos son provisionales.
 
+## TI4-84: motivo de cancelación de CERETI
+
+`cancelAppointment` exige motivo con texto cuando cancela CERETI (`cancelled_by_cereti`) y lo deja opcional para el Estudiante, como dice el MER. Desde TI4-84, el motivo ausente o en blanco de CERETI responde `appointment_fields_invalid` con el mensaje «Se requiere el motivo para cancelar la atención.», para que el cliente lo muestre junto al campo. Antes respondía `conflict`, igual que una atención que no admite cancelarse.
+
+`appointment_fields_invalid` se responde solo cuando la cancelación procedería con un motivo. Una atención en un estado que no admite cancelar, o que ya comenzó, sigue respondiendo `conflict` aunque falte el motivo. Ningún rechazo escribe, audita ni avisa.
+
+Mobile importa `convex/domain/errors/api_error.ts`: el código nuevo se suma a `API_ERROR_CODE_VALUES` y a `API_ERROR_MESSAGES`, así que `toMobileOperationError` ya muestra su mensaje. La Web exige el motivo antes de enviar y muestra el mensaje del error; marcar el campo con el código es parte de la PR Web.
+
 ## TI2-155: explicación del rechazo y cambios desde el inicio
 
 `reviewAppointmentJustification` acepta `explanation?: string`. Al rechazar una justificación entregada, la explicación es obligatoria: sin texto (o en blanco) responde `conflict` sin escribir. Al aceptar, o al cerrar una inasistencia vencida sin entrega, no se exige. La explicación se recorta y se guarda en `appointments.justificationReviewExplanation`, sin tabla nueva; la vista `full` y la vista `shared` del Estudiante la entregan, igual que `justificationExplanation`, `justificationSubmittedAt`, `justificationReview` y `supportingDocumentReceived`. Ningún aviso la copia.

@@ -61,6 +61,7 @@ describe("Códigos estables de conflicto, acceso denegado y ausencia de cupo (TI
       "follow_up_fields_invalid",
       "request_student_not_found",
       "privacy_request_fields_invalid",
+      "appointment_fields_invalid",
     ]);
   });
 
