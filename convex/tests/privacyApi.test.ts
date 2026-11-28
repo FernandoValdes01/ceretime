@@ -4,6 +4,8 @@ import { ConvexError } from "convex/values";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { api } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { guardPrivacyTreatment } from "../application/privacy/blocking";
+import { privacyBlockReader } from "../infrastructure/privacy/repository";
 import schema from "../schema";
 
 const modules = import.meta.glob("../**/*.ts");
@@ -637,4 +639,203 @@ test("TI2-167 API: días de prórroga fuera de 1-30 responde privacy_request_fie
     }),
   );
   expect(error).toMatchObject({ code: "privacy_request_fields_invalid" });
+});
+
+test("TI2-168 API: el plazo de 2 días hábiles salta el feriado del 8 de diciembre", async () => {
+  // Lunes 7 de diciembre en America/Santiago. El martes 8 es feriado, así
+  // que los dos días hábiles caen el miércoles 9 y el jueves 10.
+  vi.setSystemTime(Date.UTC(2026, 11, 7, 12));
+  const t = convexTest(schema, modules);
+  await seedUser(t, "ti168-est-deadline", "student");
+  const asStudent = t.withIdentity(identityFor("ti168-est-deadline"));
+
+  const receipt = await asStudent.mutation(privacyApi.submitPrivacyRequest, {
+    kind: "blocking",
+    version: VERSION,
+  });
+
+  expect(receipt.responseRule).toBe("business_2");
+  expect(receipt.receivedDate).toBe("2026-12-07");
+  expect(receipt.initialDueDate).toBe("2026-12-10");
+  expect(receipt.initialDueAt).toBeGreaterThan(receipt.receivedAt);
+});
+
+test("TI2-168 API: la oposición concedida surte efecto y se comunica al titular", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedUser(t, "ti168-est-objection-ok", "student");
+  await seedUser(t, "ti168-adm-objection-ok", "admin");
+  const asStudent = t.withIdentity(identityFor("ti168-est-objection-ok"));
+  const asAdmin = t.withIdentity(identityFor("ti168-adm-objection-ok"));
+
+  const receipt = await asStudent.mutation(privacyApi.submitPrivacyRequest, {
+    kind: "objection",
+    version: VERSION,
+  });
+  await asAdmin.mutation(privacyApi.startPrivacyRequestReview, {
+    requestId: receipt.id,
+    version: VERSION,
+  });
+  const resolved = await asAdmin.mutation(privacyApi.resolvePrivacyRequest, {
+    requestId: receipt.id,
+    outcome: "granted",
+    reasons: "Se acoge la oposición y se suspende el tratamiento impugnado.",
+    version: VERSION,
+  });
+
+  expect(resolved.status).toBe("resolved");
+  expect(resolved.effect).toBe("authorized");
+  expect(resolved.response?.outcome).toBe("granted");
+  const stored = await t.run(async (ctx) => await ctx.db.get(receipt.id));
+  expect(stored).toMatchObject({ kind: "objection", status: "resolved" });
+  expect(stored?.response?.reasons).toBe(
+    "Se acoge la oposición y se suspende el tratamiento impugnado.",
+  );
+
+  const events = await t.run(async (ctx) => await ctx.db.query("notificationEvents").collect());
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    kind: "privacy_request_granted",
+    privacyRequestId: receipt.id,
+    recipientId: studentId,
+  });
+  expect(events[0]).not.toHaveProperty("requestId");
+});
+
+test("TI2-168 API: la oposición denegada conserva los datos y también se comunica", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedUser(t, "ti168-est-objection-no", "student");
+  await seedUser(t, "ti168-adm-objection-no", "admin");
+  const asStudent = t.withIdentity(identityFor("ti168-est-objection-no"));
+  const asAdmin = t.withIdentity(identityFor("ti168-adm-objection-no"));
+
+  const receipt = await asStudent.mutation(privacyApi.submitPrivacyRequest, {
+    kind: "objection",
+    version: VERSION,
+  });
+  await asAdmin.mutation(privacyApi.startPrivacyRequestReview, {
+    requestId: receipt.id,
+    version: VERSION,
+  });
+  const resolved = await asAdmin.mutation(privacyApi.resolvePrivacyRequest, {
+    requestId: receipt.id,
+    outcome: "denied",
+    reasons: "La oposición se rechaza por motivos fundados.",
+    version: VERSION,
+  });
+
+  expect(resolved.status).toBe("resolved");
+  expect(resolved.effect).toBe("preserved");
+  expect(resolved.response?.outcome).toBe("denied");
+  const stored = await t.run(async (ctx) => await ctx.db.get(receipt.id));
+  expect(stored).toMatchObject({ kind: "objection", status: "resolved" });
+  expect(stored?.response?.reasons).toBe("La oposición se rechaza por motivos fundados.");
+
+  const events = await t.run(async (ctx) => await ctx.db.query("notificationEvents").collect());
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    kind: "privacy_request_denied",
+    privacyRequestId: receipt.id,
+    recipientId: studentId,
+  });
+});
+
+test("TI2-168 API: la rectificación resuelta comunica la respuesta al titular", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedUser(t, "ti168-est-rectification", "student");
+  await seedUser(t, "ti168-adm-rectification", "admin");
+  const asStudent = t.withIdentity(identityFor("ti168-est-rectification"));
+  const asAdmin = t.withIdentity(identityFor("ti168-adm-rectification"));
+
+  const receipt = await asStudent.mutation(privacyApi.submitPrivacyRequest, {
+    kind: "rectification",
+    version: VERSION,
+  });
+  await asAdmin.mutation(privacyApi.startPrivacyRequestReview, {
+    requestId: receipt.id,
+    version: VERSION,
+  });
+  const resolved = await asAdmin.mutation(privacyApi.resolvePrivacyRequest, {
+    requestId: receipt.id,
+    outcome: "granted",
+    reasons: "Se rectifican los datos señalados por el titular.",
+    version: VERSION,
+  });
+
+  expect(resolved.status).toBe("resolved");
+  expect(resolved.response?.outcome).toBe("granted");
+  const stored = await t.run(async (ctx) => await ctx.db.get(receipt.id));
+  expect(stored).toMatchObject({ kind: "rectification", status: "resolved" });
+
+  const events = await t.run(async (ctx) => await ctx.db.query("notificationEvents").collect());
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    kind: "privacy_request_granted",
+    privacyRequestId: receipt.id,
+    recipientId: studentId,
+  });
+});
+
+test("TI2-168 API: conceder un bloqueo materializa la fila que suspende las cuatro vías", async () => {
+  const t = convexTest(schema, modules);
+  const studentId = await seedUser(t, "ti168-est-materialize", "student");
+  const adminId = await seedUser(t, "ti168-adm-materialize", "admin");
+  const asStudent = t.withIdentity(identityFor("ti168-est-materialize"));
+  const asAdmin = t.withIdentity(identityFor("ti168-adm-materialize"));
+  const endsAt = NOW + 2 * 24 * 60 * 60 * 1000;
+
+  const receipt = await asStudent.mutation(privacyApi.submitPrivacyRequest, {
+    kind: "blocking",
+    version: VERSION,
+  });
+  await asAdmin.mutation(privacyApi.startPrivacyRequestReview, {
+    requestId: receipt.id,
+    version: VERSION,
+  });
+  const resolved = await asAdmin.mutation(privacyApi.resolvePrivacyRequest, {
+    requestId: receipt.id,
+    outcome: "granted",
+    reasons: "Bloqueo temporal concedido mientras se revisa la oposición.",
+    temporaryBlockUntil: endsAt,
+    version: VERSION,
+  });
+
+  expect(resolved.status).toBe("resolved");
+  expect(resolved.response?.temporaryBlockUntil).toBe(endsAt);
+
+  const blocks = await t.run(async (ctx) => await ctx.db.query("privacyBlocks").collect());
+  expect(blocks).toHaveLength(1);
+  expect(blocks[0]).toMatchObject({
+    subjectId: studentId,
+    requestId: receipt.id,
+    scope: "all_personal_data",
+    startsAt: NOW,
+    endsAt,
+    createdBy: adminId,
+  });
+
+  // El guardia, con el lector real de Infraestructura, ve el bloqueo materializado.
+  const decision = await t.run(async (ctx) => {
+    const reader = privacyBlockReader(ctx);
+    return await guardPrivacyTreatment(
+      {
+        blocks: {
+          listActiveBlocksForSubject: (subjectId: string, now: number) =>
+            reader.listActiveBlocksForSubject(subjectId, now),
+        },
+        now: () => NOW,
+      },
+      { subjectId: studentId, category: "appointments", treatment: "query" },
+    );
+  });
+  expect(decision).toMatchObject({ status: "blocked", blockId: blocks[0]._id });
+
+  // El bloqueo suspende el tratamiento sin borrar ni modificar la solicitud.
+  const stored = await t.run(async (ctx) => await ctx.db.get(receipt.id));
+  expect(stored).toMatchObject({
+    kind: "blocking",
+    status: "resolved",
+    receivedAt: NOW,
+    initialDueDate: "2026-11-04",
+  });
+  expect(await t.run(async (ctx) => await ctx.db.query("privacyBlocks").collect())).toHaveLength(1);
 });

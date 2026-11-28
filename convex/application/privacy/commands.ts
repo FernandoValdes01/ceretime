@@ -26,6 +26,7 @@ import {
 } from "../../domain/privacy/privacy_request";
 import type { PrivacyExtensionRejectionCause } from "../../domain/privacy/privacy_deadlines";
 import type { NotificationEventRecorder } from "../notifications/ports";
+import type { PrivacyBlockWriter } from "./ports";
 import type {
   PrivacyProfile,
   PrivacyProfileReader,
@@ -85,6 +86,12 @@ export interface PrivacyCommandDeps<RequestId extends string, UserId extends str
    * producción lo provee Presentación con el mismo `ctx`.
    */
   readonly notifications?: NotificationEventRecorder;
+  /**
+   * Materialización del bloqueo concedido (TI2-168). Opcional para no romper
+   * dobles de la entrega anterior; en producción Presentación lo provee con
+   * el mismo `ctx`, así ocurre en la misma transacción que la resolución.
+   */
+  readonly blocks?: PrivacyBlockWriter;
 }
 
 function denied<T>(): ApiResult<T> {
@@ -253,13 +260,40 @@ export async function resolvePrivacyRequest<RequestId extends string, UserId ext
     }),
   );
 
-  // La resolución se comunica al titular (TI2-168). El evento es genérico: no
-  // lleva el derecho, el fundamento ni el bloqueo, que el titular lee en su
-  // sesión. Una denegación conserva los datos y también se comunica.
+  // La concesión de un bloqueo materializa la suspensión en la misma
+  // transacción que la resolución: sin esta fila el guardia de las cuatro
+  // vías nunca encontraría un bloqueo en producción (TI2-168).
+  if (
+    result.status === "ok" &&
+    record.kind === "blocking" &&
+    input.outcome !== "denied" &&
+    input.temporaryBlockUntil !== undefined
+  ) {
+    // Fallar cerrado: una concesión sin escritor dejaría la resolución sin
+    // efecto real, así que no se publica como concedida.
+    if (deps.blocks === undefined) throw serverReferenceError();
+    const created = await deps.blocks.create({
+      subjectId: record.requesterId,
+      requestId: input.requestId,
+      scope: "all_personal_data",
+      startsAt: occurredAt,
+      endsAt: input.temporaryBlockUntil,
+      createdBy: profile._id,
+      reason: "Bloqueo temporal concedido por solicitud de privacidad.",
+    });
+    if (created.status !== "created") {
+      throw new Error("El bloqueo concedido no se pudo materializar con la solicitud resuelta.");
+    }
+  }
+
+  // El aviso se comunica al titular (TI2-168). El evento referencia la
+  // solicitud de privacidad y es genérico: no lleva el derecho, el fundamento
+  // ni el bloqueo, que el titular lee en su sesión. Una denegación conserva
+  // los datos y también se comunica.
   if (result.status === "ok" && deps.notifications !== undefined) {
     await deps.notifications.record(
       notificationEventsForPrivacyResolution({
-        requestId: input.requestId,
+        privacyRequestId: input.requestId,
         recipientId: record.requesterId,
         granted: input.outcome !== "denied",
         occurredAt,

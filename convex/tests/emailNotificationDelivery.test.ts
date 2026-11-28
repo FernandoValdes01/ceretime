@@ -475,3 +475,61 @@ test("TI2-159: un corte entre la confirmación de Gmail y el registro de sent no
   expect(secondDispatch).toBe("skipped");
   expect(gmailSendCount).toBe(0);
 });
+
+test("TI2-168: un bloqueo vigente difiere el correo y se entrega cuando termina", async () => {
+  stubGmailEnv();
+  const sentRawPayloads: string[] = [];
+  vi.spyOn(globalThis, "fetch").mockImplementation(async (url, init) => {
+    const target = String(url);
+    if (target.includes("oauth2.googleapis.com/token")) {
+      return jsonResponse({ access_token: "access-ok" });
+    }
+    if (target.includes("gmail.googleapis.com")) {
+      const parsed = JSON.parse(String(init?.body ?? "{}")) as { raw?: string };
+      if (parsed.raw) sentRawPayloads.push(decodeRawMime(parsed.raw));
+      return jsonResponse({ id: "gmail-bloqueo" });
+    }
+    throw new Error(`URL inesperada: ${target}`);
+  });
+
+  const t = convexTest(schema, modules);
+  const studentId = await seedStudent(t, "ti168-est-email", "destino-bloqueo@alu.uct.cl");
+  const endsAt = NOW + 5000;
+  await t.run(async (ctx) => {
+    await ctx.db.insert("privacyBlocks", {
+      subjectId: studentId,
+      scope: "notifications",
+      startsAt: NOW - 1000,
+      endsAt,
+      createdBy: studentId,
+      createdAt: NOW - 1000,
+      reason: "Bloqueo temporal de prueba",
+    });
+  });
+
+  const student = t.withIdentity(identityFor("ti168-est-email"));
+  await student.mutation(api.presentation.requests.createRequest, REQUEST_SUBMISSION);
+
+  // El despacho ve el bloqueo: no hay envío y la fila queda pendiente hasta endsAt.
+  await t.finishAllScheduledFunctions(() => {
+    vi.setSystemTime(NOW + 1000);
+  });
+  expect(sentRawPayloads).toHaveLength(0);
+  const deferred = await deliveries(t);
+  expect(deferred).toHaveLength(1);
+  expect(deferred[0]).toMatchObject({ status: "pending", attempts: 0 });
+  expect(deferred[0]?.nextAttemptAt).toBe(endsAt);
+  expect(deferred[0]?.errorCode).toBeUndefined();
+
+  // Vencido el bloqueo, el barrido recoge la entrega y el correo sale.
+  vi.setSystemTime(endsAt + 1);
+  await t.mutation(internal.operations.notifications.scheduleDueNotificationDeliveries, {});
+  await t.finishAllScheduledFunctions(() => {
+    vi.setSystemTime(endsAt + 2);
+  });
+
+  expect(sentRawPayloads).toHaveLength(1);
+  const sent = await deliveries(t);
+  expect(sent[0]).toMatchObject({ status: "sent", attempts: 1 });
+  expect(sent[0]?.nextAttemptAt).toBeUndefined();
+});

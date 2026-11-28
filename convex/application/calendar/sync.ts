@@ -10,6 +10,7 @@ import {
   unauthorizedError,
   type ApiResult,
 } from "../../domain/errors/api_error";
+import { guardPrivacyTreatment, type PrivacyBlockGuardDeps } from "../privacy/blocking";
 
 /** Acceso resuelto para un participante: token vigente o motivo genérico. */
 export type CalendarSyncAccess =
@@ -82,7 +83,9 @@ export interface CalendarSyncStore {
       | { readonly kind: "success"; readonly eventId: string; readonly ownerId: string }
       | { readonly kind: "noop"; readonly eventId?: string }
       | { readonly kind: "failure"; readonly errorCode: "not_connected" | "unavailable" }
-      | { readonly kind: "not_linked" };
+      | { readonly kind: "not_linked" }
+      /** Bloqueo vigente: suspender y reprogramar para cuando termine. */
+      | { readonly kind: "blocked"; readonly retryAt: number };
   }): Promise<"recorded" | "stale">;
 }
 
@@ -159,6 +162,8 @@ export async function syncAppointmentToGoogleCalendar(deps: {
   readonly reschedule: () => Promise<void>;
   readonly now: () => number;
   readonly timeZone: string;
+  /** Guardia del bloqueo de privacidad (TI2-168); opcional para pruebas previas. */
+  readonly privacy?: PrivacyBlockGuardDeps<string>;
 }): Promise<ApiResult<CalendarSyncResult>> {
   const context = await deps.loadAppointment();
   if (context === null) return errResult(unauthorizedError());
@@ -167,6 +172,21 @@ export async function syncAppointmentToGoogleCalendar(deps: {
   if (!Number.isFinite(attemptedAt) || attemptedAt <= 0) {
     return errResult(conflictError());
   }
+
+  /** Término del bloqueo que suspende este sujeto, o `null` si no hay uno. */
+  const blockedUntil = async (subject: string): Promise<number | null> => {
+    if (deps.privacy === undefined) return null;
+    const now = deps.now();
+    const blocks = await deps.privacy.blocks.listActiveBlocksForSubject(subject, now);
+    const treatment = await guardPrivacyTreatment(deps.privacy, {
+      subjectId: subject,
+      category: "calendar",
+      treatment: "change",
+    });
+    if (treatment.status === "ok") return null;
+    const block = blocks.find((candidate) => candidate.id === treatment.blockId);
+    return block?.endsAt ?? now + 60_000;
+  };
 
   const expected: CalendarSyncExpectation = {
     startsAt: context.startAt,
@@ -199,10 +219,9 @@ export async function syncAppointmentToGoogleCalendar(deps: {
     if (outcome.kind === "success") {
       return okResult({ status: "synced", eventId: outcome.eventId });
     }
-    if (outcome.kind === "not_linked") {
-      // Nadie vinculó: queda registrado sin pedir nada y el reintento no lo
-      // vuelve a programar; si alguien vincula después, la confirmación del
-      // vínculo programa las atenciones futuras vigentes.
+    if (outcome.kind === "not_linked" || outcome.kind === "blocked") {
+      // Nadie vinculó o hay un bloqueo vigente: la fila queda pendiente y se
+      // reprograma para cuando termine el bloqueo, sin marcarla sincronizada.
       return okResult({ status: "pending" });
     }
     return okResult({
@@ -224,7 +243,13 @@ export async function syncAppointmentToGoogleCalendar(deps: {
     let sawMissing = false;
     let sawUnavailable = false;
     let sawNotConnected = false;
+    let blockedUntilAt: number | null = null;
     for (const target of targets) {
+      const until = await blockedUntil(target.subject);
+      if (until !== null) {
+        blockedUntilAt = blockedUntilAt === null ? until : Math.min(blockedUntilAt, until);
+        continue;
+      }
       const access = await deps.resolveAccess(target.subject);
       if (access.status === "never_linked") {
         if (context.ownerId !== null) sawNotConnected = true;
@@ -256,6 +281,11 @@ export async function syncAppointmentToGoogleCalendar(deps: {
     if (sawUnavailable) return await finish({ kind: "failure", errorCode: "unavailable" });
     if (sawMissing) return await finish({ kind: "noop", eventId: context.reference.eventId });
     if (sawNotConnected) return await finish({ kind: "failure", errorCode: "not_connected" });
+    // Un bloqueo vigente suspende la escritura sin borrar el evento ajeno y
+    // deja la fila pendiente para reintentar cuando el bloqueo termine.
+    if (blockedUntilAt !== null) {
+      return await finish({ kind: "blocked", retryAt: blockedUntilAt });
+    }
     return await finish({ kind: "not_linked" });
   }
 
@@ -277,6 +307,7 @@ export async function syncAppointmentToGoogleCalendar(deps: {
       : context.participants;
   let sawUnavailable = false;
   let sawNotConnected = false;
+  let blockedUntilAt: number | null = null;
   const attemptUpsert = async (
     googleEventId: string,
     subject: string,
@@ -284,6 +315,11 @@ export async function syncAppointmentToGoogleCalendar(deps: {
     | { readonly done: true; readonly result: ApiResult<CalendarSyncResult> }
     | { readonly done: false }
   > => {
+    const until = await blockedUntil(subject);
+    if (until !== null) {
+      blockedUntilAt = blockedUntilAt === null ? until : Math.min(blockedUntilAt, until);
+      return { done: false };
+    }
     const access = await deps.resolveAccess(subject);
     if (access.status === "never_linked") {
       if (context.ownerId !== null) sawNotConnected = true;
@@ -366,6 +402,11 @@ export async function syncAppointmentToGoogleCalendar(deps: {
   }
   if (sawUnavailable) return await finish({ kind: "failure", errorCode: "unavailable" });
   if (sawNotConnected) return await finish({ kind: "failure", errorCode: "not_connected" });
+  // Con un bloqueo vigente no se escribe en Calendar: la fila queda pendiente
+  // y se reprograma al terminar el bloqueo, sin borrar ni modificar el evento.
+  if (blockedUntilAt !== null) {
+    return await finish({ kind: "blocked", retryAt: blockedUntilAt });
+  }
   // Nadie vinculó: queda registrado sin pedir nada y el reintento no lo
   // retoma; si alguien vincula después, esa confirmación lo programa.
   return await finish({ kind: "not_linked" });

@@ -20,8 +20,8 @@ import {
  * «bloqueado» paralela a `privacyBlocks` y nunca repite la comprobación en
  * cada pantalla. Consultas, cambios, avisos y exportaciones pasan por acá.
  *
- * El bloqueo suspende el tratamiento; no borra ni modifica los datos. Una
- *_BLOCK_ ausente, vencida, levantada o de otra categoría deja el tratamiento
+ * El bloqueo suspende el tratamiento; no borra ni modifica los datos. Un
+ * bloqueo ausente, vencido, levantado o de otra categoría deja el tratamiento
  * en curso.
  */
 

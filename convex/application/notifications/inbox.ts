@@ -171,6 +171,12 @@ async function canReadResource(
     );
     return appointment !== null;
   }
+  if ("privacyRequestId" in notification) {
+    // La comunicación de privacidad se entrega al titular de esa solicitud;
+    // no hay pantalla en esta entrega, pero el aviso es legible y no filtra
+    // el derecho ni el fundamento.
+    return notification.recipientId === (await findRecipientId(deps.auth, tokenIdentifier));
+  }
   const request = await findReadableRequest(deps.requests, {
     tokenIdentifier,
     requestId: notification.requestId,

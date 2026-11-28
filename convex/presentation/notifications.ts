@@ -23,6 +23,7 @@ import {
   appointmentNotificationEventKindUnion,
   notificationContractVersionLiteral,
   notificationReadStatusUnion,
+  privacyNotificationEventKindUnion,
   requestNotificationEventKindUnion,
 } from "../infrastructure/validators";
 import { unwrapApiResult } from "./session";
@@ -66,6 +67,11 @@ const notificationValidator = v.union(
     kind: requestNotificationEventKindUnion,
     requestId: v.id("requests"),
   }),
+  v.object({
+    ...notificationBaseFields,
+    kind: privacyNotificationEventKindUnion,
+    privacyRequestId: v.string(),
+  }),
 );
 
 const notificationPageValidator = paginationResultValidator(notificationValidator);
@@ -89,7 +95,10 @@ export const listOwnNotifications = query({
     const identity = await ctx.auth.getUserIdentity();
     return unwrapApiResult(
       await listOwnNotificationsUseCase(
-        { auth: privacyAwareAuthorizationReader(ctx), notifications: notificationInboxReader(ctx) },
+        {
+          auth: privacyAwareAuthorizationReader(ctx),
+          notifications: notificationInboxReader(ctx),
+        },
         {
           tokenIdentifier: identity?.tokenIdentifier ?? null,
           paginationOpts: args.paginationOpts,

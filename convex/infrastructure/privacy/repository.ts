@@ -44,6 +44,7 @@ import {
   type PrivacyResponseInput,
 } from "../../domain/privacy/privacy_request";
 import type { Role } from "../../domain/identity/roles";
+import type { PrivacyBlockWriter } from "../../application/privacy/ports";
 import { findProfileByTokenIdentifier } from "../accounts/repository";
 
 /**
@@ -1189,6 +1190,27 @@ export function privacyBlockReader(ctx: DbReader) {
         endsAt: row.endsAt,
         ...(row.liftedAt === undefined ? {} : { liftedAt: row.liftedAt }),
       }));
+    },
+  };
+}
+
+/** Escritura de bloqueos para el caso de uso de resolución (TI2-168). */
+export function privacyBlockWriter(ctx: MutationCtx): PrivacyBlockWriter {
+  return {
+    create: async (input) => {
+      const subjectId = ctx.db.normalizeId("users", input.subjectId);
+      const requestId = ctx.db.normalizeId("privacyRequests", input.requestId);
+      const createdBy = ctx.db.normalizeId("users", input.createdBy);
+      if (subjectId === null || requestId === null || createdBy === null) {
+        return { status: "invalid_reference" };
+      }
+      return await createPrivacyBlock(ctx, {
+        ...input,
+        subjectId,
+        requestId,
+        createdBy,
+        createdAt: input.startsAt,
+      });
     },
   };
 }

@@ -26,6 +26,7 @@ import {
   NOTIFICATION_CONTRACT_VERSION,
   NOTIFICATION_EVENT_KIND_VALUES,
   NOTIFICATION_READ_STATUS_VALUES,
+  PRIVACY_NOTIFICATION_EVENT_KIND_VALUES,
   REQUEST_NOTIFICATION_EVENT_KIND_VALUES,
 } from "../domain/notifications/notification";
 import {
@@ -286,6 +287,10 @@ export const appointmentNotificationEventKindUnion = v.union(
 
 export const requestNotificationEventKindUnion = v.union(
   ...REQUEST_NOTIFICATION_EVENT_KIND_VALUES.map((value) => v.literal(value)),
+);
+
+export const privacyNotificationEventKindUnion = v.union(
+  ...PRIVACY_NOTIFICATION_EVENT_KIND_VALUES.map((value) => v.literal(value)),
 );
 
 export const notificationReadStatusUnion = v.union(

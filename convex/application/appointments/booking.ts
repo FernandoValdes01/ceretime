@@ -357,6 +357,7 @@ export async function bookAppointment(
   const grant = await authorizeAppointmentBook(deps.auth, {
     tokenIdentifier: input.tokenIdentifier,
     accompanimentId: input.accompanimentId,
+    privacyCategory: "appointments",
   });
   if (grant.status === "error") return denied();
 

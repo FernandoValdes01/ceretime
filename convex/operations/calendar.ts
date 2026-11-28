@@ -21,6 +21,7 @@ import {
   syncAppointmentToGoogleCalendar,
   type CalendarSyncAccess,
 } from "../application/calendar/sync";
+import type { PrivacyBlockGuardDeps } from "../application/privacy/blocking";
 import {
   checkCalendarLinkAccess as checkCalendarLinkAccessUseCase,
   markCalendarDisconnected as markCalendarDisconnectedUseCase,
@@ -303,6 +304,7 @@ const syncOutcomeValidator = v.union(
     errorCode: v.union(v.literal("not_connected"), v.literal("unavailable")),
   }),
   v.object({ kind: v.literal("not_linked") }),
+  v.object({ kind: v.literal("blocked"), retryAt: v.number() }),
 );
 
 /**
@@ -371,6 +373,19 @@ export const recordCalendarSyncOutcome = internalMutation({
         calendarSyncLastAttemptAt: args.attemptedAt,
         calendarSyncErrorCode: undefined,
         calendarSyncFailures: 0,
+      });
+      return "recorded" as const;
+    }
+    if (args.outcome.kind === "blocked") {
+      // El bloqueo suspende el tratamiento: la fila sigue pendiente y se
+      // reprograma al terminar, sin marcar `synced` ni borrar la referencia.
+      await ctx.db.patch(appointmentId, {
+        calendarSyncStatus: "pending",
+        calendarSyncLastAttemptAt: args.attemptedAt,
+        calendarSyncErrorCode: undefined,
+        calendarSyncScheduledAt: args.outcome.retryAt,
+        calendarEventStartsAt: undefined,
+        calendarEventEndsAt: undefined,
       });
       return "recorded" as const;
     }
@@ -469,6 +484,16 @@ export const syncAppointmentCalendar = internalAction({
       loaded.participants.map((participant) => [participant.subject, participant.everLinked]),
     );
 
+    const privacyGuard: PrivacyBlockGuardDeps<string> = {
+      blocks: {
+        listActiveBlocksForSubject: (subjectId, now) =>
+          ctx.runQuery(internal.operations.notifications.listActivePrivacyBlocks, {
+            subjectId,
+            now,
+          }),
+      },
+      now: () => attemptedAt,
+    };
     const outcome = await syncAppointmentToGoogleCalendar({
       loadAppointment: async () => ({
         appointmentId: loaded.appointmentId,
@@ -516,6 +541,7 @@ export const syncAppointmentCalendar = internalAction({
       },
       now: () => attemptedAt,
       timeZone: AGENDA_TIME_ZONE,
+      privacy: privacyGuard,
     });
     if (outcome.status === "error") {
       // Rechazo del contrato común (`unauthorized`, `conflict`): no es un

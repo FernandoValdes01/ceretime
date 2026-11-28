@@ -423,7 +423,7 @@ export async function listAccompanimentAppointmentsUseCase(
   const grant = await authorizeAppointmentRead(deps.auth, {
     tokenIdentifier: input.tokenIdentifier,
     accompanimentId: input.accompanimentId,
-    privacyCategory: "calendar",
+    privacyCategory: "appointments",
   });
   if (grant.status === "error") return denied();
 

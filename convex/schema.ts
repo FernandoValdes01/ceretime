@@ -514,6 +514,9 @@ export default defineSchema({
     kind: notificationEventKindUnion,
     appointmentId: v.optional(v.id("appointments")),
     requestId: v.optional(v.id("requests")),
+    // TI2-168: comunicación de una resolución de privacidad. Su recurso es una
+    // solicitud de privacidad, no una solicitud de acompañamiento.
+    privacyRequestId: v.optional(v.id("privacyRequests")),
     recipientId: v.id("users"),
     occurredAt: v.number(),
     version: notificationContractVersionLiteral,

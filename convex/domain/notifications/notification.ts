@@ -73,9 +73,6 @@ export const REQUEST_NOTIFICATION_EVENT_KIND_VALUES = [
   "request_referred",
   "request_closed",
   "request_cancelled",
-  // TI2-168: comunicaciones de una resolución de privacidad al titular.
-  "privacy_request_granted",
-  "privacy_request_denied",
 ] as const;
 
 export type RequestNotificationEventKind = (typeof REQUEST_NOTIFICATION_EVENT_KIND_VALUES)[number];
@@ -87,10 +84,30 @@ export function isRequestNotificationEventKind(
   return (REQUEST_NOTIFICATION_EVENT_KIND_VALUES as readonly string[]).includes(value);
 }
 
+/**
+ * Clases de comunicación de una resolución de privacidad (TI2-168). Su
+ * recurso es una solicitud de privacidad (`privacyRequests`), no una solicitud
+ * de acompañamiento: por eso tienen tipo y validación propios.
+ */
+export const PRIVACY_NOTIFICATION_EVENT_KIND_VALUES = [
+  "privacy_request_granted",
+  "privacy_request_denied",
+] as const;
+
+export type PrivacyNotificationEventKind = (typeof PRIVACY_NOTIFICATION_EVENT_KIND_VALUES)[number];
+
+/** Verdadero cuando la clase pertenece a una comunicación de privacidad. */
+export function isPrivacyNotificationEventKind(
+  value: string,
+): value is PrivacyNotificationEventKind {
+  return (PRIVACY_NOTIFICATION_EVENT_KIND_VALUES as readonly string[]).includes(value);
+}
+
 /** Todas las clases conocidas, sin perder el recurso al que pertenecen. */
 export const NOTIFICATION_EVENT_KIND_VALUES = [
   ...APPOINTMENT_NOTIFICATION_EVENT_KIND_VALUES,
   ...REQUEST_NOTIFICATION_EVENT_KIND_VALUES,
+  ...PRIVACY_NOTIFICATION_EVENT_KIND_VALUES,
 ] as const;
 
 export type NotificationEventKind = (typeof NOTIFICATION_EVENT_KIND_VALUES)[number];
@@ -142,7 +159,19 @@ export interface RequestNotificationEvent {
   readonly version: NotificationContractVersion;
 }
 
-export type NotificationEvent = AppointmentNotificationEvent | RequestNotificationEvent;
+/** Comunicación de privacidad: referencia su solicitud en `privacyRequests`. */
+export interface PrivacyNotificationEvent {
+  readonly kind: PrivacyNotificationEventKind;
+  readonly privacyRequestId: string;
+  readonly recipientId: string;
+  readonly occurredAt: number;
+  readonly version: NotificationContractVersion;
+}
+
+export type NotificationEvent =
+  | AppointmentNotificationEvent
+  | RequestNotificationEvent
+  | PrivacyNotificationEvent;
 
 /** Referencia mínima a la atención y a su destinatario, ambos opacos. */
 export interface NotificationReference {
@@ -156,6 +185,12 @@ export interface RequestNotificationReference {
   readonly recipientId: string;
 }
 
+/** Referencia mínima a la solicitud de privacidad y a su destinatario. */
+export interface PrivacyNotificationReference {
+  readonly privacyRequestId: string;
+  readonly recipientId: string;
+}
+
 /** Entrada del constructor: la clase y el recurso se validan en tiempo de ejecución. */
 export type NotificationEventInput =
   | (NotificationReference & {
@@ -164,6 +199,10 @@ export type NotificationEventInput =
     })
   | (RequestNotificationReference & {
       readonly kind: RequestNotificationEventKind;
+      readonly occurredAt: number;
+    })
+  | (PrivacyNotificationReference & {
+      readonly kind: PrivacyNotificationEventKind;
       readonly occurredAt: number;
     });
 
@@ -229,8 +268,26 @@ export function toNotificationEvent(input: NotificationEventInput): Notification
 
   const hasAppointment = "appointmentId" in input;
   const hasRequest = "requestId" in input;
-  if (hasAppointment === hasRequest) {
+  const hasPrivacyRequest = "privacyRequestId" in input;
+  const resources = [hasAppointment, hasRequest, hasPrivacyRequest].filter(Boolean).length;
+  if (resources !== 1) {
     throw new Error("El evento de notificación requiere exactamente un recurso.");
+  }
+  if (hasPrivacyRequest) {
+    if (!isPrivacyNotificationEventKind(input.kind)) {
+      throw new Error("La clase del evento no corresponde a una solicitud de privacidad.");
+    }
+    const privacyRequestId = (input as PrivacyNotificationReference).privacyRequestId.trim();
+    if (privacyRequestId === "") {
+      throw new Error("El evento de notificación requiere una solicitud de privacidad.");
+    }
+    return {
+      kind: input.kind,
+      privacyRequestId,
+      recipientId,
+      occurredAt: input.occurredAt,
+      version: NOTIFICATION_CONTRACT_VERSION,
+    };
   }
   if (hasAppointment) {
     if (!isAppointmentNotificationEventKind(input.kind)) {
@@ -581,7 +638,7 @@ export function notificationEventsForRequestTransition(
  * derecho ni la decisión; el titular la lee en su sesión.
  */
 export function notificationEventsForPrivacyResolution(input: {
-  readonly requestId: string;
+  readonly privacyRequestId: string;
   readonly recipientId: string;
   readonly granted: boolean;
   readonly occurredAt: number;
@@ -589,7 +646,7 @@ export function notificationEventsForPrivacyResolution(input: {
   return [
     toNotificationEvent({
       kind: input.granted ? "privacy_request_granted" : "privacy_request_denied",
-      requestId: input.requestId,
+      privacyRequestId: input.privacyRequestId,
       recipientId: input.recipientId,
       occurredAt: input.occurredAt,
     }),
@@ -615,6 +672,16 @@ export function notificationIdempotencyKey(event: NotificationEvent): string {
       event.version,
       event.kind,
       event.appointmentId,
+      event.recipientId,
+      event.occurredAt,
+    ]);
+  }
+  if ("privacyRequestId" in event) {
+    return JSON.stringify([
+      event.version,
+      event.kind,
+      "privacyRequest",
+      event.privacyRequestId,
       event.recipientId,
       event.occurredAt,
     ]);
