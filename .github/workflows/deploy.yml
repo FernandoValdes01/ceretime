@@ -14,7 +14,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Redeploy en Kubero
+        # 401: token inválido o vencido; 403: sin permisos en el pipeline;
+        # 404: el pipeline o la app no coinciden. Cualquiera de ellos deja la
+        # Web sin la imagen nueva, así que el job falla.
+        env:
+          KUBERO_TOKEN: ${{ secrets.KUBERO_TOKEN }}
         run: |
-          curl -s -o /dev/null -w "%{http_code}\n" -X GET \
+          code=$(curl -sS -o /dev/null -w "%{http_code}" -X GET \
             "https://kubero.inf.uct.cl/api/apps/ceretime/production/ceretime/restart" \
-            -H "Authorization: Bearer ${{ secrets.KUBERO_TOKEN }}"
+            -H "Authorization: Bearer $KUBERO_TOKEN")
+          echo "Kubero respondió $code."
+          if [ "$code" != "200" ]; then
+            echo "::error::Kubero no aceptó el reinicio (HTTP $code)."
+            exit 1
+          fi
