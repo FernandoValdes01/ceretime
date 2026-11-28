@@ -2,13 +2,14 @@
 
 Registro de [TI2-179](https://linear.app/ceretime/issue/TI2-179): demostrar el proceso completo, desde la solicitud hasta el cierre y la consulta del historial, en una misma versión y con datos ficticios. Cada criterio indica tarea, entrega, versión, pasos y resultado. Lo pendiente, fallido o bloqueado figura como parte faltante: una simulación o una credencial pendiente no cuenta como terminada.
 
-Este documento está en curso. Fecha de corte: 27/11/2026.
+Fecha de corte: 28/11/2026. Versión final: la cabecera de la PR de TI2-179, que integra `main` en `a0f66279` con `4edc23ce`; después de ese merge la rama solo cambia documentación y la prueba de TI2-179.
 
 ## Versión y entorno
 
 <!-- cspell:ignore lulloa -->
 
-- **Base:** `main` en `4acf1da5` (TI2-155, #212), integrado en la rama `lulloa/ti2-179-desplegar-la-web-con-datos-ficticios-y` con `572fa661`.
+- **Versión final:** la cabecera de la rama `lulloa/ti2-179-desplegar-la-web-con-datos-ficticios-y`, con `main` en `a0f66279` integrado en `4edc23ce`. Sobre ella corren las pruebas automáticas; producción sirve `a0f66279`, el mismo código de la aplicación.
+- **Versión del recorrido en desarrollo:** `572fa661`, que integra `main` en `4acf1da5` (TI2-155, #212). Es anterior a TI2-171, TI2-172 y TI2-168; sobre la versión final solo se repitió el Estudiante en producción (ver «Partes faltantes»).
 - **Pruebas automáticas:** `convex-test` con identidades simuladas; no usan un deployment.
 - **Recorrido en la interfaz:** deployment de desarrollo propio de Convex con `TEST_SEEDS_ENABLED=true` y la Web local. La carga de `operations/fictitiousData:load` se rechaza en producción, por diseño.
 - **Cuentas que pueden iniciar sesión:** solo `@alu.uct.cl` y `@uct.cl` (`hd` en `convex/infrastructure/auth/google_providers.ts`). Las cuentas del dataset usan el emisor inventado `dataset-ficticio` y no pueden iniciar sesión.
@@ -21,10 +22,10 @@ Este documento está en curso. Fecha de corte: 27/11/2026.
 | Proceso completo con los cuatro roles en una misma secuencia | TI2-179 | S4 | `1cfbe37b` y `572fa661` | Cumplido en pruebas automáticas y en el recorrido, con el Estudiante en la interfaz y los demás roles por la API pública |
 | Permisos entre usuarios | TI2-179 sobre TI2-86, TI2-127 y TI2-140 | S4 | `1cfbe37b` | Cumplido en pruebas automáticas |
 | Revocación del practicante | TI2-179 sobre TI2-127 y TI2-140 | S4 | `1cfbe37b` y `572fa661` | Cumplido en pruebas automáticas y en el recorrido |
-| Reservas simultáneas | TI2-179 sobre TI2-84, TI2-96 y TI2-120 | S4 | `1cfbe37b` | Cumplido en pruebas automáticas |
+| Reservas simultáneas | TI2-179 sobre TI2-84, TI2-96 y TI2-120 | S4 | Versión final | Cumplido en pruebas automáticas como reservas sucesivas del mismo cupo: la segunda se rechaza con `conflict`. La concurrencia real en un deployment no se probó (ver «Partes faltantes») |
 | Estados y cierre sin reapertura | TI2-179 sobre TI2-152 | S4 | `1cfbe37b` y `572fa661` | Cumplido en pruebas automáticas y en el recorrido |
 | Plazos de justificación | TI2-119 y TI2-147 | S4 | `572fa661` | Cumplido en pruebas existentes |
-| Reintentos y recuperación de avisos y Calendar | TI2-159, TI2-160 y TI2-162 | S4 | `572fa661` | Cumplido en pruebas existentes con dobles. Envío real pendiente |
+| Reintentos y recuperación de avisos y Calendar | TI2-159, TI2-160 y TI2-162 | S4 | `572fa661` | Cumplido en pruebas existentes con dobles y en el recorrido: el correo real se recuperó tras `not_configured` (ver «Correo real») |
 | Contratos completos para Web y Mobile | TI2-179 | S4 | `1a96cdff` | Cumplido con un hallazgo abierto |
 | Correo real | TI2-179 sobre TI2-159 | S4 | `572fa661` | Cumplido en el deployment de desarrollo, con un remitente de prueba (ver «Correo real») |
 | Push real | TI2-179 sobre TI2-160 | S4 | `4f7a3e8b` | Envío cumplido en el deployment de desarrollo. La pantalla para activarlo llegó después con TI2-172 (ver «Push real») |
@@ -40,13 +41,13 @@ Este documento está en curso. Fecha de corte: 27/11/2026.
 2. El Profesional pendiente no puede habilitar al Practicante. El Administrador habilita al Profesional (`enabledBy` del Administrador) y el Profesional habilita al Practicante (`enabledBy` del Profesional).
 3. El Estudiante entra por `ensureMyProfile` y crea la solicitud. El Practicante no puede tomarla; el Profesional la toma y la acepta, y se abre el acompañamiento.
 4. Antes de la asignación el Practicante queda denegado; después ve la vista `minimized`.
-5. El Administrador registra una sala que cubre la necesidad de acceso y el Profesional publica su bloque en ella. La búsqueda ofrece el cupo y dos reservas simultáneas del Estudiante dejan una sola atención.
+5. El Administrador registra una sala que cubre la necesidad de acceso y el Profesional publica su bloque en ella. La búsqueda ofrece el cupo y, de dos reservas del Estudiante para ese cupo, una se cumple y la otra se rechaza con `conflict`, así que queda una sola atención. `convex-test` ejecuta las mutations en serie: esto prueba la regla de exclusión, no dos transacciones solapadas.
 6. El Practicante no puede registrar la atención; el Profesional la registra como realizada y guarda el seguimiento con una nota interna.
 7. El Profesional lee la vista `professional` con la nota, el Estudiante la vista `shared` y el Practicante la vista `minimized`, ambas sin la nota. El Administrador no accede al acompañamiento.
 8. Al revocar al Practicante, pierde el acceso al seguimiento y al acompañamiento desde la llamada siguiente.
 9. Al cerrar, el acompañamiento no se reactiva (`conflict`) ni admite reservas. El Estudiante sigue viendo el estado cerrado y su historial, sin la nota interna.
 
-**Resultado.** Sobre `572fa661`, `bun run test:convex`: 99 archivos y 1730 pruebas OK. `tsc` de `convex/tsconfig.json` y `convex/tsconfig.tests.json`: 0 errores. `bun run lint` y `bun run format:check`: OK.
+**Resultado.** Sobre la versión final, `bun run test:convex`: 100 archivos y 1757 pruebas OK; `bun run test:web`: 44 archivos y 734 pruebas OK; `bun run --cwd apps/web build`: OK. `tsc` de `convex/tsconfig.json` y `convex/tsconfig.tests.json`: 0 errores. `bun run lint` y `bun run format:check`: OK.
 
 ## Recorrido en la interfaz
 
@@ -143,5 +144,7 @@ Comprobado el 28/11/2026 sobre `main` en `a0f66279`, con la cuenta institucional
 - **Recorrido en la interfaz con los cuatro roles.** Hay una sola cuenta institucional; el Estudiante recorre la interfaz y los demás roles operan por la API pública con `--identity`. Ver las pantallas del Profesional, el Practicante y el Administrador requiere cuentas que puedan iniciar sesión.
 - **Producción con los cuatro roles.** En producción solo se recorrió el Estudiante. Faltan el primer Administrador (el primer ingreso crea un perfil y `ensureBootstrapAdmin` lo rechaza), cuentas del Profesional y del Practicante que puedan iniciar sesión, y las variables `GMAIL_*` y `VAPID_*` para el correo y push reales.
 - **Formato de error de acompañamientos.** Las consultas de `presentation/accompaniments` rechazan con el mensaje «No autorizado» sin el objeto `{ code, message }` que solicitudes adoptó en TI2-181. El recorrido lo confirma: al Practicante revocado, `getAccompaniment` responde `No autorizado` y `getFollowUpRecord`, `{"code":"unauthorized","message":"No autorizado"}`. No impide el uso, pero un cliente nuevo debe tratar las dos formas.
+- **Reservas concurrentes en un deployment.** Las pruebas ejecutan las reservas en serie. Que dos transacciones solapadas dejen una sola atención solo se observa en un deployment de prueba con datos ficticios, y no se hizo.
+- **Recorrido sobre la versión final.** El recorrido en desarrollo fue sobre `572fa661`; sobre la versión final corren las pruebas automáticas y en producción solo se repitió el Estudiante.
 - **Validaciones de CERETI.** Sin fecha ni responsable.
 - **Dependencias.** TI2-178 (WCAG) y TI2-174 (conservación) bloquean esta tarea y no están integradas; «todo funciona junto en la misma versión» se vuelve a comprobar cuando lo estén.
